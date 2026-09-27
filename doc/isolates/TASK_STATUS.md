@@ -79,6 +79,9 @@ ordinary-Go execution remains unproved.**
       instances and a native child goroutine; 100 emulated amd64 runs passed
 - [x] E4 registered-entry toy reruns isolate initialization without duplicating
       host registration; two host-loop invocations read independent state
+- [x] Phase 2B first-dispatch revocation hook discards an unstarted group
+      child before user code; 1,000 native race runs and 100 emulated amd64
+      runs passed; see PHASE2B_PROGRESS.md for its narrow scope
 - [x] Phase 0 path decision: choose Phase 2B for the trusted MVP; E0/Phase 2A
       are out of scope, E5a remains future, E5b waits for real density results
 - [x] E4 first implementation direction: rerun restricted initializers per

@@ -13,6 +13,14 @@ import (
 	"unsafe"
 )
 
+// isolateRevocationGroup is the first-dispatch experiment for Phase 2B.
+// A complete isolate also needs ownership of parked waiters and an execution
+// count before its Kill operation can report that all goroutines have stopped.
+type isolateRevocationGroup struct {
+	revoked atomic.Bool
+	live    atomic.Int32
+}
+
 // defined constants
 const (
 	// G status
@@ -558,13 +566,15 @@ type g struct {
 	ancestors       *[]ancestorInfo // ancestor information goroutine(s) that created this goroutine (only used if debug.tracebackancestors)
 	startpc         uintptr         // pc of goroutine function
 	racectx         uintptr
-	waiting         *sudog         // sudog structures this g is waiting on (that have a valid elem ptr); in lock order
-	cgoCtxt         []uintptr      // cgo traceback context
-	labels          unsafe.Pointer // profiler labels
-	isolateE4Base   unsafe.Pointer // tagged Phase 0 global-base experiment
-	timer           *timer         // cached timer for time.Sleep
-	sleepWhen       int64          // when to sleep until
-	selectDone      atomic.Uint32  // are we participating in a select and did someone win the race?
+	waiting         *sudog                  // sudog structures this g is waiting on (that have a valid elem ptr); in lock order
+	cgoCtxt         []uintptr               // cgo traceback context
+	labels          unsafe.Pointer          // profiler labels
+	isolateE4Base   unsafe.Pointer          // tagged Phase 0 global-base experiment
+	isolateGroup    *isolateRevocationGroup // tagged Phase 2B first-dispatch experiment
+	isolateStarted  bool
+	timer           *timer        // cached timer for time.Sleep
+	sleepWhen       int64         // when to sleep until
+	selectDone      atomic.Uint32 // are we participating in a select and did someone win the race?
 
 	// goroutineProfiled indicates the status of this goroutine's stack for the
 	// current in-progress goroutine profile

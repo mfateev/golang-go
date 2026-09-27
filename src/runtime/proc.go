@@ -3390,6 +3390,10 @@ func execute(gp *g, inheritTime bool) {
 		trace.GoStart()
 		traceRelease(trace)
 	}
+	if isolateFirstDispatchRevoked(gp) {
+		isolateTerminateBeforeStart(gp)
+	}
+	gp.isolateStarted = true
 	// Phase 0 kill probe: the target has already been moved to a safe point
 	// and resumed as runnable. execute permits write barriers, unlike the
 	// async-preemption continuation. The ordinary build inlines this away.
@@ -4543,6 +4547,11 @@ func gdestroy(gp *g) {
 	gp.param = nil
 	gp.labels = nil
 	gp.isolateE4Base = nil
+	if gp.isolateGroup != nil {
+		gp.isolateGroup.live.Add(-1)
+		gp.isolateGroup = nil
+	}
+	gp.isolateStarted = false
 	gp.timer = nil
 	gp.bubble = nil
 	gp.fipsOnlyBypass = false
@@ -5402,12 +5411,18 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	newg.startpc = fn.fn
 	newg.runningCleanups.Store(false)
 	newg.isolateE4Base = nil
+	newg.isolateGroup = nil
+	newg.isolateStarted = false
 	if isSystemGoroutine(newg, false) {
 		sched.ngsys.Add(1)
 	} else {
 		// Only user goroutines inherit synctest groups and pprof labels.
 		newg.bubble = callergp.bubble
 		newg.isolateE4Base = callergp.isolateE4Base
+		newg.isolateGroup = callergp.isolateGroup
+		if newg.isolateGroup != nil {
+			newg.isolateGroup.live.Add(1)
+		}
 		if mp.curg != nil {
 			newg.labels = mp.curg.labels
 		}
