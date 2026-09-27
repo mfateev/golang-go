@@ -141,10 +141,12 @@ Starting map, not yet verified against the code:
 
 ## Build & Test Notes
 
-For a Git-only handoff, including the current container filesystem failure
-and recovery steps, see [DEVELOPMENT.md](./DEVELOPMENT.md). The full suite
-after the first-dispatch revocation change is pending; the earlier full-suite
-pass listed above predates that change.
+For a Git-only handoff, including the previous container filesystem failure
+and recovery steps, see [DEVELOPMENT.md](./DEVELOPMENT.md). After container
+recreation, the full Linux arm64 `src/all.bash` suite passed on 2026-09-27,
+including the first-dispatch revocation change. See
+[PHASE2B_PROGRESS.md](./PHASE2B_PROGRESS.md) for the initial missing-`netbase`
+environment failure and successful rerun.
 
 The active development target is the container's native **Linux arm64**
 (`uname -m` reports `aarch64`; the rebuilt tree's `go version` reports

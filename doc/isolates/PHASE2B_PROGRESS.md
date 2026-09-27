@@ -69,7 +69,7 @@ revocation on one P to prove only the first-dispatch case.
    mechanism for ordinary and reflected iteration. Add logical time and
    deterministic selection only after native quiescence is observable.
 
-## Full-suite verification pending after filesystem failure
+## Full-suite verification after filesystem recovery
 
 After this runtime change, `src/all.bash` passed the package tests,
 `runtime`, `cmd/compile`, `cmd/go`, alternate build modes, and the race
@@ -78,8 +78,17 @@ write I/O errors and ext4 aborted its journal. `/tmp` became read-only;
 `cmd/internal/testdir` could no longer create temporary files. The worktree
 was restored on its writable bind mount, but `/tmp` remained read-only.
 Namespace-based reruns were inconclusive for the reasons recorded in
-[DEVELOPMENT.md](./DEVELOPMENT.md). Recreate or repair the development root
-filesystem and rerun `src/all.bash` before treating this slice as fully
-verified. The focused native runtime suite, tagged race tests, and emulated
-amd64 tests passed before the filesystem failure. The documentation update
-was pushed at the user's request without another test run.
+[DEVELOPMENT.md](./DEVELOPMENT.md). The focused native runtime suite, tagged
+race tests, and emulated amd64 tests passed before the filesystem failure.
+The documentation update was pushed at the user's request without another
+test run.
+
+After container recreation on 2026-09-27, `src/make.bash` passed. The first
+fresh `src/all.bash` run failed only in `net` because the new container lacked
+`/etc/services`: `TestCgoLookupPort` and `TestCgoLookupPortWithCancel` could
+not resolve `smtp`. Installing Debian's `netbase` package restored the file,
+and both focused tests passed. A complete second `src/all.bash` run then
+finished with `ALL TESTS PASSED`, including the race section and `../test`.
+The opt-in first-dispatch revocation tests passed 100 native arm64 race runs;
+the opt-in E4 compiler toy passed 100 native arm64 race runs with its compiler
+flag. No source change was needed to obtain the full-suite pass.

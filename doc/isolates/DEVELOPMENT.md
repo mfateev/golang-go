@@ -26,11 +26,12 @@ cd src
 ```
 
 Do not count a toolchain build or a focused runtime test as a full-suite pass.
-The full `src/all.bash` run after the first-dispatch revocation change remains
-unverified. The user explicitly requested the subsequent documentation push
-without running tests, so the commit that adds this guide is also untested.
+After container recreation on 2026-09-27, `src/all.bash` passed in full; see
+[PHASE2B_PROGRESS.md](./PHASE2B_PROGRESS.md). The fresh container initially
+lacked `/etc/services`, causing two `net` tests to fail until Debian's
+`netbase` package was installed. Include `netbase` in future container setup.
 
-## Why the previous container needs replacement
+## Why the previous container needed replacement
 
 During `src/all.bash`, `/dev/vdb` returned write I/O errors and ext4 aborted
 its journal. Later checks showed `/` mounted as `ext4` with `emergency_ro` and
@@ -44,10 +45,10 @@ a pass: the first tmpfs filled; moving Go scratch files to the bind mount made
 filesystem-permission tests fail there. A later 16 GiB tmpfs run failed during
 bootstrap with a missing-vendored-package diagnostic for
 `golang.org/x/tools/internal/moreiters`, although its source file is tracked
-and present. Its cause is unresolved. Do a clean run in a replacement
-container before investigating that diagnostic as a source issue.
+and present. Its cause in the damaged container was not determined. The
+diagnostic did not recur in the replacement container's full-suite run.
 
-## Recover from outside the container
+## Recovery procedure for a future filesystem failure
 
 Recreate the disposable sandbox with the same image, bind mounts, bootstrap
 toolchain, and Git/SSH setup. If Docker is the launcher, identify the
