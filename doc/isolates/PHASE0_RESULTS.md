@@ -1,7 +1,7 @@
 # Phase 0 results and open gates
 
 Recorded 2026-09-27 against Go tree `2ff5743d9f` on Linux arm64.
-These are feasibility observations, not a Phase 0 exit decision.
+These are feasibility observations and the scoped Phase 0 path decision.
 The command blocks below start from the repository root.
 
 ## Requirements fixed for the gates
@@ -50,6 +50,14 @@ The full standard-library call-path inventory and enforceable classification
 of unsupported operations remain open. The sample passed ten race-detector
 runs but does not establish completeness.
 
+For the Phase 0 path decision, E1 is a negative result for Phase 2A: the
+prototype cannot account for the native parked goroutine, and a source
+rewriter would need whole linked-package coverage plus a proof that all
+indirect calls use rewritten state. Neither proof exists. We will not build
+E0's `-toolexec` integration for an unselected path. The compiler/runtime
+path has concrete interception points, but it still needs the Phase 2B
+source-path audit and native quiescence tests before any ordinary-Go claim.
+
 Initial source-path inventory for the sample's indirect operations:
 
 | User operation | Current path in this tree | Phase 1 classification |
@@ -58,6 +66,15 @@ Initial source-path inventory for the sample's indirect operations:
 | `sync.Cond.Wait` | `sync/cond.go` → `runtime_notifyListWait` | Untracked; outside contract |
 | `context.WithDeadline` | `context/context.go` → `time.AfterFunc` | Untracked; outside contract |
 | `time.AfterFunc` | `time/sleep.go` → runtime timer; callback starts native goroutine | Untracked; outside contract |
+
+The initial fork-path touch points in this tree are `runtime.newproc1` for
+native `go`, `runtime.chansend`/`chanrecv` and `selectgo` for channels and
+selection, `sync.Mutex`/`WaitGroup`/`Cond` through their runtime semaphore or
+notify paths, `internal/runtime/maps.Iter.Init`/`Next` for map order,
+`time.Now` through `time.now`/`runtimeNow`, and `runtime.timeSleep` plus the
+timer heap for sleeps and deadlines. `runtime.ready` is only one of the
+scheduler paths that must be audited. This list locates mechanisms; it is
+not a complete wakeup or standard-library call graph.
 
 Phase 2 must instrument these paths or reject them through an enforceable
 subset; allowing them unmodified would make quiescence and replay unsound.
@@ -93,6 +110,35 @@ bootstrap toolchain crashed there too. This is an emulator/environment limit,
 not an observed replay mismatch. A native 32-bit run remains unverified.
 
 ## E2: source-level canonical iteration cost, partial
+
+The selected feasible mechanism for the restricted E2 prototype is a sorted
+key snapshot with a live lookup before each yield. `RangeMap` implements it
+for strings and signed/unsigned integer keys, including named types. Deleted
+keys are skipped, changed values are read at the visit, new keys are skipped,
+and a callback can stop iteration. Each choice is allowed by Go's map range
+semantics. Pointer, float, interface, array, and struct keys are outside this
+prototype's contract; `reflect.Value.MapRange` and ordinary `for range` still
+need compiler/runtime handling before an ordinary-Go claim. Mutation and key
+order tests passed 20 times on native arm64 and 20 times under emulated amd64.
+This result selects a mechanism for E2's narrow key contract, not a complete
+ordinary-map implementation.
+
+In a new same-process run on this host, a 1,000 string-key sum took
+50.2–52.1 µs/op with native range and 142.9–144.1 µs/op with `RangeMap`
+(three 500 ms runs). `RangeMap` allocated about 16.5 KB/op. A repeated
+single-P run measured 50.8–51.6 µs/op native and 147.1–148.4 µs/op canonical.
+Run:
+
+```bash
+cd src
+../bin/go test -run='^$' -bench='^Benchmark(MapRange|RangeMap)1000$' \
+  -benchtime=500ms -count=3 -benchmem internal/isolateproto
+```
+
+An earlier run on the same host measured a faster 15.5–15.8 µs/op native
+baseline; the same-process ratios above are more useful than comparing
+absolute times across runs. The precise reason for the baseline shift has
+not been isolated.
 
 On this Linux arm64 tree, summing 1,000 string-keyed map values took
 15.5–15.8 µs/op with ordinary range and 114.6–116.4 µs/op with `SortedKeys`
@@ -140,6 +186,17 @@ instances, after GC, incremental process memory was:
 | One task on Inbox | 1,803 B | 4,119 B | 2,022 B | 6,281 B |
 | Two child Calls, parent on channel | 4,480 B | 12,304 B | 5,217 B | 17,835 B |
 
+A 10k-instance mixed proxy with 90% Inbox waiters and 10% fan-out waiters
+used 2,248 B HeapAlloc, 4,932–4,935 B StackInuse, and 7,538–7,562 B
+incremental RSS per instance in three fresh processes. Each benchmark now
+revokes all instances after taking the memory snapshot. Run
+`BenchmarkMixedProxy` with `-benchtime=1x -count=1`; use separate processes
+for independent RSS observations. The mixed average is below the 8 KB
+median target, but an average is not a median or p99, and the homogeneous
+fan-out proxy already exceeds 8 KB of heap plus stacks. Neither result can
+establish a per-instance percentile without ownership accounting. The proxy
+therefore leaves density acceptance open for Phase 3's real implementation.
+
 The fan-out proxy thus retains about 16.8 KB of heap plus stacks per
 instance, and its RSS increment was about 17.8 KB per instance in a separate
 process run. These are process-level increments, not owned memory: Go scheduler
@@ -184,7 +241,7 @@ cache, and GC timing need closer control for a causal throughput claim. Run
 These metrics are still for the explicit Phase 1 scheduler, not owned spans
 or suspended-state compaction.
 
-## E4: initialized globals, known failure
+## E4: initialized globals, scoped feasibility result
 
 The Phase 2 conformance test creates a map, pointer, and closure during init.
 Two prototype instances produce `1/1/1` and `2/2/2`; the second result must
@@ -206,8 +263,109 @@ cd src
 ```
 
 The accessor and base shapes were about 4% slower in this microbenchmark.
-This is not compiler-generated indirection, a workflow-shaped benchmark, or
-an initialized-graph isolation proof. Those remain open.
+This benchmark does not include compiler-generated indirection, a workflow
+operation, or initialized-graph isolation. The later probes below cover
+narrow examples of those separately.
+
+A tagged toy package now calls its compiler-generated `init.0` again after
+selecting a fresh state base. Its `init` allocates a map, pointer, and closure;
+two instances run interleaved and each produces `1/1/1`, then `2/2/2`. A
+tagged runtime getter stores the selected base on the current `g`, copies it
+to a newly created user goroutine, and clears it when the goroutine exits.
+Two instances also run concurrently without sharing their initialized graphs;
+a child created by `go` inherits its parent's base. The tests passed 100
+race-detector repetitions on Linux arm64:
+
+```bash
+cd src
+../bin/go test -race -tags=phase0_e4 -count=100 internal/isolateproto/testdata/e4toy
+```
+
+This demonstrates that the generated init function can execute again while
+the test redirects its global accesses, and that a per-goroutine base can
+follow native `go` creation in this narrow case. The toy explicitly calls a
+runtime getter at every global access. It does not prove automatic compiler
+rewriting, package dependency init order, standard-library initialized-state
+isolation, or that all paths that create goroutines preserve this base. The
+process-global `initTask.state` is still unchanged.
+
+A second tagged toy removes the source-level getter from `init` and its entry
+function. The compiler's opt-in `-d=isolatee4=1` flag rewrites address
+generation for that package's `global` graph and `epoch` integer symbols to
+use the per-`g` base and a second field offset, falling
+back to the ordinary global before a base is selected during process startup.
+The toy again reruns compiler-generated `init.0` for two instances. Its
+map/pointer/closure graphs remain separate under interleaved calls, parallel
+goroutines, and a native child goroutine. It passed 100 race-detector runs at
+`GOMAXPROCS=4`, `GOGC=20` on Linux arm64:
+
+```bash
+cd src
+GOMAXPROCS=4 GOGC=20 ../bin/go test -race \
+  -tags=phase0_e4,phase0_e4_compile \
+  -gcflags='internal/isolateproto/testdata/e4compiletoy=-d=isolatee4=1' \
+  -count=100 internal/isolateproto/testdata/e4compiletoy
+```
+
+The same toy registers an entry once during process initialization. Repeated
+isolate initialization leaves this host-owned registration alone while its
+registered function reads the selected isolate's initialized graph. Two
+independent instances completed through the Phase 1 `Resume` host loop with
+`1/1/1` results. The updated suite passed 100 race-detector runs on arm64
+and 100 runs under emulated amd64.
+
+The rewrite targets two statically named globals in one toy package. The
+second offset is a toy-specific three-pointer constant checked by a test;
+there is no generated package layout yet. The rewrite does not lay out
+globals across packages, rewrite all access modes or assembly,
+replay dependency init tasks, or isolate a standard-library package. It is a
+compiler feasibility result, not a Phase 2B implementation.
+The compiler toy also passed 100 runs under emulated Linux amd64 after
+cross-compiling from this arm64 host. Another test creates 64 instances in
+parallel and checks that each initialized pointer is distinct. The opt-in
+compiler flag and build tags are required; ordinary builds do not acquire
+global isolation.
+
+On this machine, a five-run workflow-shaped benchmark of a map update,
+pointer mutation, and closure read measured 13.38–14.75 ns/op for a direct
+package global and 18.68–18.87 ns/op for the rewritten global, with zero
+allocations in either case. The small operation pays for several runtime
+getter calls; this toy does not hoist the base or use a direct `g`-offset
+load. After the two-global layout change, three more runs measured
+13.39–13.45 ns/op direct and 18.52–18.73 ns/op rewritten, again with zero
+allocations. Run:
+
+```bash
+cd src
+GOMAXPROCS=1 ../bin/go test -tags=phase0_e4,phase0_e4_compile \
+  -gcflags='internal/isolateproto/testdata/e4compiletoy=-d=isolatee4=1' \
+  -run='^$' -bench='^Benchmark(ProcessGlobal|CompilerGlobalBase)$' \
+  -benchtime=500ms -count=5 -benchmem internal/isolateproto/testdata/e4compiletoy
+```
+
+The E4 exit criterion is met for the scoped toy: compiler-directed global
+access isolates its initialized map, pointer, closure, and integer state, including
+through the registered entry, and its overhead is measured. The process-wide
+registration must be classified separately from isolate-owned globals.
+For the first implementation, rerunning deterministic, restricted package
+initializers is the supported E4 direction. Copying `.data` and `.bss` alone
+would leave the map, pointer, and closure-reachable graph shared. A template
+would additionally need a validated relocation of that heap graph; the E5b
+relocation proof is still open. This chooses an approach for the prototype,
+not a claim that the current compiler flag handles arbitrary packages.
+
+A second E4 benchmark updates a small result map, a pointer allocated during
+initialization, and a closure while one state base is already selected. With
+three 300 ms runs on arm64, direct access was 5.39–6.59 ns/op, an accessor was
+5.58–6.77 ns/op, and base-plus-offset access was 5.52–6.84 ns/op; all were
+zero-allocation. The ranges overlap, so this does not establish a reliable
+overhead difference. It excludes scheduler switching and compiler-generated
+indirection. Run:
+
+```bash
+cd src
+../bin/go test -tags=phase0_e4 -run='^$' -bench='^BenchmarkE4Workflow' -benchtime=300ms -count=3 -benchmem internal/isolateproto
+```
 
 ## E5a: future forceful-kill probe; 100 ms stress gate failed
 
@@ -356,19 +514,30 @@ cd src
 After adding this signal hook, the native Linux arm64 `src/make.bash` rebuild
 and full `go test runtime` package suite passed.
 
-## Gates still open
+## Phase 0 path decision for the trusted MVP
 
-- E0 if the `-toolexec` path remains a candidate: dependency discovery,
-  cache identity, and linked package coverage.
-- E1 ordinary-Go execution and standard-library path coverage.
-- E2 portable hash and map-iterator semantics/cost, including cross-machine
-  replay and reflected iteration.
-- E3 real owned-isolate memory and GC measurements, median/p99 across
-  representative workflows, and a controlled allocation-throughput result.
-- E4 initialized graph isolation and global access cost.
-- E5a, future: arm64 forceful-kill proof for loops, waits, defers, and lock
-  holders, with whole-isolate safe teardown and a confirmed bound. E5b remains
-  conditional on density/relocation.
+The written requirements and E1–E4 scoped results are sufficient to choose
+the **Phase 2B compiler/runtime path**. E1 rules out a claim that the pure-Go
+prototype observes ordinary Go, and the missing whole-build coverage proof
+rules out Phase 2A for this work. E0 is therefore inapplicable. E2 selects
+canonical sorted iteration for the restricted string/integer key set; its
+native and emulated cross-architecture tests pass, with about 2.8–2.9x
+native cost in the current 1k-key run. E3 measures the proxy's 10k-instance
+RSS and GC costs but leaves owned-memory percentiles for Phase 3. E4 proves
+an initialized map/pointer/closure graph can be independently recreated by
+rerunning a restricted initializer through a compiler-selected global base.
 
-Do not claim the final runtime isolate model or start Phase 2B from these
-partial results.
+No snapshot or migration is in the trusted MVP contract. The mixed proxy's
+average RSS does not prove that compaction is required, so E5b is not
+triggered yet. Phase 3 must repeat E3 on real owned isolates and decide
+whether density then triggers E5b and Phase 4. E5a remains a Phase 5 gate.
+
+The selected path still has major implementation gates: Phase 2B must replace
+the one-symbol E4 probe with general global layout and access, handle package
+dependency initialization and a standard-library initialized-state case,
+enforce the E2 key contract or implement a broader portable map mechanism,
+and prove native scheduling/quiescence under channels, sync, timers, and GC.
+Until those pass, the fork has no ordinary-Go isolate claim.
+
+The fork's full Linux arm64 `src/all.bash` suite passed after these Phase 0
+and compiler/runtime probe changes.

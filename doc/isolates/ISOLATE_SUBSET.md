@@ -231,13 +231,21 @@ virtual entry points so the scheduler and GC don't run on simulated time.
 |---|---|
 | `time.Now`, `Since`, `Sleep`, `Tick`, timers | Per-isolate logical clock |
 | `math/rand` | Seeded deterministically from isolate identity |
-| Map iteration order | Deterministic per isolate (runtime, not subset) |
+| Map iteration order | Deterministic across supported architectures for the proven key set; ordinary range still needs Phase 2B implementation |
 | `select` among ready cases | Deterministic per isolate (runtime, not subset) |
 | Goroutine scheduling | Deterministic per isolate |
 | `runtime.Stack`, panic traces | Per-isolate goroutine numbering, rebased addresses |
 | `os.Args`, `os.Environ` | Per-isolate values, if exposed at all |
 
 ## E. Required runtime scoping (not subset bans)
+
+The Phase 0 E2 proof covers string and signed/unsigned integer keys, including
+named types. It visits a sorted snapshot of keys and reads each value when
+visited. Pointer, float, interface, array, and struct keys and reflected map
+iteration remain outside that proof. A Phase 2B compiler check or runtime
+implementation must enforce any narrower key contract; the current subset
+document is not itself enforcement. Expanding the key set requires a portable
+total order and cross-architecture replay tests.
 
 The subset is meaningless unless these are also isolate-scoped. They are runtime
 work, listed here because they are part of the same guarantee:
@@ -264,22 +272,19 @@ count), goroutine count, stack depth, and CPU time before forced preemption.
 
 ---
 
-## A consequence worth exploiting: template isolates
+## Initialization and possible future templates
 
-Per-isolate globals mean every isolate must run `init()` for all isolate-scoped
-packages at creation. At the 10k target, running the full stdlib init sequence
-10k times is a serious startup cost.
+The first implementation runs the permitted packages' initializers for each
+isolate. E4's tagged toy shows why copying static global bytes is insufficient:
+`init` can allocate a map, pointer, and closure whose reachable graph would
+remain shared after that copy. Reexecuting the generated initializer with a
+different global base produced separate graphs in the narrow probe.
 
-But the post-init state is *identical* for every isolate, and the layout is
-already relocatable by decision 9. So: run inits once into a **template image**,
-then create each new isolate by copying the template and rebasing. Startup drops
-from "run all inits" to a memcpy.
-
-This is exactly V8's snapshot mechanism, and it means decision 9's relocatable
-layout now pays for three things rather than two — snapshotting, suspend-time
-compaction, and fast isolate startup. It also has a pleasant determinism
-side-effect: anything an `init` captured from the environment is frozen
-identically into every isolate.
+The 10k target makes repeated initialization cost worth measuring on the real
+implementation. A future template may reduce that cost only after its entire
+post-init pointer graph can be copied or relocated safely, as required by E5b.
+The subset must also reject initializer effects that cannot be repeated
+deterministically or confined to the isolate.
 
 ## What this costs
 

@@ -42,3 +42,19 @@ func BenchmarkSortedKeys1000(b *testing.B) {
 		mapSink = sum
 	}
 }
+
+func BenchmarkRangeMap1000(b *testing.B) {
+	m := make(map[string]int, 1000)
+	for n := range 1000 {
+		m[strconv.Itoa(n)] = n
+	}
+	b.ReportAllocs()
+	for range b.N {
+		sum := 0
+		RangeMap(m, func(_ string, value int) bool {
+			sum += value
+			return true
+		})
+		mapSink = sum
+	}
+}

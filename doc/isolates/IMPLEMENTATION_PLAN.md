@@ -1,6 +1,8 @@
 # Implementation Plan
 
-Status: **revised proposal; feasibility gates not yet passed**. Background in
+Status: **Phase 0 selected the Phase 2B path for the trusted MVP; Phase 2B
+implementation remains incomplete**. Results and decision in
+[PHASE0_RESULTS.md](./PHASE0_RESULTS.md). Background in
 [ISOLATES_DESIGN.md](./ISOLATES_DESIGN.md), [DETERMINISM.md](./DETERMINISM.md),
 [ISOLATE_API.md](./ISOLATE_API.md), [ISOLATE_SUBSET.md](./ISOLATE_SUBSET.md),
 [ALTERNATIVES.md](./ALTERNATIVES.md).

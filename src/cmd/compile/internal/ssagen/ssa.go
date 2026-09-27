@@ -5312,6 +5312,22 @@ func (s *state) addr(n ir.Node) *ssa.Value {
 		switch n.Class {
 		case ir.PEXTERN:
 			// global variable
+			if base.Debug.IsolateE4 != 0 &&
+				types.LocalPkg.Path == "internal/isolateproto/testdata/e4compiletoy" &&
+				(n.Sym().Name == "global" || n.Sym().Name == "epoch") {
+				// Phase 0 E4 probe: redirect two initialized package globals
+				// through a base carried by the current goroutine. The
+				// process-global symbol remains the fallback during ordinary
+				// package initialization, before a base has been selected.
+				basePtr := s.rtcall(typecheck.LookupRuntimeFunc("isolateE4GetBase"), true, []*types.Type{t})[0]
+				hasBase := s.newValue2(ssaop.OpNeqPtr, types.Types[types.TBOOL], basePtr, s.constNil(t))
+				if n.Sym().Name == "epoch" {
+					// The toy's Graph has exactly three pointer-word fields.
+					// A real implementation needs generated package layout data.
+					basePtr = s.newValue1I(ssaop.OpOffPtr, t, 3*int64(types.PtrSize), basePtr)
+				}
+				return s.ternary(hasBase, basePtr, linksymOffset(n.Linksym(), 0))
+			}
 			return linksymOffset(n.Linksym(), 0)
 		case ir.PPARAM:
 			// parameter slot

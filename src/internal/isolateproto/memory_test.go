@@ -21,16 +21,22 @@ import (
 // scheduler goroutines and prototype maps, so it is not a measurement of the
 // later owned-span runtime implementation.
 func BenchmarkIdleProxy(b *testing.B) {
-	benchmarkProxy(b, inboxEntry)
+	benchmarkProxy(b, inboxEntry, 0)
 }
 
 // BenchmarkFanoutProxy parks a workflow with two child activity calls and a
 // parent channel receive, a more representative suspended continuation.
 func BenchmarkFanoutProxy(b *testing.B) {
-	benchmarkProxy(b, fanoutEntry)
+	benchmarkProxy(b, fanoutEntry, 0)
 }
 
-func benchmarkProxy(b *testing.B, entry Entry) {
+// BenchmarkMixedProxy models a workload where one in ten suspended instances
+// has two child calls and a blocked parent; the remainder wait on Inbox.
+func BenchmarkMixedProxy(b *testing.B) {
+	benchmarkProxy(b, inboxEntry, 10)
+}
+
+func benchmarkProxy(b *testing.B, entry Entry, fanoutEvery int) {
 	const count = 10_000
 	for range b.N {
 		runtime.GC()
@@ -41,8 +47,12 @@ func benchmarkProxy(b *testing.B, entry Entry) {
 			b.Fatal(err)
 		}
 		instances := make([]*Isolate, 0, count)
-		for range count {
-			iso, err := New(Config{Entry: entry})
+		for n := range count {
+			instanceEntry := entry
+			if fanoutEvery > 0 && n%fanoutEvery == 0 {
+				instanceEntry = fanoutEntry
+			}
+			iso, err := New(Config{Entry: instanceEntry})
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -67,6 +77,11 @@ func benchmarkProxy(b *testing.B, entry Entry) {
 			after.HeapInuse-before.HeapInuse, rssAfter-rssBefore,
 			after.PauseTotalNs-before.PauseTotalNs, after.GCCPUFraction)
 		runtime.KeepAlive(instances)
+		for _, iso := range instances {
+			if err := iso.Kill(context.Background()); err != nil {
+				b.Fatal(err)
+			}
+		}
 	}
 }
 

@@ -22,9 +22,9 @@ isolates. Driving use case is Temporal workflow isolation.
 
 ## Current Status
 
-🟡 **Phase 1 reference model exists; trusted MVP scope excludes forceful
-cleanup of uninterrupted computation. Phase 2B still depends on its other
-feasibility gates.**
+🟡 **Phase 0 selects the Phase 2B compiler/runtime path for the trusted MVP.
+Phase 2B implementation has begun with an opt-in initialized-global probe;
+ordinary-Go execution remains unproved.**
 
 - [x] Fork created (`mfateev/golang-go`) and synced with `golang/go`
 - [x] Worktree on `task/modify-go-runtime-for-isolates`
@@ -42,7 +42,11 @@ feasibility gates.**
 - [x] Phase 0 targeted signal-stack sample captured busy Go code and
       `runtime.memmove` on native arm64; see PHASE0_RESULTS.md
 - [ ] Integrate bounded targeted sampling into runtime `KillPendingError`
-- [ ] Measure portable-hash vs aeshash cost
+- [x] Measure scalar vs AES hash microbenchmarks; selected E2 prototype uses
+      canonical iteration instead of relying on a hash seed
+- [x] E2 restricted deterministic map-range mechanism: sorted string/integer
+      key snapshot plus live lookup; mutation semantics and arm64/amd64 test
+      pass; about 2.8–2.9x native cost in the current 1k-key run
 - [ ] Tier 1 entry-point guard enumeration
 - [x] Isolate API + boundary ABI — drafted, see ISOLATE_API.md
 - [ ] Goroutine scheduling determinism (the largest remaining piece)
@@ -51,6 +55,9 @@ feasibility gates.**
 - [ ] Floor measurement + nursery prototype
 - [x] Initial E3 proxy measurement at 10k parked instances; see PHASE0_RESULTS.md
 - [x] E3 proxy GC scan/mark/assist/STW and allocation-throughput profiles
+- [x] E3 90/10 Inbox/fan-out mixed proxy at 10k instances: 7.54–7.56 KB
+      incremental RSS per instance in three fresh processes; per-instance
+      median and p99 require real ownership accounting
 - [x] Initial E5a safe-point and narrow kill probes on arm64; general hard kill still open
 - [x] E5a 4 GiB `copy` counterexample: kill request exceeded 100 ms and left
       the target alive on native arm64; see PHASE0_RESULTS.md
@@ -64,8 +71,24 @@ feasibility gates.**
       sampled in the pure-Go prototype.
 - [ ] Integrate revocation and targeted pending diagnostics into the fork runtime
 - [x] Phase 2 initialized-global conformance test recorded (expected failure)
-- [ ] Implementation
-- [ ] Tests (`all.bash`)
+- [x] E4 tagged toy reruns compiler-generated `init.0` with a per-goroutine
+      state base; two initialized map/pointer/closure graphs stay separate
+      under concurrent execution, including a native child goroutine
+- [x] E4 opt-in compiler toy rewrites two initialized globals' addresses through
+      the per-goroutine base; 100 race runs passed with interleaved/concurrent
+      instances and a native child goroutine; 100 emulated amd64 runs passed
+- [x] E4 registered-entry toy reruns isolate initialization without duplicating
+      host registration; two host-loop invocations read independent state
+- [x] Phase 0 path decision: choose Phase 2B for the trusted MVP; E0/Phase 2A
+      are out of scope, E5a remains future, E5b waits for real density results
+- [x] E4 first implementation direction: rerun restricted initializers per
+      isolate; template copying requires a later heap-graph relocation proof
+- [x] E4 workflow-shaped toy benchmark: direct global 13.38–14.75 ns/op,
+      compiler-rewritten global 18.68–18.87 ns/op on Linux arm64
+- [ ] E4 general global layout and rewriting, dependency init order,
+      standard-library initialized-state proof, and goroutine-creation audit
+- [ ] Phase 2B implementation beyond scoped compiler/runtime probes
+- [x] Full Linux arm64 `src/all.bash` after the Phase 0 and E4 probe changes
 
 ## Decisions At A Glance
 
@@ -134,29 +157,29 @@ cd src
 
 ## Next Steps
 
-The Phase 1 reference model and partial Phase 0 observations are recorded in
-[PHASE0_RESULTS.md](./PHASE0_RESULTS.md). Continue the remaining feasibility
-gates in [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) before choosing a
-runtime path.
+The Phase 0 path decision and Phase 1 reference-model results are recorded in
+[PHASE0_RESULTS.md](./PHASE0_RESULTS.md). Continue Phase 2B from the scoped E4
+compiler probe: generalize global layout, initialized dependency state, and
+the native scheduler only as each invariant is tested.
 
-The Phase 1 scheduler now has a `Kill(ctx)` reference path. It does not stop
+The Phase 1 scheduler has a `Kill(ctx)` reference path. It does not stop
 native computation without a `Task` operation and cannot sample an individual
-OS thread. The next implementation step is the runtime-owned revocation and
-dispatch gate, after the execution and state-isolation gates that choose the
-fork path are resolved.
+OS thread. Phase 2B needs the runtime-owned revocation and dispatch gate
+after global state and native scheduling are integrated.
 
-The fork-versus-`-toolexec` decision follows Phase 0's execution coverage,
-map, memory, initialized-state, and hard-kill feasibility proofs. Phase 1 is a
+The Phase 0 decision selects the fork path from its execution coverage, map,
+memory, and initialized-state results. Phase 1 is a
 shared API and host-loop **prototype**; it guarantees determinism only for its
 explicit primitives and does not provide package-global isolation or hostile
 code containment. It does not release the promised ordinary-Go model.
 
-The eventual hostile-code and forceful-kill goals make the compiler/runtime
-fork path the likely final route. The trusted MVP may proceed through Phase
-2B without E5a after its other gates pass; it cannot claim forceful shutdown
+The eventual hostile-code and forceful-kill goals also require the
+compiler/runtime fork. The trusted MVP proceeds through Phase 2B without
+E5a; it cannot claim forceful shutdown
 of an uninterrupted CPU loop or hostile-tenant safety. The current forceful
 probe fails the earlier 100 ms target on an allowed large `copy`. Phase 2A
-remains an optional trusted-code milestone if E0/E1 pass.
+was not selected; revisiting it would first require E0 and a complete E1
+rewriter-coverage proof.
 The revised plan deliberately assigns no implementation durations before the
 gates expose the work.
 
