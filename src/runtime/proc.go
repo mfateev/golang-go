@@ -3390,6 +3390,12 @@ func execute(gp *g, inheritTime bool) {
 		trace.GoStart()
 		traceRelease(trace)
 	}
+	// Phase 0 kill probe: the target has already been moved to a safe point
+	// and resumed as runnable. execute permits write barriers, unlike the
+	// async-preemption continuation. The ordinary build inlines this away.
+	if isolatePhase0Kill(gp) {
+		isolatePhase0Terminate(gp)
+	}
 
 	gogo(&gp.sched)
 }
@@ -4517,6 +4523,9 @@ func gdestroy(gp *g) {
 	pp := mp.p.ptr()
 
 	casgstatus(gp, _Grunning, _Gdead)
+	// Phase 0 kill probe: discard preemption and waiter records only after
+	// the G is dead, before it can enter the G reuse pool.
+	isolatePhase0CleanupDead(gp)
 	gcController.addScannableStack(pp, -int64(gp.stack.hi-gp.stack.lo))
 	if isSystemGoroutine(gp, false) {
 		sched.ngsys.Add(-1)

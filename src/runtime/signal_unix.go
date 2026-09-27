@@ -340,6 +340,7 @@ func sigpipe() {
 
 // doSigPreempt handles a preemption signal on gp.
 func doSigPreempt(gp *g, ctxt *sigctxt) {
+	isolatePhase0CaptureSignalStack(gp, ctxt.sigpc(), ctxt.sigsp(), ctxt.siglr())
 	// Check if this G wants to be preempted and is safe to
 	// preempt.
 	if wantAsyncPreempt(gp) {
