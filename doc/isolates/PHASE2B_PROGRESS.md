@@ -68,3 +68,16 @@ revocation on one P to prove only the first-dispatch case.
 3. Enforce the selected E2 map-key contract or provide a broader portable
    mechanism for ordinary and reflected iteration. Add logical time and
    deterministic selection only after native quiescence is observable.
+
+## Full-suite verification interrupted by filesystem failure
+
+After this runtime change, `src/all.bash` passed the package tests,
+`runtime`, `cmd/compile`, `cmd/go`, alternate build modes, and the race
+section. It failed in the final `../test` section when `/dev/vdb` returned
+write I/O errors and ext4 aborted its journal. `/tmp` and the repository
+became read-only; `cmd/internal/testdir` could no longer create temporary
+files. This is an environment failure, not a completed full-suite gate.
+Recreate or repair the development filesystem, reset the worktree to the
+fork branch, and rerun `src/all.bash` before treating this slice as fully
+verified. The focused native runtime suite, tagged race tests, and emulated
+amd64 tests passed before the filesystem failure.
