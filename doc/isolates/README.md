@@ -14,6 +14,7 @@ runtime implementation is not complete.
 - [Alternatives](./ALTERNATIVES.md) — fork and external instrumentation analysis
 - [Phase 0 results](./PHASE0_RESULTS.md) — experiments and measurements
 - [Phase 2B progress](./PHASE2B_PROGRESS.md) — compiler/runtime slices and remaining invariants
+- [Development and recovery](./DEVELOPMENT.md) — checkout, build, and damaged-container recovery
 
 Run shell commands in these documents from the repository root unless a
 different working directory is stated.

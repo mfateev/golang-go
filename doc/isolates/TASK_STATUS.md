@@ -141,6 +141,11 @@ Starting map, not yet verified against the code:
 
 ## Build & Test Notes
 
+For a Git-only handoff, including the current container filesystem failure
+and recovery steps, see [DEVELOPMENT.md](./DEVELOPMENT.md). The full suite
+after the first-dispatch revocation change is pending; the earlier full-suite
+pass listed above predates that change.
+
 The active development target is the container's native **Linux arm64**
 (`uname -m` reports `aarch64`; the rebuilt tree's `go version` reports
 `linux/arm64`). E5a measurements and hard-kill acceptance tests run on this

@@ -69,15 +69,17 @@ revocation on one P to prove only the first-dispatch case.
    mechanism for ordinary and reflected iteration. Add logical time and
    deterministic selection only after native quiescence is observable.
 
-## Full-suite verification interrupted by filesystem failure
+## Full-suite verification pending after filesystem failure
 
 After this runtime change, `src/all.bash` passed the package tests,
 `runtime`, `cmd/compile`, `cmd/go`, alternate build modes, and the race
 section. It failed in the final `../test` section when `/dev/vdb` returned
-write I/O errors and ext4 aborted its journal. `/tmp` and the repository
-became read-only; `cmd/internal/testdir` could no longer create temporary
-files. This is an environment failure, not a completed full-suite gate.
-Recreate or repair the development filesystem, reset the worktree to the
-fork branch, and rerun `src/all.bash` before treating this slice as fully
+write I/O errors and ext4 aborted its journal. `/tmp` became read-only;
+`cmd/internal/testdir` could no longer create temporary files. The worktree
+was restored on its writable bind mount, but `/tmp` remained read-only.
+Namespace-based reruns were inconclusive for the reasons recorded in
+[DEVELOPMENT.md](./DEVELOPMENT.md). Recreate or repair the development root
+filesystem and rerun `src/all.bash` before treating this slice as fully
 verified. The focused native runtime suite, tagged race tests, and emulated
-amd64 tests passed before the filesystem failure.
+amd64 tests passed before the filesystem failure. The documentation update
+was pushed at the user's request without another test run.
