@@ -868,6 +868,11 @@ var depsRules = `
 	internal/coverage/cfile, internal/fuzz, internal/testlog, runtime/pprof, regexp
 	< testing/internal/testdeps;
 
+	# Experimental isolate API and host-loop reference model.
+	context, encoding/binary, encoding/json, errors, fmt, math,
+	runtime, sort, sync, sync/atomic, time
+	< internal/isolateproto;
+
 	# Test-only packages can have anything they want
 
 	FMT, compress/gzip, embed, encoding/binary
