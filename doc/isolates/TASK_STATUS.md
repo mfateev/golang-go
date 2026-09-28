@@ -92,8 +92,9 @@ ordinary-Go execution remains unproved.**
       inlineable functions from the opt-in package, verified by 100 native
       arm64 race runs
 - [x] Initial package-state partition recorded; a tagged two-package probe
-      selects independent layouts across one dependency edge, reruns both
-      initializers in order, and passes 100 native arm64 race runs
+      selects independent layouts across one dependency edge; an explicit
+      manifest helper orders and reruns both initializers, and passes 100
+      native arm64 race runs
 - [x] Tagged `encoding/base64` probe reruns four initialized encoding
       pointers per instance; a directly importing caller selects the instance
       globals with a manual compiler flag; 100 native arm64 race runs passed

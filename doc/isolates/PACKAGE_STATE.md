@@ -26,16 +26,19 @@ missing key in a selected table panics instead of silently reading process
 state. With no table selected, ordinary process initialization uses the
 process globals, and the older single-package probe can still use its base.
 
-The test explicitly reruns the dependency's generated variable initializer
-and user `init`, followed by the importer's variable initializer and user
-`init`. The importer reads an initialized dependency global, then both
-packages mutate their own graphs. Two instances and an inherited child passed
-100 native arm64 race-detector runs.
+The tagged host helper `NewPackageInstance` accepts an explicit package
+manifest: identity key, layout type, selected dependencies, and generated
+variable and user initializer functions. It validates missing dependencies
+and cycles, allocates each selected layout, and runs initializers in dependency
+order. The test deliberately lists the importer before its dependency. The
+importer reads an initialized dependency global, then both packages mutate
+their own graphs. Two instances and an inherited child passed 100 native
+arm64 race-detector runs.
 
-This establishes the needed ordering for one known dependency edge. Package
-discovery, a general dependency DAG, automatic per-instance initialization,
-and a single contiguous base with linker-assigned package offsets remain to
-be implemented. The tagged table is a probe for the access rule, not the final
+This establishes manifest-driven ordering for the selected package graph.
+Package discovery, generated initializer metadata, and a single contiguous
+base with linker-assigned package offsets remain to be implemented. The tagged
+table and host helper are probes for the access rule, not the final API or
 layout architecture.
 
 ## Standard-library initialized-state probe

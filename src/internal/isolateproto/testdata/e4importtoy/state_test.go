@@ -7,6 +7,7 @@
 package e4importtoy_test
 
 import (
+	"internal/isolateproto"
 	"internal/isolateproto/testdata/e4importtoy"
 	"sync"
 	"testing"
@@ -25,15 +26,6 @@ var importType unsafe.Pointer
 //go:linkname importKey internal/isolateproto/testdata/e4importtoy.isolateLayoutKey
 var importKey byte
 
-//go:linkname newPackageBases runtime.isolateE4NewPackageBases
-func newPackageBases([]unsafe.Pointer, []unsafe.Pointer) unsafe.Pointer
-
-//go:linkname setPackageBases runtime.isolateE4SetPackageBases
-func setPackageBases(unsafe.Pointer) unsafe.Pointer
-
-//go:linkname packageBase runtime.isolateE4PackageBase
-func packageBase(unsafe.Pointer, unsafe.Pointer) unsafe.Pointer
-
 //go:linkname rerunDepVars internal/isolateproto/testdata/e4deptoy.init
 func rerunDepVars()
 
@@ -46,13 +38,7 @@ func rerunImportVars()
 //go:linkname rerunImportInit internal/isolateproto/testdata/e4importtoy.init.0
 func rerunImportInit()
 
-func withPackageBases(table unsafe.Pointer, fn func()) {
-	old := setPackageBases(table)
-	defer setPackageBases(old)
-	fn()
-}
-
-func newInstance(t *testing.T) unsafe.Pointer {
+func newInstance(t *testing.T) *isolateproto.PackageInstance {
 	t.Helper()
 	if depType == nil || importType == nil {
 		t.Fatal("compiler did not emit both package layout types")
@@ -62,17 +48,27 @@ func newInstance(t *testing.T) unsafe.Pointer {
 	if dep == imp {
 		t.Fatal("package identity symbols are shared")
 	}
-	table := newPackageBases([]unsafe.Pointer{dep, imp}, []unsafe.Pointer{depType, importType})
-	if packageBase(table, dep) == packageBase(table, imp) {
-		t.Fatal("dependent packages share global storage")
-	}
-	withPackageBases(table, func() {
-		rerunDepVars()
-		rerunDepInit()
-		rerunImportVars()
-		rerunImportInit()
+	instance, err := isolateproto.NewPackageInstance([]isolateproto.PackageInitSpec{
+		// Deliberately list the importer first. The host must still run its
+		// selected dependency's initializers before the importer's.
+		{
+			Path:         "internal/isolateproto/testdata/e4importtoy",
+			Key:          imp,
+			Type:         importType,
+			Dependencies: []string{"internal/isolateproto/testdata/e4deptoy"},
+			Initializers: []func(){rerunImportVars, rerunImportInit},
+		},
+		{
+			Path:         "internal/isolateproto/testdata/e4deptoy",
+			Key:          dep,
+			Type:         depType,
+			Initializers: []func(){rerunDepVars, rerunDepInit},
+		},
 	})
-	return table
+	if err != nil {
+		t.Fatal(err)
+	}
+	return instance
 }
 
 func checkRun(t *testing.T, want int) {
@@ -85,15 +81,15 @@ func checkRun(t *testing.T, want int) {
 
 func TestPackageDependencyInitialization(t *testing.T) {
 	a, b := newInstance(t), newInstance(t)
-	withPackageBases(a, func() { checkRun(t, 42) })
-	withPackageBases(a, func() { checkRun(t, 43) })
-	withPackageBases(b, func() { checkRun(t, 42) })
-	withPackageBases(b, func() { checkRun(t, 43) })
+	a.Run(func() { checkRun(t, 42) })
+	a.Run(func() { checkRun(t, 43) })
+	b.Run(func() { checkRun(t, 42) })
+	b.Run(func() { checkRun(t, 43) })
 }
 
 func TestPackageBasesInheritedByChild(t *testing.T) {
 	table := newInstance(t)
-	withPackageBases(table, func() {
+	table.Run(func() {
 		var wg sync.WaitGroup
 		wg.Add(1)
 		go func() {
@@ -106,8 +102,16 @@ func TestPackageBasesInheritedByChild(t *testing.T) {
 }
 
 func TestMissingPackageStateFailsClosed(t *testing.T) {
-	table := newPackageBases([]unsafe.Pointer{unsafe.Pointer(&depKey)}, []unsafe.Pointer{depType})
-	withPackageBases(table, func() {
+	table, err := isolateproto.NewPackageInstance([]isolateproto.PackageInitSpec{{
+		Path:         "internal/isolateproto/testdata/e4deptoy",
+		Key:          unsafe.Pointer(&depKey),
+		Type:         depType,
+		Initializers: []func(){rerunDepVars, rerunDepInit},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	table.Run(func() {
 		defer func() {
 			if r := recover(); r == nil {
 				t.Error("importing package used process state without a package layout")
@@ -115,4 +119,18 @@ func TestMissingPackageStateFailsClosed(t *testing.T) {
 		}()
 		e4importtoy.Run()
 	})
+}
+
+func TestPackageInitManifestValidation(t *testing.T) {
+	dep := isolateproto.PackageInitSpec{
+		Path: "dep", Key: unsafe.Pointer(&depKey), Type: depType,
+		Dependencies: []string{"missing"},
+	}
+	if _, err := isolateproto.NewPackageInstance([]isolateproto.PackageInitSpec{dep}); err == nil {
+		t.Error("accepted an absent selected dependency")
+	}
+	dep.Dependencies = []string{"dep"}
+	if _, err := isolateproto.NewPackageInstance([]isolateproto.PackageInitSpec{dep}); err == nil {
+		t.Error("accepted a package initialization cycle")
+	}
 }

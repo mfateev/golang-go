@@ -86,8 +86,11 @@ goroutine calls across the dependency edge. The test reruns both packages'
 variable and user initializers in dependency order, verifies that the importer
 observes the dependency's initialized state, and then mutates both graphs in
 two independent instances. A native child inherits the package table.
-One hundred native arm64 race runs passed. The table is a temporary probe;
-whole-program selection and automatic initialization remain open. The new
+One hundred native arm64 race runs passed. The tagged `NewPackageInstance`
+helper now accepts an explicit manifest, validates selected dependencies,
+sorts their initializers topologically, and creates the state table. The test
+lists the importer first to check ordering. Whole-program selection and
+generated initializer metadata remain open. The new
 `runtime.g` field changed `TestSizeof`; after updating its checked size, the
 focused native `runtime` test passed. A Linux/386 runtime test binary compiled,
 but was not executed. The complete native `src/all.bash` suite then passed,
