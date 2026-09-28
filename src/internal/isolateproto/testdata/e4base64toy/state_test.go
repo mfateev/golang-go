@@ -8,6 +8,7 @@ package e4base64toy_test
 
 import (
 	"encoding/base64"
+	"internal/isolateproto"
 	"internal/isolateproto/testdata/e4base64toy"
 	"testing"
 	"unsafe"
@@ -19,37 +20,32 @@ var layoutType unsafe.Pointer
 //go:linkname layoutKey encoding/base64.isolateLayoutKey
 var layoutKey byte
 
-//go:linkname newPackageBases runtime.isolateE4NewPackageBases
-func newPackageBases([]unsafe.Pointer, []unsafe.Pointer) unsafe.Pointer
+//go:linkname base64InitTask encoding/base64.isolateInitTask
+var base64InitTask byte
 
-//go:linkname setPackageBases runtime.isolateE4SetPackageBases
-func setPackageBases(unsafe.Pointer) unsafe.Pointer
-
-//go:linkname rerunBase64Init encoding/base64.init
-func rerunBase64Init()
-
-func withPackageBases(table unsafe.Pointer, fn func()) {
-	old := setPackageBases(table)
-	defer setPackageBases(old)
-	fn()
-}
-
-func newInstance(t *testing.T) unsafe.Pointer {
+func newInstance(t *testing.T) *isolateproto.PackageInstance {
 	t.Helper()
 	if layoutType == nil {
 		t.Fatal("compiler did not emit the base64 package layout type")
 	}
-	table := newPackageBases([]unsafe.Pointer{unsafe.Pointer(&layoutKey)}, []unsafe.Pointer{layoutType})
-	withPackageBases(table, rerunBase64Init)
-	return table
+	instance, err := isolateproto.NewPackageInstance([]isolateproto.PackageInitSpec{{
+		Path:     "encoding/base64",
+		Key:      unsafe.Pointer(&layoutKey),
+		Type:     layoutType,
+		InitTask: unsafe.Pointer(&base64InitTask),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return instance
 }
 
 func TestStandardLibraryInitializedState(t *testing.T) {
 	processStd, _, processRaw, _ := e4base64toy.Snapshot()
 	a, b := newInstance(t), newInstance(t)
 	var aStd, aURL, aRaw, aRawURL, bStd, bURL, bRaw, bRawURL *base64.Encoding
-	withPackageBases(a, func() { aStd, aURL, aRaw, aRawURL = e4base64toy.Snapshot() })
-	withPackageBases(b, func() { bStd, bURL, bRaw, bRawURL = e4base64toy.Snapshot() })
+	a.Run(func() { aStd, aURL, aRaw, aRawURL = e4base64toy.Snapshot() })
+	b.Run(func() { bStd, bURL, bRaw, bRawURL = e4base64toy.Snapshot() })
 	if aStd == bStd || aStd == processStd || bStd == processStd ||
 		aURL == bURL || aRaw == bRaw || aRaw == processRaw || bRaw == processRaw ||
 		aRawURL == bRawURL {
@@ -57,7 +53,7 @@ func TestStandardLibraryInitializedState(t *testing.T) {
 	}
 
 	input := []byte{0xfb, 0xef}
-	withPackageBases(a, func() {
+	a.Run(func() {
 		e4base64toy.SetStd(aURL)
 		if got := e4base64toy.EncodeStd(input); got != "--8=" {
 			t.Errorf("instance a standard encoding after change = %q", got)
@@ -66,7 +62,7 @@ func TestStandardLibraryInitializedState(t *testing.T) {
 			t.Errorf("instance a raw standard encoding = %q", got)
 		}
 	})
-	withPackageBases(b, func() {
+	b.Run(func() {
 		if got := e4base64toy.EncodeStd(input); got != "++8=" {
 			t.Errorf("instance b standard encoding changed = %q", got)
 		}

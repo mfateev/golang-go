@@ -90,7 +90,10 @@ One hundred native arm64 race runs passed. The tagged `NewPackageInstance`
 helper now accepts an explicit manifest, validates selected dependencies,
 sorts their initializers topologically, and creates the state table. The test
 lists the importer first to check ordering. Whole-program selection and
-generated initializer metadata remain open. The new
+generated dependency metadata remain open. The compiler now emits an immutable
+per-package initializer record, separate from the process init task's state.
+The host helper replays it for the dependency toy and `encoding/base64`; both
+tagged tests passed 100 native arm64 race runs. The new
 `runtime.g` field changed `TestSizeof`; after updating its checked size, the
 focused native `runtime` test passed. A Linux/386 runtime test binary compiled,
 but was not executed. The complete native `src/all.bash` suite then passed,
@@ -157,7 +160,7 @@ standard-library cases remain open.
 The opt-in compiler now emits a package-owned offset symbol for each exported
 global. A caller using `-d=isolateimports=encoding/base64` loads that offset
 and the package identity key, then selects the current instance's address.
-The generated metadata and replayable initializer are explicitly linkable,
+The generated layout metadata and initializer record are explicitly linkable,
 which permits the tagged test to use a standard-library package. Two reruns
 of `encoding/base64` initialization create separate standard, URL, and raw
 encoding pointers. A direct `StdEncoding` assignment in an importing package
@@ -173,10 +176,17 @@ GOMAXPROCS=4 GOGC=20 ../bin/go test -race \
 ```
 
 The imported-package flag is manual. Package selection, transitive caller
-coverage, automatic init order, and the standard library's process-state
+coverage, generated dependency discovery, and the standard library's process-state
 audit remain open; this probe does not establish whole-program isolation.
 The complete native `src/all.bash` suite passed after this change, including
 the race section and `../test`.
+
+After the generated initializer record and host replay helper were added,
+the dependency and `encoding/base64` tagged tests each passed 100 native
+arm64 race runs. A subsequent complete native `src/all.bash` run also passed,
+including its race and `../test` sections. The tagged two-package test binary
+compiled for Linux/386; it was not executed. Package dependency selection and
+transitive caller coverage still require explicit host/build inputs.
 
 The current container lacks `qemu-x86_64`; amd64 execution was deferred at
 the user's request. The amd64 tagged runtime test binary compiled.

@@ -123,6 +123,26 @@ func MakeTask() {
 		}
 		fns = append(fns, lsym)
 	}
+	if base.Debug.IsolateGlobals != 0 && base.Debug.IsolateInit != 0 {
+		// The tagged host replays this package's own initializers for each
+		// selected state. Emit a separate, immutable function list instead
+		// of reusing the process init task's mutable completion state.
+		sym := typecheck.Lookup("isolateInitTask")
+		if sym.Def != nil {
+			base.Fatalf("isolate: source declaration conflicts with generated init task symbol")
+		}
+		task := ir.NewNameAt(base.Pos, sym, types.Types[types.TUINT8])
+		task.Class = ir.PEXTERN
+		sym.Def = task
+		lsym := task.Linksym()
+		lsym.Set(obj.AttrLinkname, true)
+		ot := objw.Uint32(lsym, 0, uint32(len(fns)))
+		ot = objw.Uint32(lsym, ot, 0) // align the function list on 64-bit targets
+		for _, f := range fns {
+			ot = objw.SymPtr(lsym, ot, f, 0)
+		}
+		objw.Global(lsym, int32(ot), obj.RODATA|obj.NOPTR)
+	}
 
 	if len(deps) == 0 && len(fns) == 0 && types.LocalPkg.Path != "main" && types.LocalPkg.Path != "runtime" {
 		return // nothing to initialize

@@ -60,6 +60,19 @@ func isolateE4NewPackageBases(keys, types []unsafe.Pointer) unsafe.Pointer {
 	return unsafe.Pointer(table)
 }
 
+//go:linkname isolateE4RunInitTask
+func isolateE4RunInitTask(task unsafe.Pointer) {
+	// The compiler emits an immutable count and function list for each
+	// opted-in package. The process init task's completion state is separate.
+	nfns := *(*uint32)(task)
+	firstFunc := add(task, 8)
+	for i := uint32(0); i < nfns; i++ {
+		p := add(firstFunc, uintptr(i)*unsafe.Sizeof(uintptr(0)))
+		f := *(*func())(unsafe.Pointer(&p))
+		f()
+	}
+}
+
 func (table *isolateE4PackageBases) base(key unsafe.Pointer) unsafe.Pointer {
 	for i, candidate := range table.keys {
 		if candidate == key {

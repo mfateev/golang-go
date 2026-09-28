@@ -27,8 +27,8 @@ state. With no table selected, ordinary process initialization uses the
 process globals, and the older single-package probe can still use its base.
 
 The tagged host helper `NewPackageInstance` accepts an explicit package
-manifest: identity key, layout type, selected dependencies, and generated
-variable and user initializer functions. It validates missing dependencies
+manifest: identity key, layout type, selected dependencies, and the compiler's
+immutable initializer record. It validates missing dependencies
 and cycles, allocates each selected layout, and runs initializers in dependency
 order. The test deliberately lists the importer before its dependency. The
 importer reads an initialized dependency global, then both packages mutate
@@ -36,7 +36,7 @@ their own graphs. Two instances and an inherited child passed 100 native
 arm64 race-detector runs.
 
 This establishes manifest-driven ordering for the selected package graph.
-Package discovery, generated initializer metadata, and a single contiguous
+Package discovery, generated dependency metadata, and a single contiguous
 base with linker-assigned package offsets remain to be implemented. The tagged
 table and host helper are probes for the access rule, not the final API or
 layout architecture.
@@ -51,14 +51,15 @@ instances. The four encoding pointers differ between instances and from the
 process values. An importing package compiled with
 `-d=isolateimports=encoding/base64` can read and reassign `StdEncoding` through
 the selected layout; changing one instance leaves the other and the process
-unchanged. The test passed 100 native arm64 race-detector runs.
+unchanged. The tagged host helper now replays the compiler's initializer
+record for this package; the test passed 100 native arm64 race-detector runs.
 
 This imported-global flag is a manual probe setting, not package discovery.
 Every compiler invocation that directly accesses an opted-in package's
 exported globals must select it; an omitted flag can still read the process
 global. The package's generated offset and identity symbols are linkable so
-the importing compiler can find its layout, and its initializer is callable
-for manual replay. Its imports and any calls into process-owned runtime
+the importing compiler can find its layout. The compiler's initializer record
+is linkable for host replay. Its imports and any calls into process-owned runtime
 services still need review before `encoding/base64` can be placed in a
 supported isolate package set. `encoding/json` has shared caches and pools,
 so using it as the first proof would mix initialization with a broader

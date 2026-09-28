@@ -26,17 +26,11 @@ var importType unsafe.Pointer
 //go:linkname importKey internal/isolateproto/testdata/e4importtoy.isolateLayoutKey
 var importKey byte
 
-//go:linkname rerunDepVars internal/isolateproto/testdata/e4deptoy.init
-func rerunDepVars()
+//go:linkname depInitTask internal/isolateproto/testdata/e4deptoy.isolateInitTask
+var depInitTask byte
 
-//go:linkname rerunDepInit internal/isolateproto/testdata/e4deptoy.init.0
-func rerunDepInit()
-
-//go:linkname rerunImportVars internal/isolateproto/testdata/e4importtoy.init
-func rerunImportVars()
-
-//go:linkname rerunImportInit internal/isolateproto/testdata/e4importtoy.init.0
-func rerunImportInit()
+//go:linkname importInitTask internal/isolateproto/testdata/e4importtoy.isolateInitTask
+var importInitTask byte
 
 func newInstance(t *testing.T) *isolateproto.PackageInstance {
 	t.Helper()
@@ -56,13 +50,13 @@ func newInstance(t *testing.T) *isolateproto.PackageInstance {
 			Key:          imp,
 			Type:         importType,
 			Dependencies: []string{"internal/isolateproto/testdata/e4deptoy"},
-			Initializers: []func(){rerunImportVars, rerunImportInit},
+			InitTask:     unsafe.Pointer(&importInitTask),
 		},
 		{
-			Path:         "internal/isolateproto/testdata/e4deptoy",
-			Key:          dep,
-			Type:         depType,
-			Initializers: []func(){rerunDepVars, rerunDepInit},
+			Path:     "internal/isolateproto/testdata/e4deptoy",
+			Key:      dep,
+			Type:     depType,
+			InitTask: unsafe.Pointer(&depInitTask),
 		},
 	})
 	if err != nil {
@@ -103,10 +97,10 @@ func TestPackageBasesInheritedByChild(t *testing.T) {
 
 func TestMissingPackageStateFailsClosed(t *testing.T) {
 	table, err := isolateproto.NewPackageInstance([]isolateproto.PackageInitSpec{{
-		Path:         "internal/isolateproto/testdata/e4deptoy",
-		Key:          unsafe.Pointer(&depKey),
-		Type:         depType,
-		Initializers: []func(){rerunDepVars, rerunDepInit},
+		Path:     "internal/isolateproto/testdata/e4deptoy",
+		Key:      unsafe.Pointer(&depKey),
+		Type:     depType,
+		InitTask: unsafe.Pointer(&depInitTask),
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +117,7 @@ func TestMissingPackageStateFailsClosed(t *testing.T) {
 
 func TestPackageInitManifestValidation(t *testing.T) {
 	dep := isolateproto.PackageInitSpec{
-		Path: "dep", Key: unsafe.Pointer(&depKey), Type: depType,
+		Path: "dep", Key: unsafe.Pointer(&depKey), Type: depType, InitTask: unsafe.Pointer(&depInitTask),
 		Dependencies: []string{"missing"},
 	}
 	if _, err := isolateproto.NewPackageInstance([]isolateproto.PackageInitSpec{dep}); err == nil {
