@@ -14,11 +14,13 @@ import (
 )
 
 // isolateRevocationGroup is the first-dispatch experiment for Phase 2B.
-// A complete isolate also needs ownership of parked waiters and an execution
-// count before its Kill operation can report that all goroutines have stopped.
+// The high bit of admission records revocation; the low bits count goroutines
+// admitted at first dispatch and not yet destroyed. A complete isolate also
+// needs ownership of parked waiters and an execution count before Kill can
+// report that no goroutine is executing.
 type isolateRevocationGroup struct {
-	revoked atomic.Bool
-	live    atomic.Int32
+	admission atomic.Uint64
+	live      atomic.Int32
 }
 
 // defined constants
@@ -572,6 +574,7 @@ type g struct {
 	isolateE4Base   unsafe.Pointer          // tagged Phase 0 global-base experiment
 	isolateGroup    *isolateRevocationGroup // tagged Phase 2B first-dispatch experiment
 	isolateStarted  bool
+	isolateAdmitted bool
 	timer           *timer        // cached timer for time.Sleep
 	sleepWhen       int64         // when to sleep until
 	selectDone      atomic.Uint32 // are we participating in a select and did someone win the race?

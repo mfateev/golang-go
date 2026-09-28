@@ -4,12 +4,39 @@
 
 package runtime
 
+const isolateRevokedBit = uint64(1) << 63
+
 // isolateFirstDispatchRevoked admits a newly created goroutine only if its
-// inherited group has not been revoked. Running and previously parked
-// goroutines are deliberately outside this first-dispatch experiment.
+// inherited group has not been revoked. The CAS linearizes admission with
+// revocation across Ps. Running and previously parked goroutines are outside
+// this first-dispatch experiment.
 func isolateFirstDispatchRevoked(gp *g) bool {
 	group := gp.isolateGroup
-	return group != nil && !gp.isolateStarted && group.revoked.Load()
+	if group == nil || gp.isolateStarted {
+		return false
+	}
+	for {
+		state := group.admission.Load()
+		if state&isolateRevokedBit != 0 {
+			return true
+		}
+		if state == isolateRevokedBit-1 {
+			throw("isolate: admission count overflow")
+		}
+		if group.admission.CompareAndSwap(state, state+1) {
+			gp.isolateAdmitted = true
+			return false
+		}
+	}
+}
+
+func (group *isolateRevocationGroup) revoke() {
+	for {
+		state := group.admission.Load()
+		if state&isolateRevokedBit != 0 || group.admission.CompareAndSwap(state, state|isolateRevokedBit) {
+			return
+		}
+	}
 }
 
 // isolateTerminateBeforeStart runs on g0 after execute has made gp current

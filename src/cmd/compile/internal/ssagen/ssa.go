@@ -5312,6 +5312,16 @@ func (s *state) addr(n ir.Node) *ssa.Value {
 		switch n.Class {
 		case ir.PEXTERN:
 			// global variable
+			if base.Debug.IsolateGlobals != 0 {
+				if offset, ok := isolateGlobalOffset(n); ok {
+					basePtr := s.rtcall(typecheck.LookupRuntimeFunc("isolateE4GetBase"), true, []*types.Type{t})[0]
+					hasBase := s.newValue2(ssaop.OpNeqPtr, types.Types[types.TBOOL], basePtr, s.constNil(t))
+					if offset != 0 {
+						basePtr = s.newValue1I(ssaop.OpOffPtr, t, offset, basePtr)
+					}
+					return s.ternary(hasBase, basePtr, linksymOffset(n.Linksym(), 0))
+				}
+			}
 			if base.Debug.IsolateE4 != 0 &&
 				types.LocalPkg.Path == "internal/isolateproto/testdata/e4compiletoy" &&
 				(n.Sym().Name == "global" || n.Sym().Name == "epoch") {

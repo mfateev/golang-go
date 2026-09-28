@@ -303,7 +303,7 @@ goroutines, and a native child goroutine. It passed 100 race-detector runs at
 cd src
 GOMAXPROCS=4 GOGC=20 ../bin/go test -race \
   -tags=phase0_e4,phase0_e4_compile \
-  -gcflags='internal/isolateproto/testdata/e4compiletoy=-d=isolatee4=1' \
+  -gcflags='internal/isolateproto/testdata/e4compiletoy=-d=isolatee4=1,isolateinit=1' \
   -count=100 internal/isolateproto/testdata/e4compiletoy
 ```
 
@@ -338,7 +338,7 @@ allocations. Run:
 ```bash
 cd src
 GOMAXPROCS=1 ../bin/go test -tags=phase0_e4,phase0_e4_compile \
-  -gcflags='internal/isolateproto/testdata/e4compiletoy=-d=isolatee4=1' \
+  -gcflags='internal/isolateproto/testdata/e4compiletoy=-d=isolatee4=1,isolateinit=1' \
   -run='^$' -bench='^Benchmark(ProcessGlobal|CompilerGlobalBase)$' \
   -benchtime=500ms -count=5 -benchmem internal/isolateproto/testdata/e4compiletoy
 ```

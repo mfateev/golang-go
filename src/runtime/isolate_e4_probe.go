@@ -23,3 +23,8 @@ func isolateE4SetBase(base unsafe.Pointer) unsafe.Pointer {
 func isolateE4GetBase() unsafe.Pointer {
 	return getg().isolateE4Base
 }
+
+//go:linkname isolateE4NewState
+func isolateE4NewState(typ unsafe.Pointer) unsafe.Pointer {
+	return newobject((*_type)(typ))
+}

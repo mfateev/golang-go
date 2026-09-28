@@ -30,7 +30,7 @@ type State struct {
 // The compiler probe rewrites accesses to this variable through the current
 // goroutine's base. No source-level accessor is used by init or RunCurrent.
 var global Graph
-var epoch int
+var epoch = 41
 var processGlobal Graph    // direct-access comparison for the E4 benchmark
 var registerOnce sync.Once // host-owned; process-global by design
 var Entry isolateproto.Entry
@@ -51,15 +51,24 @@ func init() {
 	global.Count = n
 	global.Values = map[string]int{"n": 0}
 	global.Read = func() int { return *n }
-	epoch++
+	epoch -= 40
 }
+
+// The opt-in compiler mode keeps statically representable assignments in the
+// generated variable initializer so a fresh base receives them before init.0.
+//
+//go:linkname rerunVarInit internal/isolateproto/testdata/e4compiletoy.init
+func rerunVarInit()
 
 //go:linkname rerunInit internal/isolateproto/testdata/e4compiletoy.init.0
 func rerunInit()
 
 func New() *State {
 	s := new(State)
-	WithBase(s, rerunInit)
+	WithBase(s, func() {
+		rerunVarInit()
+		rerunInit()
+	})
 	return s
 }
 

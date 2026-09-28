@@ -87,7 +87,10 @@ func MakeTask() {
 
 	// Record user init functions.
 	for _, fn := range typecheck.Target.Inits {
-		if staticinit.CanOptimize(fn) {
+		// An isolate package reruns variable initialization for each
+		// selected base. Keep assignments in executable init code instead
+		// of moving them into the process-global data image.
+		if staticinit.CanOptimize(fn) && base.Debug.IsolateInit == 0 {
 			s := staticinit.Schedule{
 				Plans: make(map[ir.Node]*staticinit.Plan),
 				Temps: make(map[ir.Node]*ir.Name),

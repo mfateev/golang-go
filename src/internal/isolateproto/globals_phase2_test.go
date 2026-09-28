@@ -14,7 +14,8 @@ import (
 
 // This intentionally failing conformance test is enabled only when the
 // Phase 2 initialized-global isolation mechanism is ready to be evaluated.
-// It covers a mutable map, pointer, and closure created during package init.
+// It covers a mutable map, pointer, and closure created during package init,
+// including an entry adapter that captures an initialized pointer.
 var phase2Global = func() struct {
 	count  *int
 	values map[string]int
@@ -28,11 +29,14 @@ var phase2Global = func() struct {
 	}{count: count, values: map[string]int{"n": 0}, read: func() int { return *count }}
 }()
 
-var phase2Entry = Register("isolateproto.phase2.globals", func(_ *Task, _ []byte) ([]byte, error) {
-	*phase2Global.count++
-	phase2Global.values["n"]++
-	return []byte(fmt.Sprintf("%d/%d/%d", *phase2Global.count, phase2Global.values["n"], phase2Global.read())), nil
-})
+var phase2Entry = func() Entry {
+	capturedCount := phase2Global.count
+	return Register("isolateproto.phase2.globals", func(_ *Task, _ []byte) ([]byte, error) {
+		*capturedCount++
+		phase2Global.values["n"]++
+		return []byte(fmt.Sprintf("%d/%d/%d", *capturedCount, phase2Global.values["n"], phase2Global.read())), nil
+	})
+}()
 
 func TestInitializedGlobalsAreIsolated(t *testing.T) {
 	for instance := range 2 {

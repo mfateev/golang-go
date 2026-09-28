@@ -4548,10 +4548,14 @@ func gdestroy(gp *g) {
 	gp.labels = nil
 	gp.isolateE4Base = nil
 	if gp.isolateGroup != nil {
+		if gp.isolateAdmitted {
+			gp.isolateGroup.admission.Add(-1)
+		}
 		gp.isolateGroup.live.Add(-1)
 		gp.isolateGroup = nil
 	}
 	gp.isolateStarted = false
+	gp.isolateAdmitted = false
 	gp.timer = nil
 	gp.bubble = nil
 	gp.fipsOnlyBypass = false
@@ -5413,6 +5417,7 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	newg.isolateE4Base = nil
 	newg.isolateGroup = nil
 	newg.isolateStarted = false
+	newg.isolateAdmitted = false
 	if isSystemGoroutine(newg, false) {
 		sched.ngsys.Add(1)
 	} else {

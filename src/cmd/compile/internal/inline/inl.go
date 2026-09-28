@@ -352,6 +352,13 @@ func InlineImpossible(fn *ir.Func) string {
 		reason = "no name"
 		return reason
 	}
+	// The isolate layout is known only to the package that owns it. If an
+	// exported body is inlined by another package, its global accesses bypass
+	// the owner's SSA redirection. Keep calls into opt-in packages intact until
+	// their layout can be represented in export data.
+	if base.Debug.IsolateGlobals != 0 && fn.Nname.Sym().Pkg == types.LocalPkg {
+		return "package uses an isolate global layout"
+	}
 
 	// If marked "go:noinline", don't inline.
 	if fn.Pragma&ir.Noinline != 0 {

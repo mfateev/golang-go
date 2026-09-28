@@ -33,11 +33,25 @@ func IsolateTestLeaveGroup() {
 }
 
 func IsolateTestRevokeGroup(p unsafe.Pointer) {
-	(*isolateRevocationGroup)(p).revoked.Store(true)
+	(*isolateRevocationGroup)(p).revoke()
 }
 
 func IsolateTestGroupLive(p unsafe.Pointer) int32 {
 	return (*isolateRevocationGroup)(p).live.Load()
+}
+
+func IsolateTestAdmitGroup(p unsafe.Pointer) bool {
+	gp := &g{isolateGroup: (*isolateRevocationGroup)(p)}
+	return !isolateFirstDispatchRevoked(gp)
+}
+
+func IsolateTestGroupAdmission(p unsafe.Pointer) (revoked bool, count uint64) {
+	state := (*isolateRevocationGroup)(p).admission.Load()
+	return state&isolateRevokedBit != 0, state &^ isolateRevokedBit
+}
+
+func IsolateTestReleaseAdmission(p unsafe.Pointer) {
+	(*isolateRevocationGroup)(p).admission.Add(-1)
 }
 
 func IsolateTestNoPreempt(fn func()) {

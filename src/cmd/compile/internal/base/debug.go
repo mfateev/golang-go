@@ -51,6 +51,8 @@ type DebugFlags struct {
 	InlStaticInit         int    `help:"allow static initialization of inlined calls" concurrent:"ok"`
 	InterfaceCycles       int    `help:"allow anonymous interface cycles" concurrent:"ok"`
 	IsolateE4             int    `help:"redirect the E4 toy package global through the current goroutine base"`
+	IsolateGlobals        int    `help:"redirect this package's globals through a generated isolate layout"`
+	IsolateInit           int    `help:"keep package initialization assignments executable for isolate replay"`
 	Libfuzzer             int    `help:"enable coverage instrumentation for libfuzzer"`
 	LiteralAllocHash      string `help:"hash value for use in debugging literal allocation optimizations" concurrent:"ok"`
 	LoopVar               int    `help:"shared (0), 1 (private loop variables, default), 2, private + log" concurrent:"ok"`

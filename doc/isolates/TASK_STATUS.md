@@ -82,6 +82,13 @@ ordinary-Go execution remains unproved.**
 - [x] Phase 2B first-dispatch revocation hook discards an unstarted group
       child before user code; 1,000 native race runs and 100 emulated amd64
       runs passed; see PHASE2B_PROGRESS.md for its narrow scope
+- [x] Phase 2B admission and revocation now have one atomic order across Ps;
+      a tagged native race test covers 1,000 competing transitions per run
+- [x] Opt-in compiler mode keeps static package assignments executable so a
+      fresh E4 toy base can replay variable initialization before user `init`
+- [x] Opt-in compiler-generated package layout and runtime GC type separate
+      two toy initialized states; an MVP compiler gate now prevents exporting
+      inlineable functions from the opt-in package, pending verification
 - [x] Phase 0 path decision: choose Phase 2B for the trusted MVP; E0/Phase 2A
       are out of scope, E5a remains future, E5b waits for real density results
 - [x] E4 first implementation direction: rerun restricted initializers per
@@ -147,6 +154,15 @@ recreation, the full Linux arm64 `src/all.bash` suite passed on 2026-09-27,
 including the first-dispatch revocation change. See
 [PHASE2B_PROGRESS.md](./PHASE2B_PROGRESS.md) for the initial missing-`netbase`
 environment failure and successful rerun.
+The subsequent atomic-admission change has not passed `src/all.bash`: its
+first run failed in cgo with a host-cache `ENFILE` error after the main
+package and alternate-mode tests passed. A later rerun with the generated
+layout change failed at a bootstrap staleness check before tests began; the
+newer compiler probes have not had a full-suite pass. See
+[PHASE2B_PROGRESS.md](./PHASE2B_PROGRESS.md). The native `runtime` suite and
+focused tagged race tests passed. A subsequent diagnostic `make.bash` failed
+with `ENFILE` while reading the repo and removed the tool binaries before
+rebuilding them; focused tests are blocked until the environment recovers.
 
 The active development target is the container's native **Linux arm64**
 (`uname -m` reports `aarch64`; the rebuilt tree's `go version` reports

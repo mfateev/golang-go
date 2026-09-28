@@ -40,6 +40,9 @@ func TestIsolateFirstDispatchRevocation(t *testing.T) {
 	if progressed.Load() {
 		t.Fatal("revoked child executed its function")
 	}
+	if _, admitted := runtime.IsolateTestGroupAdmission(group); admitted != 0 {
+		t.Fatalf("revoked group retains %d admitted goroutines", admitted)
+	}
 }
 
 func TestIsolateGroupCompletion(t *testing.T) {
@@ -51,5 +54,50 @@ func TestIsolateGroupCompletion(t *testing.T) {
 	waitForIsolateGroupExit(t, group)
 	if !progressed.Load() {
 		t.Fatal("admitted child did not execute")
+	}
+	if _, admitted := runtime.IsolateTestGroupAdmission(group); admitted != 0 {
+		t.Fatalf("completed group retains %d admitted goroutines", admitted)
+	}
+}
+
+func TestIsolateAdmissionRevocationOrder(t *testing.T) {
+	for range 1000 {
+		group := runtime.IsolateTestNewGroup()
+		start := make(chan struct{})
+		admitted := make(chan bool, 1)
+		done := make(chan struct{})
+		go func() {
+			<-start
+			admitted <- runtime.IsolateTestAdmitGroup(group)
+		}()
+		go func() {
+			<-start
+			runtime.IsolateTestRevokeGroup(group)
+			close(done)
+		}()
+		close(start)
+		wasAdmitted := <-admitted
+		<-done
+
+		revoked, count := runtime.IsolateTestGroupAdmission(group)
+		if !revoked {
+			t.Fatal("group was not revoked")
+		}
+		want := uint64(0)
+		if wasAdmitted {
+			want = 1
+		}
+		if count != want {
+			t.Fatalf("admission count = %d, want %d", count, want)
+		}
+		if runtime.IsolateTestAdmitGroup(group) {
+			t.Fatal("admission succeeded after revocation")
+		}
+		if wasAdmitted {
+			runtime.IsolateTestReleaseAdmission(group)
+		}
+		if _, count := runtime.IsolateTestGroupAdmission(group); count != 0 {
+			t.Fatalf("admission count after release = %d", count)
+		}
 	}
 }
