@@ -114,12 +114,16 @@ without the package layout writes the process global; the selected isolate
 still reads epoch `1` instead of `7` with the previously built compiler. It
 runs with the additional `phase2b_layout_inline` tag. For the MVP, the compiler
 now declines to inline functions defined in an opt-in layout package; this
-keeps callers executing its own compiled global accesses. This change has not
-been tested because the diagnostic bootstrap failed with `ENFILE` and removed
-the tree's tool binaries. Exported generic bodies and compiler-created helper
-functions still need a separate cross-package audit. Package selection, host state
-partitioning, dependency initialization, and standard-library cases remain
-open.
+keeps callers executing its own compiled global accesses. After the
+container-local cache restored the build, the cross-package setter passed
+100 native arm64 race runs. An exported generic setter still wrote the
+process global because its body was instantiated in the importing package.
+The opt-in compiler now rejects exported generic functions and methods; a
+tagged compiler guard test checks both diagnostics. This is a conservative MVP
+restriction until importing compiler invocations can use the owning package's
+layout. Compiler-created helper functions still need a cross-package audit.
+Package selection, host state partitioning, dependency initialization, and
+standard-library cases remain open.
 
 The current container lacks `qemu-x86_64`; amd64 execution was deferred at
 the user's request. The amd64 tagged runtime test binary compiled.
@@ -154,9 +158,9 @@ this failure was in the repository, not the cache.
 
 ## Next implementation work
 
-1. Verify the opt-in package inlining restriction after restoring the build
-   environment, classify host-owned state, then handle dependency
-   initialization and a standard-library initialized-state case.
+1. Classify host-owned state, then handle dependency initialization and a
+   standard-library initialized-state case. Audit compiler-created helpers
+   crossing package boundaries.
 2. Define group membership and running-state transitions across every
    scheduling path, including parked goroutines, channels, `sync`, timers,
    preemption, and GC. Add a durable revocation fence and a host `Kill(ctx)`
@@ -188,3 +192,10 @@ finished with `ALL TESTS PASSED`, including the race section and `../test`.
 The opt-in first-dispatch revocation tests passed 100 native arm64 race runs;
 the opt-in E4 compiler toy passed 100 native arm64 race runs with its compiler
 flag. No source change was needed to obtain the full-suite pass.
+
+On 2026-09-28, the same missing `/etc/services` caused the first full-suite
+run after the exported-generic guard to fail only the two `net` cgo port tests.
+After reinstalling `netbase`, both focused tests and the complete `src/all.bash`
+rerun passed, including the race section and `../test`. The cross-package
+inlining test passed 100 native arm64 race runs; the tagged generic guard
+test passed.

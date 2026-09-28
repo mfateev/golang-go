@@ -2847,6 +2847,17 @@ func (c *declCollector) Visit(n syntax.Node) syntax.Visitor {
 		pw.checkPragmas(n.Pragma, funcPragmas, false)
 
 		obj := pw.info.Defs[n.Name].(*types2.Func)
+		// An exported generic body can be instantiated in an importing
+		// package. That compiler invocation cannot redirect references to
+		// this package's isolate layout, even when inlining is disabled.
+		// Keep the opt-in mode fail-closed until layout information is
+		// available to importing compiler invocations.
+		if base.Debug.IsolateGlobals != 0 && obj.Exported() {
+			sig := obj.Type().(*types2.Signature)
+			if sig.TypeParams() != nil || sig.RecvTypeParams() != nil {
+				pw.errorf(n.Name, "exported generic function or method is unsupported with isolate globals")
+			}
+		}
 		pw.funDecls[obj] = n
 
 		return c.withTParams(obj)

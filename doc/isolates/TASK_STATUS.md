@@ -162,7 +162,14 @@ newer compiler probes have not had a full-suite pass. See
 [PHASE2B_PROGRESS.md](./PHASE2B_PROGRESS.md). The native `runtime` suite and
 focused tagged race tests passed. A subsequent diagnostic `make.bash` failed
 with `ENFILE` while reading the repo and removed the tool binaries before
-rebuilding them; focused tests are blocked until the environment recovers.
+rebuilding them; focused tests were blocked until the environment recovered.
+
+After container recreation, `src/make.bash` passed on 2026-09-28. The
+opt-in cross-package inlining test passed 100 native arm64 race runs. A new
+tagged compiler test confirms that exported generic functions and methods
+are rejected in the layout mode, closing a caller-side global-access escape.
+The complete `src/all.bash` rerun passed, including race and `../test`, after
+restoring the container's missing `/etc/services` through `netbase`.
 
 The active development target is the container's native **Linux arm64**
 (`uname -m` reports `aarch64`; the rebuilt tree's `go version` reports

@@ -11,8 +11,6 @@ import (
 	"testing"
 )
 
-// This conformance test fails until the layout for an inlined global access
-// is available to the caller's compiler invocation.
 func TestGeneratedLayoutCrossPackageInline(t *testing.T) {
 	state := newInstance(t)
 	withBase(state, func() {
