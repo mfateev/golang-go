@@ -4547,6 +4547,7 @@ func gdestroy(gp *g) {
 	gp.param = nil
 	gp.labels = nil
 	gp.isolateE4Base = nil
+	gp.isolateE4Bases = nil
 	if gp.isolateGroup != nil {
 		if gp.isolateAdmitted {
 			gp.isolateGroup.admission.Add(-1)
@@ -5415,6 +5416,7 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	newg.startpc = fn.fn
 	newg.runningCleanups.Store(false)
 	newg.isolateE4Base = nil
+	newg.isolateE4Bases = nil
 	newg.isolateGroup = nil
 	newg.isolateStarted = false
 	newg.isolateAdmitted = false
@@ -5424,6 +5426,7 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 		// Only user goroutines inherit synctest groups and pprof labels.
 		newg.bubble = callergp.bubble
 		newg.isolateE4Base = callergp.isolateE4Base
+		newg.isolateE4Bases = callergp.isolateE4Bases
 		newg.isolateGroup = callergp.isolateGroup
 		if newg.isolateGroup != nil {
 			newg.isolateGroup.live.Add(1)

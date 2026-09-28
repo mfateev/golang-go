@@ -59,6 +59,20 @@ func InitIsolateLayout() {
 	lsym := name.Linksym()
 	objw.SymPtr(lsym, 0, reflectdata.TypeLinksym(layout), 0)
 	objw.Global(lsym, int32(types.PtrSize), obj.RODATA|obj.NOPTR)
+
+	// Use a package-specific symbol as the tagged runtime probe's key.
+	// Equal layout types may be deduplicated by the linker, so the type
+	// pointer itself cannot identify the owning package.
+	keySym := typecheck.Lookup("isolateLayoutKey")
+	if keySym.Def != nil {
+		base.Fatalf("isolate: source declaration conflicts with generated layout key symbol")
+	}
+	keyName := ir.NewNameAt(base.Pos, keySym, types.Types[types.TUINT8])
+	keyName.Class = ir.PEXTERN
+	keySym.Def = keyName
+	keyLSym := keyName.Linksym()
+	objw.Uint8(keyLSym, 0, 0)
+	objw.Global(keyLSym, 1, obj.RODATA|obj.NOPTR)
 }
 
 func isolateGlobalOffset(n *ir.Name) (int64, bool) {
@@ -67,4 +81,8 @@ func isolateGlobalOffset(n *ir.Name) (int64, bool) {
 	}
 	off, ok := isolateLayoutOffsets[n.Sym()]
 	return off, ok
+}
+
+func isolatePackageKey() *obj.LSym {
+	return typecheck.Lookup("isolateLayoutKey").Def.(*ir.Name).Linksym()
 }

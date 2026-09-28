@@ -77,6 +77,30 @@ The tagged Phase 2 conformance test now has an entry adapter that captures an
 initialized pointer. It still fails as expected on the Phase 1 prototype:
 the second instance returns `2/2/2` rather than `1/1/1`.
 
+## Package-state partition and dependency initialization probe
+
+The current whole-package ownership classification and remaining audit are in
+[PACKAGE_STATE.md](./PACKAGE_STATE.md). A tagged two-package probe now uses a
+package identity key to select each package's generated layout while a single
+goroutine calls across the dependency edge. The test reruns both packages'
+variable and user initializers in dependency order, verifies that the importer
+observes the dependency's initialized state, and then mutates both graphs in
+two independent instances. A native child inherits the package table.
+One hundred native arm64 race runs passed. The table is a temporary probe;
+whole-program selection and automatic initialization remain open. The new
+`runtime.g` field changed `TestSizeof`; after updating its checked size, the
+focused native `runtime` test passed. A Linux/386 runtime test binary compiled,
+but was not executed. The complete native `src/all.bash` suite then passed,
+including its race section and `../test`.
+
+```bash
+cd src
+GOMAXPROCS=4 GOGC=20 ../bin/go test -race \
+  -tags=phase0_e4,phase2b_layout,phase2b_dependency \
+  -gcflags='internal/isolateproto/testdata/e4...=-d=isolateglobals=1,isolateinit=1' \
+  -count=100 internal/isolateproto/testdata/e4importtoy
+```
+
 ## Executable package initialization probe
 
 The compiler's opt-in `-d=isolateinit=1` mode keeps package initialization
@@ -158,9 +182,10 @@ this failure was in the repository, not the cache.
 
 ## Next implementation work
 
-1. Classify host-owned state, then handle dependency initialization and a
-   standard-library initialized-state case. Audit compiler-created helpers
-   crossing package boundaries.
+1. Turn the explicit package partition and the two-package initialization
+   probe into whole-program package selection and automatic dependency order.
+   Audit compiler-created helpers crossing package boundaries, then prove a
+   standard-library initialized-state case.
 2. Define group membership and running-state transitions across every
    scheduling path, including parked goroutines, channels, `sync`, timers,
    preemption, and GC. Add a durable revocation fence and a host `Kill(ctx)`

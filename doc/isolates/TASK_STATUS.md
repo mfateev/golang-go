@@ -12,6 +12,7 @@ isolates. Driving use case is Temporal workflow isolation.
 - [DETERMINISM.md](./DETERMINISM.md) — worked analysis of time, map iteration, select
 - [ISOLATE_API.md](./ISOLATE_API.md) — host API, isolate-side primitives, what workflow code looks like
 - [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) — **the plan**: phases, gating experiments, decision point
+- [PACKAGE_STATE.md](./PACKAGE_STATE.md) — initial process/isolate package-state partition and dependency probe
 - [ALTERNATIVES.md](./ALTERNATIVES.md) — rationale for the no-fork path
 
 - **Repo:** [golang/go](https://github.com/golang/go) via fork
@@ -88,7 +89,11 @@ ordinary-Go execution remains unproved.**
       fresh E4 toy base can replay variable initialization before user `init`
 - [x] Opt-in compiler-generated package layout and runtime GC type separate
       two toy initialized states; an MVP compiler gate now prevents exporting
-      inlineable functions from the opt-in package, pending verification
+      inlineable functions from the opt-in package, verified by 100 native
+      arm64 race runs
+- [x] Initial package-state partition recorded; a tagged two-package probe
+      selects independent layouts across one dependency edge, reruns both
+      initializers in order, and passes 100 native arm64 race runs
 - [x] Phase 0 path decision: choose Phase 2B for the trusted MVP; E0/Phase 2A
       are out of scope, E5a remains future, E5b waits for real density results
 - [x] E4 first implementation direction: rerun restricted initializers per
@@ -170,6 +175,8 @@ tagged compiler test confirms that exported generic functions and methods
 are rejected in the layout mode, closing a caller-side global-access escape.
 The complete `src/all.bash` rerun passed, including race and `../test`, after
 restoring the container's missing `/etc/services` through `netbase`.
+The subsequent two-package dependency probe also passed a complete native
+`src/all.bash` run, alongside 100 tagged race-detector runs of its own tests.
 
 The active development target is the container's native **Linux arm64**
 (`uname -m` reports `aarch64`; the rebuilt tree's `go version` reports

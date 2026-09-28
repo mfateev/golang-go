@@ -572,6 +572,7 @@ type g struct {
 	cgoCtxt         []uintptr               // cgo traceback context
 	labels          unsafe.Pointer          // profiler labels
 	isolateE4Base   unsafe.Pointer          // tagged Phase 0 global-base experiment
+	isolateE4Bases  unsafe.Pointer          // tagged Phase 2B package-state table probe
 	isolateGroup    *isolateRevocationGroup // tagged Phase 2B first-dispatch experiment
 	isolateStarted  bool
 	isolateAdmitted bool

@@ -5314,7 +5314,8 @@ func (s *state) addr(n ir.Node) *ssa.Value {
 			// global variable
 			if base.Debug.IsolateGlobals != 0 {
 				if offset, ok := isolateGlobalOffset(n); ok {
-					basePtr := s.rtcall(typecheck.LookupRuntimeFunc("isolateE4GetBase"), true, []*types.Type{t})[0]
+					key := s.entryNewValue1A(ssaop.OpAddr, types.Types[types.TUNSAFEPTR], isolatePackageKey(), s.sb)
+					basePtr := s.rtcall(typecheck.LookupRuntimeFunc("isolateE4GetPackageBase"), true, []*types.Type{t}, key)[0]
 					hasBase := s.newValue2(ssaop.OpNeqPtr, types.Types[types.TBOOL], basePtr, s.constNil(t))
 					if offset != 0 {
 						basePtr = s.newValue1I(ssaop.OpOffPtr, t, offset, basePtr)
