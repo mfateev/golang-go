@@ -5,10 +5,14 @@
 package pkginit
 
 import (
+	"slices"
+	"strings"
+
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/noder"
 	"cmd/compile/internal/objw"
+	"cmd/compile/internal/staticdata"
 	"cmd/compile/internal/staticinit"
 	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
@@ -142,6 +146,38 @@ func MakeTask() {
 			ot = objw.SymPtr(lsym, ot, f, 0)
 		}
 		objw.Global(lsym, int32(ot), obj.RODATA|obj.NOPTR)
+
+		// Record direct imports selected for isolate state by this build.
+		// The host reads this immutable list to order package initialization.
+		selected := make(map[string]bool)
+		if base.Debug.IsolateImports != "" {
+			for _, path := range strings.Split(base.Debug.IsolateImports, ",") {
+				selected[path] = true
+			}
+		}
+		var selectedDeps []string
+		for _, pkg := range typecheck.Target.Imports {
+			if selected[pkg.Path] {
+				selectedDeps = append(selectedDeps, pkg.Path)
+			}
+		}
+		slices.Sort(selectedDeps)
+		depSym := typecheck.Lookup("isolateDependencyTask")
+		if depSym.Def != nil {
+			base.Fatalf("isolate: source declaration conflicts with generated dependency task symbol")
+		}
+		depTask := ir.NewNameAt(base.Pos, depSym, types.Types[types.TUINT8])
+		depTask.Class = ir.PEXTERN
+		depSym.Def = depTask
+		depLSym := depTask.Linksym()
+		depLSym.Set(obj.AttrLinkname, true)
+		depOff := objw.Uint32(depLSym, 0, uint32(len(selectedDeps)))
+		depOff = objw.Uint32(depLSym, depOff, 0) // align string headers
+		for _, path := range selectedDeps {
+			depOff = objw.SymPtr(depLSym, depOff, staticdata.StringSym(base.Pos, path), 0)
+			depOff = objw.Uintptr(depLSym, depOff, uint64(len(path)))
+		}
+		objw.Global(depLSym, int32(depOff), obj.RODATA|obj.NOPTR)
 	}
 
 	if len(deps) == 0 && len(fns) == 0 && types.LocalPkg.Path != "main" && types.LocalPkg.Path != "runtime" {

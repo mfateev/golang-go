@@ -13,14 +13,14 @@ import (
 )
 
 // PackageInitSpec is a tagged host-side probe description for one opted-in
-// package. Dependencies lists only other packages selected for isolate state.
-// Discovery and dependency selection are still supplied by the host.
+// package. DependencyTask is the compiler's list of direct imports selected
+// for isolate state. Discovery and selection are still supplied by the build.
 type PackageInitSpec struct {
-	Path         string
-	Key          unsafe.Pointer
-	Type         unsafe.Pointer
-	Dependencies []string
-	InitTask     unsafe.Pointer
+	Path           string
+	Key            unsafe.Pointer
+	Type           unsafe.Pointer
+	DependencyTask unsafe.Pointer
+	InitTask       unsafe.Pointer
 }
 
 // PackageInstance is one set of independent package globals for the tagged
@@ -57,7 +57,7 @@ func NewPackageInstance(specs []PackageInitSpec) (*PackageInstance, error) {
 	types := make([]unsafe.Pointer, len(ordered))
 	seenKeys := make(map[unsafe.Pointer]bool, len(ordered))
 	for i, spec := range ordered {
-		if spec.Path == "" || spec.Key == nil || spec.Type == nil || spec.InitTask == nil {
+		if spec.Path == "" || spec.Key == nil || spec.Type == nil || spec.DependencyTask == nil || spec.InitTask == nil {
 			return nil, fmt.Errorf("isolateproto: incomplete package state spec for %q", spec.Path)
 		}
 		if _, exists := index[spec.Path]; exists {
@@ -83,7 +83,9 @@ func NewPackageInstance(specs []PackageInitSpec) (*PackageInstance, error) {
 			return fmt.Errorf("isolateproto: package initialization cycle at %q", ordered[i].Path)
 		}
 		state[i] = 1
-		deps := slices.Clone(ordered[i].Dependencies)
+		depTask := ordered[i].DependencyTask
+		count := *(*uint32)(depTask)
+		deps := slices.Clone(unsafe.Slice((*string)(unsafe.Add(depTask, 8)), count))
 		slices.Sort(deps)
 		for _, path := range deps {
 			j, ok := index[path]

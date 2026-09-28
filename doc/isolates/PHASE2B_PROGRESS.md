@@ -89,11 +89,14 @@ two independent instances. A native child inherits the package table.
 One hundred native arm64 race runs passed. The tagged `NewPackageInstance`
 helper now accepts an explicit manifest, validates selected dependencies,
 sorts their initializers topologically, and creates the state table. The test
-lists the importer first to check ordering. Whole-program selection and
-generated dependency metadata remain open. The compiler now emits an immutable
-per-package initializer record, separate from the process init task's state.
-The host helper replays it for the dependency toy and `encoding/base64`; both
-tagged tests passed 100 native arm64 race runs. The new
+lists the importer first to check ordering. The compiler now emits an immutable
+per-package initializer record, separate from the process init task's state,
+and a list of direct imports selected by `-d=isolateimports`. The host helper
+uses that list for ordering and missing dependency validation; no dependency
+strings are supplied in the host manifest. Whole-program package selection and
+automatic dependency selection remain open. The host helper replays the
+initializer record for the dependency toy and `encoding/base64`; both tagged
+tests passed 100 native arm64 race runs. The new
 `runtime.g` field changed `TestSizeof`; after updating its checked size, the
 focused native `runtime` test passed. A Linux/386 runtime test binary compiled,
 but was not executed. The complete native `src/all.bash` suite then passed,
@@ -104,8 +107,16 @@ cd src
 GOMAXPROCS=4 GOGC=20 ../bin/go test -race \
   -tags=phase0_e4,phase2b_layout,phase2b_dependency \
   -gcflags='internal/isolateproto/testdata/e4...=-d=isolateglobals=1,isolateinit=1' \
+  -gcflags='internal/isolateproto/testdata/e4importtoy=-d=isolateglobals=1,isolateinit=1,isolateimports=internal/isolateproto/testdata/e4deptoy' \
   -count=100 internal/isolateproto/testdata/e4importtoy
 ```
+
+The generated selected-dependency record also compiled in a Linux/386 tagged
+test binary. After the workspace switched to a network-restricted sandbox,
+`src/all.bash` failed in `context.ExampleAfterFunc_connection` because opening
+a loopback socket returned `operation not permitted`. The run was stopped;
+both tagged race tests then passed 100 runs inside that sandbox. The last
+complete `src/all.bash` pass was on the preceding initializer-record commit.
 
 ## Executable package initialization probe
 
@@ -178,8 +189,8 @@ GOMAXPROCS=4 GOGC=20 ../bin/go test -race \
 The imported-package flag is manual but can be applied to all compiler
 invocations in one build. A tagged test now checks direct accesses in the
 test package and two separate importing packages; 100 native arm64 race runs
-passed with that build-wide setting. Automatic package selection, generated dependency
-discovery, and the standard library's process-state audit remain open; this
+passed with that build-wide setting. Automatic package selection, automatic
+dependency selection, and the standard library's process-state audit remain open; this
 probe does not establish whole-program isolation.
 The complete native `src/all.bash` suite passed after this change, including
 the race section and `../test`.

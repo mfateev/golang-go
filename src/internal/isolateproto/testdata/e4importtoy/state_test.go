@@ -29,8 +29,14 @@ var importKey byte
 //go:linkname depInitTask internal/isolateproto/testdata/e4deptoy.isolateInitTask
 var depInitTask byte
 
+//go:linkname depDependencyTask internal/isolateproto/testdata/e4deptoy.isolateDependencyTask
+var depDependencyTask byte
+
 //go:linkname importInitTask internal/isolateproto/testdata/e4importtoy.isolateInitTask
 var importInitTask byte
+
+//go:linkname importDependencyTask internal/isolateproto/testdata/e4importtoy.isolateDependencyTask
+var importDependencyTask byte
 
 func newInstance(t *testing.T) *isolateproto.PackageInstance {
 	t.Helper()
@@ -46,17 +52,18 @@ func newInstance(t *testing.T) *isolateproto.PackageInstance {
 		// Deliberately list the importer first. The host must still run its
 		// selected dependency's initializers before the importer's.
 		{
-			Path:         "internal/isolateproto/testdata/e4importtoy",
-			Key:          imp,
-			Type:         importType,
-			Dependencies: []string{"internal/isolateproto/testdata/e4deptoy"},
-			InitTask:     unsafe.Pointer(&importInitTask),
+			Path:           "internal/isolateproto/testdata/e4importtoy",
+			Key:            imp,
+			Type:           importType,
+			DependencyTask: unsafe.Pointer(&importDependencyTask),
+			InitTask:       unsafe.Pointer(&importInitTask),
 		},
 		{
-			Path:     "internal/isolateproto/testdata/e4deptoy",
-			Key:      dep,
-			Type:     depType,
-			InitTask: unsafe.Pointer(&depInitTask),
+			Path:           "internal/isolateproto/testdata/e4deptoy",
+			Key:            dep,
+			Type:           depType,
+			DependencyTask: unsafe.Pointer(&depDependencyTask),
+			InitTask:       unsafe.Pointer(&depInitTask),
 		},
 	})
 	if err != nil {
@@ -97,10 +104,11 @@ func TestPackageBasesInheritedByChild(t *testing.T) {
 
 func TestMissingPackageStateFailsClosed(t *testing.T) {
 	table, err := isolateproto.NewPackageInstance([]isolateproto.PackageInitSpec{{
-		Path:     "internal/isolateproto/testdata/e4deptoy",
-		Key:      unsafe.Pointer(&depKey),
-		Type:     depType,
-		InitTask: unsafe.Pointer(&depInitTask),
+		Path:           "internal/isolateproto/testdata/e4deptoy",
+		Key:            unsafe.Pointer(&depKey),
+		Type:           depType,
+		DependencyTask: unsafe.Pointer(&depDependencyTask),
+		InitTask:       unsafe.Pointer(&depInitTask),
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -116,14 +124,24 @@ func TestMissingPackageStateFailsClosed(t *testing.T) {
 }
 
 func TestPackageInitManifestValidation(t *testing.T) {
-	dep := isolateproto.PackageInitSpec{
-		Path: "dep", Key: unsafe.Pointer(&depKey), Type: depType, InitTask: unsafe.Pointer(&depInitTask),
-		Dependencies: []string{"missing"},
-	}
-	if _, err := isolateproto.NewPackageInstance([]isolateproto.PackageInitSpec{dep}); err == nil {
+	if _, err := isolateproto.NewPackageInstance([]isolateproto.PackageInitSpec{{
+		Path:           "internal/isolateproto/testdata/e4importtoy",
+		Key:            unsafe.Pointer(&importKey),
+		Type:           importType,
+		DependencyTask: unsafe.Pointer(&importDependencyTask),
+		InitTask:       unsafe.Pointer(&importInitTask),
+	}}); err == nil {
 		t.Error("accepted an absent selected dependency")
 	}
-	dep.Dependencies = []string{"dep"}
+	cycle := struct {
+		count uint32
+		pad   uint32
+		deps  [1]string
+	}{count: 1, deps: [1]string{"dep"}}
+	dep := isolateproto.PackageInitSpec{
+		Path: "dep", Key: unsafe.Pointer(&depKey), Type: depType,
+		DependencyTask: unsafe.Pointer(&cycle), InitTask: unsafe.Pointer(&depInitTask),
+	}
 	if _, err := isolateproto.NewPackageInstance([]isolateproto.PackageInitSpec{dep}); err == nil {
 		t.Error("accepted a package initialization cycle")
 	}

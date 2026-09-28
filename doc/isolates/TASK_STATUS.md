@@ -93,9 +93,9 @@ ordinary-Go execution remains unproved.**
       arm64 race runs
 - [x] Initial package-state partition recorded; a tagged two-package probe
       selects independent layouts across one dependency edge; an explicit
-      manifest helper orders and replays compiler-generated initializer
-      records, and passes 100
-      native arm64 race runs
+      manifest helper orders and replays compiler-generated initializer records.
+      Selected direct imports now come from compiler metadata; 100 native
+      arm64 race runs passed
 - [x] Tagged `encoding/base64` probe reruns four initialized encoding
       pointers per instance; a directly importing caller selects the instance
       globals with a build-wide compiler flag; two importing packages and
