@@ -114,7 +114,14 @@ func MakeTask() {
 				continue
 			}
 		}
-		fns = append(fns, fn.Nname.Linksym())
+		lsym := fn.Nname.Linksym()
+		if base.Debug.IsolateGlobals != 0 && base.Debug.IsolateInit != 0 {
+			// The tagged per-instance initializer must be callable by the
+			// host, including when the selected package is in the standard
+			// library and the linker checks cross-package references.
+			lsym.Set(obj.AttrLinkname, true)
+		}
+		fns = append(fns, lsym)
 	}
 
 	if len(deps) == 0 && len(fns) == 0 && types.LocalPkg.Path != "main" && types.LocalPkg.Path != "runtime" {

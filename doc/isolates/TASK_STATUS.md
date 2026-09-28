@@ -94,6 +94,9 @@ ordinary-Go execution remains unproved.**
 - [x] Initial package-state partition recorded; a tagged two-package probe
       selects independent layouts across one dependency edge, reruns both
       initializers in order, and passes 100 native arm64 race runs
+- [x] Tagged `encoding/base64` probe reruns four initialized encoding
+      pointers per instance; a directly importing caller selects the instance
+      globals with a manual compiler flag; 100 native arm64 race runs passed
 - [x] Phase 0 path decision: choose Phase 2B for the trusted MVP; E0/Phase 2A
       are out of scope, E5a remains future, E5b waits for real density results
 - [x] E4 first implementation direction: rerun restricted initializers per
@@ -177,6 +180,8 @@ The complete `src/all.bash` rerun passed, including race and `../test`, after
 restoring the container's missing `/etc/services` through `netbase`.
 The subsequent two-package dependency probe also passed a complete native
 `src/all.bash` run, alongside 100 tagged race-detector runs of its own tests.
+The opt-in `encoding/base64` initialized-state probe passed 100 tagged native
+race runs and another complete native `src/all.bash` run.
 
 The active development target is the container's native **Linux arm64**
 (`uname -m` reports `aarch64`; the rebuilt tree's `go version` reports

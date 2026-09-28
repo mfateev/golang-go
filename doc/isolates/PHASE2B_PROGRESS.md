@@ -149,6 +149,32 @@ layout. Compiler-created helper functions still need a cross-package audit.
 Package selection, host state partitioning, dependency initialization, and
 standard-library cases remain open.
 
+## Standard-library initialized-state probe
+
+The opt-in compiler now emits a package-owned offset symbol for each exported
+global. A caller using `-d=isolateimports=encoding/base64` loads that offset
+and the package identity key, then selects the current instance's address.
+The generated metadata and replayable initializer are explicitly linkable,
+which permits the tagged test to use a standard-library package. Two reruns
+of `encoding/base64` initialization create separate standard, URL, and raw
+encoding pointers. A direct `StdEncoding` assignment in an importing package
+changes only one selected instance; 100 native arm64 race runs passed.
+
+```bash
+cd src
+GOMAXPROCS=4 GOGC=20 ../bin/go test -race \
+  -tags=phase0_e4,phase2b_stdlib \
+  -gcflags='encoding/base64=-d=isolateglobals=1,isolateinit=1' \
+  -gcflags='internal/isolateproto/testdata/e4base64toy=-d=isolateimports=encoding/base64' \
+  -count=100 internal/isolateproto/testdata/e4base64toy
+```
+
+The imported-package flag is manual. Package selection, transitive caller
+coverage, automatic init order, and the standard library's process-state
+audit remain open; this probe does not establish whole-program isolation.
+The complete native `src/all.bash` suite passed after this change, including
+the race section and `../test`.
+
 The current container lacks `qemu-x86_64`; amd64 execution was deferred at
 the user's request. The amd64 tagged runtime test binary compiled.
 
@@ -182,10 +208,11 @@ this failure was in the repository, not the cache.
 
 ## Next implementation work
 
-1. Turn the explicit package partition and the two-package initialization
-   probe into whole-program package selection and automatic dependency order.
-   Audit compiler-created helpers crossing package boundaries, then prove a
-   standard-library initialized-state case.
+1. Turn the explicit package partition and dependency/standard-library probes
+   into whole-program package selection, transitive caller coverage, and
+   automatic dependency order. Audit compiler-created helpers crossing
+   package boundaries and the selected standard-library packages' process
+   state.
 2. Define group membership and running-state transitions across every
    scheduling path, including parked goroutines, channels, `sync`, timers,
    preemption, and GC. Add a durable revocation fence and a host `Kill(ctx)`

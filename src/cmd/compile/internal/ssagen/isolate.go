@@ -7,6 +7,7 @@ package ssagen
 import (
 	"cmp"
 	"slices"
+	"strings"
 
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
@@ -21,8 +22,18 @@ import (
 // The generated type gives the current GC a precise pointer map for the
 // package's isolate-owned globals. Package selection is opt-in for this probe.
 var isolateLayoutOffsets map[*types.Sym]int64
+var isolateImportedPackages map[string]bool
 
 func InitIsolateLayout() {
+	if base.Debug.IsolateImports != "" {
+		isolateImportedPackages = make(map[string]bool)
+		for _, path := range strings.Split(base.Debug.IsolateImports, ",") {
+			if path == "" {
+				base.Fatalf("isolate: empty package path in isolateimports")
+			}
+			isolateImportedPackages[path] = true
+		}
+	}
 	if base.Debug.IsolateGlobals == 0 {
 		return
 	}
@@ -45,6 +56,23 @@ func InitIsolateLayout() {
 	isolateLayoutOffsets = make(map[*types.Sym]int64, len(globals))
 	for i, n := range globals {
 		isolateLayoutOffsets[n.Sym()] = fields[i].Offset
+		if !types.IsExported(n.Sym().Name) {
+			continue
+		}
+		// An importing compiler invocation cannot know this package's
+		// layout offsets. Export one process-owned offset symbol per
+		// exported global for the tagged cross-package access probe.
+		offsetSym := typecheck.Lookup("isolate$offset$" + n.Sym().Name)
+		if offsetSym.Def != nil {
+			base.Fatalf("isolate: source declaration conflicts with generated offset symbol")
+		}
+		offsetName := ir.NewNameAt(base.Pos, offsetSym, types.Types[types.TUINTPTR])
+		offsetName.Class = ir.PEXTERN
+		offsetSym.Def = offsetName
+		offsetLSym := offsetName.Linksym()
+		offsetLSym.Set(obj.AttrLinkname, true)
+		objw.Uintptr(offsetLSym, 0, uint64(fields[i].Offset))
+		objw.Global(offsetLSym, int32(types.PtrSize), obj.RODATA|obj.NOPTR)
 	}
 
 	// The opt-in package exposes the exact runtime type to its host-side
@@ -57,6 +85,7 @@ func InitIsolateLayout() {
 	name.Class = ir.PEXTERN
 	sym.Def = name
 	lsym := name.Linksym()
+	lsym.Set(obj.AttrLinkname, true)
 	objw.SymPtr(lsym, 0, reflectdata.TypeLinksym(layout), 0)
 	objw.Global(lsym, int32(types.PtrSize), obj.RODATA|obj.NOPTR)
 
@@ -71,6 +100,7 @@ func InitIsolateLayout() {
 	keyName.Class = ir.PEXTERN
 	keySym.Def = keyName
 	keyLSym := keyName.Linksym()
+	keyLSym.Set(obj.AttrLinkname, true)
 	objw.Uint8(keyLSym, 0, 0)
 	objw.Global(keyLSym, 1, obj.RODATA|obj.NOPTR)
 }
@@ -85,4 +115,17 @@ func isolateGlobalOffset(n *ir.Name) (int64, bool) {
 
 func isolatePackageKey() *obj.LSym {
 	return typecheck.Lookup("isolateLayoutKey").Def.(*ir.Name).Linksym()
+}
+
+func isolateImportedGlobal(n *ir.Name) bool {
+	pkg := n.Sym().Pkg
+	return pkg != nil && pkg != types.LocalPkg && isolateImportedPackages[pkg.Path]
+}
+
+func isolateImportedKey(n *ir.Name) *obj.LSym {
+	return n.Sym().Pkg.Lookup("isolateLayoutKey").Linksym()
+}
+
+func isolateImportedOffset(n *ir.Name) *obj.LSym {
+	return n.Sym().Pkg.Lookup("isolate$offset$" + n.Sym().Name).Linksym()
 }

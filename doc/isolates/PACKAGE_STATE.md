@@ -38,13 +38,25 @@ and a single contiguous base with linker-assigned package offsets remain to
 be implemented. The tagged table is a probe for the access rule, not the final
 layout architecture.
 
-## Standard-library case to audit next
+## Standard-library initialized-state probe
 
 `encoding/base64` is a useful initialized-state case: its exported
 `StdEncoding` and `URLEncoding` pointers are built by `NewEncoding`, and the
-raw variants derive from them. Their initializer graph must be independent
-per instance if the package is reachable from workflow code. Its imports and
-any calls into process-owned runtime services also need review before the
-package can be placed in the isolate set. `encoding/json` has shared caches
-and pools, so using it as the first proof would mix initialization with a
-broader process-state audit.
+raw variants derive from them. With `encoding/base64` compiled in the opt-in
+layout mode, a tagged test reruns its generated variable initializer for two
+instances. The four encoding pointers differ between instances and from the
+process values. An importing package compiled with
+`-d=isolateimports=encoding/base64` can read and reassign `StdEncoding` through
+the selected layout; changing one instance leaves the other and the process
+unchanged. The test passed 100 native arm64 race-detector runs.
+
+This imported-global flag is a manual probe setting, not package discovery.
+Every compiler invocation that directly accesses an opted-in package's
+exported globals must select it; an omitted flag can still read the process
+global. The package's generated offset and identity symbols are linkable so
+the importing compiler can find its layout, and its initializer is callable
+for manual replay. Its imports and any calls into process-owned runtime
+services still need review before `encoding/base64` can be placed in a
+supported isolate package set. `encoding/json` has shared caches and pools,
+so using it as the first proof would mix initialization with a broader
+process-state audit.
