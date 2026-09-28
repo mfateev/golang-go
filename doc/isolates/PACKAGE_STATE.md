@@ -56,8 +56,14 @@ record for this package; the test passed 100 native arm64 race-detector runs.
 
 This imported-global flag is a manual probe setting, not package discovery.
 Every compiler invocation that directly accesses an opted-in package's
-exported globals must select it; an omitted flag can still read the process
-global. The package's generated offset and identity symbols are linkable so
+exported globals must select it. Passing
+`-gcflags=all=-d=isolateimports=encoding/base64` to `go test` covers every
+importing compiler invocation in the build. A tagged test checks direct
+accesses from its test package, `e4base64toy`, and `e4base64caller` against the
+same selected instance; 100 native arm64 race runs passed. With only
+`e4base64toy` flagged, the separate caller reads and writes the process global
+and the test fails. The package's generated offset and identity symbols are
+linkable so
 the importing compiler can find its layout. The compiler's initializer record
 is linkable for host replay. Its imports and any calls into process-owned runtime
 services still need review before `encoding/base64` can be placed in a

@@ -98,7 +98,8 @@ ordinary-Go execution remains unproved.**
       native arm64 race runs
 - [x] Tagged `encoding/base64` probe reruns four initialized encoding
       pointers per instance; a directly importing caller selects the instance
-      globals with a manual compiler flag; 100 native arm64 race runs passed
+      globals with a build-wide compiler flag; two importing packages and
+      their test package passed 100 native arm64 race runs
 - [x] Phase 0 path decision: choose Phase 2B for the trusted MVP; E0/Phase 2A
       are out of scope, E5a remains future, E5b waits for real density results
 - [x] E4 first implementation direction: rerun restricted initializers per

@@ -9,6 +9,7 @@ package e4base64toy_test
 import (
 	"encoding/base64"
 	"internal/isolateproto"
+	"internal/isolateproto/testdata/e4base64caller"
 	"internal/isolateproto/testdata/e4base64toy"
 	"testing"
 	"unsafe"
@@ -69,5 +70,31 @@ func TestStandardLibraryInitializedState(t *testing.T) {
 	})
 	if got := e4base64toy.EncodeStd(input); got != "++8=" {
 		t.Errorf("process standard encoding changed = %q", got)
+	}
+}
+
+func TestBuildWideImportedGlobalAccess(t *testing.T) {
+	processStd := base64.StdEncoding
+	a, b := newInstance(t), newInstance(t)
+	input := []byte{0xfb, 0xef}
+	a.Run(func() {
+		if base64.StdEncoding == processStd {
+			t.Error("test package read the process global in an instance")
+		}
+		if e4base64caller.ReadStd() != base64.StdEncoding {
+			t.Error("second importing package read a different standard encoding")
+		}
+		e4base64caller.SetStd(base64.URLEncoding)
+		if got := e4base64toy.EncodeStd(input); got != "--8=" {
+			t.Errorf("first importing package saw %q after second package assignment", got)
+		}
+	})
+	b.Run(func() {
+		if got := e4base64toy.EncodeStd(input); got != "++8=" {
+			t.Errorf("other instance's standard encoding changed to %q", got)
+		}
+	})
+	if base64.StdEncoding != processStd {
+		t.Error("process standard encoding changed")
 	}
 }

@@ -170,14 +170,17 @@ changes only one selected instance; 100 native arm64 race runs passed.
 cd src
 GOMAXPROCS=4 GOGC=20 ../bin/go test -race \
   -tags=phase0_e4,phase2b_stdlib \
+  -gcflags='all=-d=isolateimports=encoding/base64' \
   -gcflags='encoding/base64=-d=isolateglobals=1,isolateinit=1' \
-  -gcflags='internal/isolateproto/testdata/e4base64toy=-d=isolateimports=encoding/base64' \
   -count=100 internal/isolateproto/testdata/e4base64toy
 ```
 
-The imported-package flag is manual. Package selection, transitive caller
-coverage, generated dependency discovery, and the standard library's process-state
-audit remain open; this probe does not establish whole-program isolation.
+The imported-package flag is manual but can be applied to all compiler
+invocations in one build. A tagged test now checks direct accesses in the
+test package and two separate importing packages; 100 native arm64 race runs
+passed with that build-wide setting. Automatic package selection, generated dependency
+discovery, and the standard library's process-state audit remain open; this
+probe does not establish whole-program isolation.
 The complete native `src/all.bash` suite passed after this change, including
 the race section and `../test`.
 
