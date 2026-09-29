@@ -13,6 +13,7 @@ isolates. Driving use case is Temporal workflow isolation.
 - [ISOLATE_API.md](./ISOLATE_API.md) — host API, isolate-side primitives, what workflow code looks like
 - [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) — **the plan**: phases, gating experiments, decision point
 - [PACKAGE_STATE.md](./PACKAGE_STATE.md) — initial process/isolate package-state partition and dependency probe
+- [DYNAMIC_LOADING.md](./DYNAMIC_LOADING.md) — feasibility of independently built programs loaded into one runtime
 - [ALTERNATIVES.md](./ALTERNATIVES.md) — rationale for the no-fork path
 
 - **Repo:** [golang/go](https://github.com/golang/go) via fork
