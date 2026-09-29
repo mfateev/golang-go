@@ -136,6 +136,52 @@ about 4.9 KiB was stack spans and 2.3 KiB was retained heap. The two probes
 have not been combined into a real dynamic isolate and must not be treated as
 an accepted total memory budget.
 
+## Process-per-instance comparison
+
+A separate 2026-09-29 probe built three pure-Go executables with this fork.
+Each did one tiny operation, reported `runtime.MemStats`, signaled ready,
+and slept. A parent started one, then 30 identical children with
+`GOMAXPROCS=1`, and read their `/proc/PID/smaps_rollup` records. Three
+fresh repetitions gave stable memory values:
+
+| Executable | One process RSS | At 30: PSS per process | At 30: private memory per process | Warm start to ready, median |
+|---|---:|---:|---:|---:|
+| Minimal | 1.85 MiB | 0.69 MiB | 0.65 MiB | 0.87–1.05 ms |
+| `encoding/json` marshal | 2.87 MiB | 0.84 MiB | 0.77 MiB | 0.96–1.27 ms |
+| `net/http` header read | 3.61 MiB | 1.07 MiB | 0.98 MiB | 1.24–1.58 ms |
+
+PSS divides shared executable pages among their users; summing RSS counts
+those pages 30 times. Private memory here is `Private_Clean +
+Private_Dirty`; neither measure includes per-process kernel structures.
+These results assume many instances of the **same** executable, for which
+code sharing is best. Different binaries and warm-up behavior can change the
+numbers.
+
+At readiness, each process reported 1.43–1.59 MiB of `MemStats.GCSys`,
+192–224 KiB of `StackSys`, and only 39–80 KiB of `HeapAlloc`.
+`GCSys` is Go's allocation accounting for GC metadata, not an additional
+resident-memory charge to add to PSS. Its size exceeding private resident
+memory illustrates why these fields cannot be summed into an RSS estimate.
+`GODEBUG=inittrace=1` reported 11, 18, and 74 package init tasks and
+0.027, 0.067, and 0.218 ms of summed task clock time, respectively. This
+trace excludes much of OS launch and runtime startup, and instrumentation
+changes timing; the ready signal is the practical end-to-end launch measure.
+
+In a separate three-run sample, `plugin.Open` took 0.42–0.47 ms for the
+minimal plugin, 0.81–0.95 ms for JSON, and 1.63–1.97 ms for HTTP. This is
+paid once per loaded *program*, not per *instance*. The existing Phase 1
+single-Inbox proxy's 10,000-instance create/park/cleanup batch took
+51–52 ms, or about 5.1–5.2 µs per instance with its benchmark overhead.
+Neither prototype timing includes all planned production isolate work.
+
+Linear extrapolation of the 30-process private-memory observations to 10,000
+processes would be roughly 6–10 GiB **before** kernel structures and real
+workflow state. The 10,000-instance single-Inbox proxy retained about 65 MB
+incremental process RSS, and the mixed proxy about 76 MB. This is an
+order-of-magnitude comparison, not an acceptance result: the real isolate
+runtime, per-instance package initialization, and workload heaps are still
+unmeasured together.
+
 ## Proof before changing the MVP architecture
 
 1. Build a worker and two independently linked plugin programs with the same
