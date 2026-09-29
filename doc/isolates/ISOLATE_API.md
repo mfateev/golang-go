@@ -165,10 +165,10 @@ copying bytes on every call — pure waste when the host only needs an identity.
 Human-readable names belong in a host-side table: **names live host-side, IDs
 cross the boundary.**
 
-**Not a registered handle** like `Entry`. `Entry` needed a registry because
-dispatch is data-driven (the host has a workflow type name from history) and
-because restore must rebind across builds. Neither applies here: the isolate
-always knows its own op at the call site, and the runtime never resolves it.
+**Not a program selector.** The host chooses a statically linked program by
+stable name when creating an instance. The isolate knows its own operation at
+each `Call` site, so the runtime never resolves an op through that program
+table.
 
 ### One trap: op stability across builds
 
@@ -188,98 +188,53 @@ only under mixed-version deploys.
 parked goroutine is an outstanding command; the host sees several at once and
 answers them independently. No `Selector`, no `Future`.
 
-### Entry points
+### Program entry
 
-At the runtime boundary an entry point is `func([]byte) ([]byte, error)`. Typed
-signatures like `func(OrderReq) (Receipt, error)` are an SDK adapter that
-marshals through the DataConverter, exactly as today.
-
-The natural first instinct is for `Config.Entry` to just *be* the function:
-
-```go
-iso, _ := isolate.New(isolate.Config{Entry: Order})   // doesn't work
-```
-
-A top-level func value is safe to share — it is a static symbol in read-only
-data, not a pointer into anyone's heap. But three things rule it out anyway:
-
-1. **The callable is isolate-scoped, not process-global.** The SDK adapter that
-   marshals `[]byte` into `OrderReq` is a *closure*: it captures the
-   DataConverter and the target func. Registration runs in template `init`, so
-   those captures live in the template image and are copied into each isolate.
-   Each isolate therefore has its *own* adapter closure. The host, sitting
-   outside, has no single func value it could name.
-2. **Dispatch is data-driven.** The host learns which workflow to run from
-   history — it has the string `"Order"` in hand, not a compile-time reference.
-   A name lookup is unavoidable.
-3. **Snapshot and restore need a stable identity.** Decision 9 requires an
-   isolate to be restorable in another process or another build. A code pointer
-   is meaningless there; a symbolic name survives.
-
-So `Entry` is a **handle**: named at registration, typed at registration,
-resolved per-isolate at start.
+Each configured isolate directory contains an ordinary `package main` with an
+ordinary `func main()`. The program imports `isolate` to talk to the host. The
+runtime starts `main` once for each new instance; returning from it completes
+that instance.
 
 ```go
-// Entry is a process-global, comparable handle to a registered entry point.
-// The callable it names is resolved inside the isolate at start.
-type Entry struct{ id uint32 }
+package main
 
-// Register binds a name to an entry point and returns its handle. Must be
-// called from package init, so the binding becomes part of the template image.
-func Register(name string, fn func([]byte) ([]byte, error)) Entry
+import "isolate"
 
-// Lookup resolves a name registered earlier — the path the host takes when the
-// entry is chosen by data rather than by code.
-func Lookup(name string) (Entry, bool)
+const completeOp uint32 = 1 // SDK-owned operation number
+
+func main() {
+    request := <-isolate.Inbox() // the host's initial input
+    result := runWorkflow(request)
+    if _, err := isolate.Call(completeOp, result); err != nil {
+        panic(err)
+    }
+}
 ```
+
+The build compiles each program's `package main` under a distinct internal
+path and generates a process-owned table from stable names in `isolate.json`
+to program entries. The host holds a selector, never a pointer to an
+isolate-owned closure. See [STATIC_PROGRAMS.md](./STATIC_PROGRAMS.md).
 
 ```go
-var OrderEntry = isolate.Register("Order", orderAdapter)   // in template init
-
-// host
-iso, _ := isolate.New(isolate.Config{Entry: OrderEntry, ...})
-// or, driven by history:
-e, ok := isolate.Lookup(ev.WorkflowType)
+program, ok := isolate.LookupProgram("orders")
+if !ok { /* unknown program in this worker build */ }
+iso, err := isolate.New(isolate.Config{Program: program, Input: requestBytes})
 ```
 
-This keeps the reference type-checked at the point that matters — `Register`
-takes a typed func, so a misspelling or a signature change is a compile error,
-unlike a bare string in `Config`.
+`New` copies `Input` into the instance's first `Inbox` message before `main`
+runs. The SDK may decode that message and dispatch to a typed workflow
+function. A final SDK `Call` can carry a serialized result; the runtime
+itself only sees bytes and an opaque operation number. The logical program
+name belongs in persisted instance metadata, while a separate build artifact
+identity identifies the exact code and dependencies needed for replay.
 
-### The registry is split across the partition
-
-The registry is two structures, and this is the clearest worked example of the
-isolate-scoped / process-global split:
-
-| | Scope | Contents |
-|---|---|---|
-| Name → id | **Process-global** | Populated once during template init; idempotent |
-| id → callable | **Isolate-scoped** | A slot table copied from the template into every isolate |
-
-`Config.Entry` carries only the id. At start, the runtime indexes the isolate's
-*own* slot table. Nothing points across an isolate boundary at any point, and
-the host never holds a callable.
-
-An earlier version of this document claimed the registry was wholly
-process-global and held static func values. That is wrong: it holds adapter
-closures, which are per-isolate data. A process-global table of them would be
-exactly the cross-isolate reference the design forbids.
-
-### The alternative: code generation
-
-If the SDK generated real top-level functions instead of closures —
-
-```go
-//go:generate temporal-gen
-func orderEntry(b []byte) ([]byte, error) { ... }   // generated, top-level
-```
-
-— then the adapter has no captures, the callable *is* process-global, and
-`Config.Entry` could hold the func value directly with full compile-time typing.
-Reasons 2 and 3 above still force a name registry to exist alongside it, so this
-buys typing rather than removing machinery, at the cost of a generate step. It
-is a real option and a departure from the SDK's current reflection-based
-registration; worth deciding deliberately rather than by default.
+The source-level `isolate` package now declares `Call` and `Inbox`. Its native
+runtime hooks currently panic because no active native isolate can use them
+yet. The host selector and native command queue are proposed API and are not
+implemented. The Phase 1
+`internal/isolateproto.Register` and `Entry` model remains a reference-model
+dispatch mechanism, not this source contract.
 
 ---
 
@@ -427,8 +382,13 @@ that never leave the process is measurable.
 ```go
 package isolate
 
+// Program is a process-local handle to one statically linked program.
+type Program struct{ id uint32 }
+func LookupProgram(name string) (Program, bool)
+
 type Config struct {
-	Entry        Entry         // handle from Register/Lookup — see below
+	Program      Program       // handle from LookupProgram
+	Input        []byte        // copied into the first Inbox message
 	MemoryLimit  int64         // enforced via span accounting
 	GoroutineLimit int
 	Clock        Clock         // host-injected time (see DETERMINISM.md)
@@ -590,7 +550,7 @@ changes, continue-as-new, child workflow and signal semantics, and
 4. **Is one `Call` primitive really enough for queries?** Queries are
    host-initiated and must not mutate state — that is an inbound pattern
    `Inbox` can express, but read-only enforcement may need runtime help.
-5. **Closure adapters or generated top-level entry points?** See "The
-   alternative: code generation" above. Codegen buys compile-time typing on
-   `Config.Entry` and removes per-isolate adapter closures, at the cost of a
-   generate step and a departure from reflection-based registration.
+5. **How should the SDK dispatch within one program?** A program's `main`
+   may decode its first Inbox message and choose a workflow function. The
+   runtime needs only the static program table; the SDK's typed dispatch and
+   result protocol still need a concrete design.

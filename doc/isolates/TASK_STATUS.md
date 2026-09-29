@@ -122,6 +122,9 @@ ordinary-Go execution remains unproved.**
 - [x] Initial build-side `isolate.json` reader accepts explicitly selected
       directories, rejects unknown fields and duplicate names, and returns a
       deterministic program list; focused package tests pass
+- [x] Source-level `isolate` package declares `Call` and `Inbox` for a
+      normal per-program `func main()`; runtime hooks currently panic because
+      active native isolate binding and its owned command queue are pending
 - [x] Tagged `encoding/base64` probe reruns four initialized encoding
       pointers per instance; a directly importing caller selects the instance
       globals with a build-wide compiler flag; two importing packages and

@@ -29,6 +29,21 @@ state descriptors from the sources. A build should take an explicit set of
 program directories, rather than silently including every directory it can
 find.
 
+Each program's `main` keeps the ordinary Go signature. It imports the new
+[`isolate` package](../../src/isolate/isolate.go) for host input and calls:
+
+```go
+package main
+
+import "isolate"
+
+func main() {
+    input := <-isolate.Inbox()
+    // Decode input, run the workflow, and use isolate.Call for host work.
+    _ = input
+}
+```
+
 One final executable contains the host and all selected programs. The host
 selects a program by logical name and creates many instances of it. A build
 artifact identity is separate from that name; it changes when code or build
