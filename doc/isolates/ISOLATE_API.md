@@ -229,10 +229,13 @@ itself only sees bytes and an opaque operation number. The logical program
 name belongs in persisted instance metadata, while a separate build artifact
 identity identifies the exact code and dependencies needed for replay.
 
-The source-level `isolate` package now declares `Call` and `Inbox`. Its native
-runtime hooks currently panic because no active native isolate can use them
-yet. The host selector and native command queue are proposed API and are not
-implemented. The Phase 1
+The source-level `isolate` package now implements `Call` and `Inbox` through
+a trusted, per-goroutine [boundary probe](../../src/internal/isolatebridge/bridge.go).
+The probe copies byte payloads and correlates concurrent calls, including
+calls from native child goroutines. It still uses ordinary Go channels and the
+shared heap; native isolate ownership, deterministic scheduling, the static
+program selector, and the final host command queue remain to be implemented.
+The Phase 1
 `internal/isolateproto.Register` and `Entry` model remains a reference-model
 dispatch mechanism, not this source contract.
 

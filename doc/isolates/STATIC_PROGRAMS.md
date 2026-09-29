@@ -44,6 +44,11 @@ func main() {
 }
 ```
 
+`Call` and `Inbox` work in the trusted boundary probe when the host binds
+one transport to the entry goroutine. The static build does not yet generate
+that entry binding, and the probe has no separate isolate heap or deterministic
+scheduler.
+
 One final executable contains the host and all selected programs. The host
 selects a program by logical name and creates many instances of it. A build
 artifact identity is separate from that name; it changes when code or build

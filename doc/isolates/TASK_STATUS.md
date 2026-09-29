@@ -122,9 +122,12 @@ ordinary-Go execution remains unproved.**
 - [x] Initial build-side `isolate.json` reader accepts explicitly selected
       directories, rejects unknown fields and duplicate names, and returns a
       deterministic program list; focused package tests pass
-- [x] Source-level `isolate` package declares `Call` and `Inbox` for a
-      normal per-program `func main()`; runtime hooks currently panic because
-      active native isolate binding and its owned command queue are pending
+- [x] Source-level `isolate` package implements `Call` and `Inbox` for a
+      normal per-program `func main()` through a trusted per-goroutine
+      boundary probe. It copies request, response, and Inbox bytes; correlates
+      concurrent calls; and is inherited by native child goroutines. The
+      native owned queue, deterministic scheduler, and static entry binding
+      remain pending
 - [x] Tagged `encoding/base64` probe reruns four initialized encoding
       pointers per instance; a directly importing caller selects the instance
       globals with a build-wide compiler flag; two importing packages and
@@ -218,6 +221,13 @@ The subsequent two-package dependency probe also passed a complete native
 `src/all.bash` run, alongside 100 tagged race-detector runs of its own tests.
 The opt-in `encoding/base64` initialized-state probe passed 100 tagged native
 race runs and another complete native `src/all.bash` run.
+
+The 2026-09-29 `Call`/`Inbox` boundary probe passed `src/make.bash`,
+`go test -race -count=100 isolate`, and the focused runtime size assertion.
+The full `go test runtime` run could not pass in this session because the
+sandbox denied `ptrace` and local listening sockets. That run also found a
+`runtime.g` size assertion that was updated and then passed on a focused
+rerun. The full runtime suite has not been rerun after that correction.
 
 The active development target is the container's native **Linux arm64**
 (`uname -m` reports `aarch64`; the rebuilt tree's `go version` reports
