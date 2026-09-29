@@ -93,6 +93,49 @@ dynamic loader has mapped the shared object.
 - `-buildmode=c-shared` exposes a C ABI for a foreign host. It is not the
   direct Go symbol and module path provided by `-buildmode=plugin`.
 
+## Memory measurements on Linux arm64
+
+Measured 2026-09-29 with this fork's Go toolchain, cgo enabled, and
+`GOMAXPROCS=1`. A host using `plugin` loaded separately built `package main`
+plugins. Each sample forced GC and called `debug.FreeOSMemory`; process RSS
+came from `/proc/self/smaps_rollup`, and plugin mapping RSS from
+`/proc/self/smaps`. A single call to each plugin's exported `Entry` touched
+some code. The host started at 4.6 MiB RSS, about 1.8 MiB `MemStats.GCSys`,
+and 63 KiB live Go heap. Those are overlapping process accounting views:
+`GCSys` is not an additional amount to add to RSS.
+
+| Plugin workload | `.so` disk size | Plugin mapping RSS after one call | Incremental process RSS |
+|---|---:|---:|---:|
+| One integer global and entry function | 2.13 MiB | 0.70 MiB | 0.74–1.04 MiB |
+| `encoding/json` marshals one small map | 5.63 MiB | 2.35 MiB | 2.57–2.93 MiB |
+| `net/http` reads one header | 9.99 MiB | 4.70 MiB | 5.23–5.54 MiB |
+
+The ranges reflect loading order and the first plugin's loader warmup. Loading
+a *second*, separately built JSON plugin after the first increased process RSS
+another 2.31 MiB, even though both used the same `encoding/json` build. Exact
+package compatibility therefore does not imply that independently linked
+plugin files share all resident code and metadata pages. Calling more library
+paths can fault in more pages; these are light-use observations, not maxima.
+
+`MemStats.GCSys` grew by roughly 7–56 KiB for a minimal plugin, 17–134 KiB
+for JSON, and 257–364 KiB for HTTP across the loading orders. Retained Go
+heap grew by roughly 27–40 KiB, 92–108 KiB, and 153–184 KiB respectively.
+These deltas combine loader metadata, package initialization, and allocator
+rounding; they do not isolate the cost of `init` alone. They do show that the
+observed per-plugin RSS was dominated by mapped code and metadata rather than
+another multi-megabyte GC runtime.
+
+Per-instance package state is separate. The tagged
+[`encoding/base64` benchmark](../../src/internal/isolateproto/testdata/e4base64toy/state_test.go)
+created 10,000 initialized package instances in three fresh processes. It
+retained 1,521–1,522 B of Go heap and 1,629–1,633 B of heap spans per
+instance. It created no isolate goroutines or user state. The existing
+Phase 1 [mixed suspended-instance proxy](./PHASE0_RESULTS.md) measured
+7,567–7,594 B incremental RSS per instance in three fresh runs on this tree;
+about 4.9 KiB was stack spans and 2.3 KiB was retained heap. The two probes
+have not been combined into a real dynamic isolate and must not be treated as
+an accepted total memory budget.
+
 ## Proof before changing the MVP architecture
 
 1. Build a worker and two independently linked plugin programs with the same

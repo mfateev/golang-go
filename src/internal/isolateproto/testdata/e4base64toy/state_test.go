@@ -11,6 +11,7 @@ import (
 	"internal/isolateproto"
 	"internal/isolateproto/testdata/e4base64caller"
 	"internal/isolateproto/testdata/e4base64toy"
+	"runtime"
 	"testing"
 	"unsafe"
 )
@@ -88,5 +89,30 @@ func TestBuildWideImportedGlobalAccess(t *testing.T) {
 	})
 	if base64.StdEncoding != processStd {
 		t.Error("process standard encoding changed")
+	}
+}
+
+// BenchmarkBase64PackageInstanceMemory measures the initialized package-state
+// cost alone. It creates no isolate goroutines or user workload state.
+func BenchmarkBase64PackageInstanceMemory(b *testing.B) {
+	const count = 10_000
+	for range b.N {
+		runtime.GC()
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		instances := make([]*isolateproto.PackageInstance, 0, count)
+		for range count {
+			instance, err := isolateproto.NewPackageInstance([]unsafe.Pointer{unsafe.Pointer(&base64Descriptor)})
+			if err != nil {
+				b.Fatal(err)
+			}
+			instances = append(instances, instance)
+		}
+		runtime.GC()
+		runtime.ReadMemStats(&after)
+		b.ReportMetric(float64(after.HeapAlloc-before.HeapAlloc)/count, "heap-B/instance")
+		b.ReportMetric(float64(after.HeapInuse-before.HeapInuse)/count, "inuse-B/instance")
+		b.ReportMetric(float64(after.GCSys-before.GCSys)/count, "gc-sys-B/instance")
+		runtime.KeepAlive(instances)
 	}
 }
