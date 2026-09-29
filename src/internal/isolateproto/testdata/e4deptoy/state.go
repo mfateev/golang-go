@@ -8,6 +8,7 @@ package e4deptoy
 
 var epoch = 40
 var count = new(int)
+var Exported = 41
 
 func init() {
 	epoch++

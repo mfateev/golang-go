@@ -96,6 +96,11 @@ ordinary-Go execution remains unproved.**
       manifest helper orders and replays compiler-generated initializer records.
       Selected direct imports now come from compiler metadata; 100 native
       arm64 race runs passed
+- [x] One opt-in build-wide package list enables local layouts, initializer
+      replay, and imported-global routing in every compiler invocation; the
+      two-package tagged suite passed 100 native arm64 race runs
+      and the `encoding/base64` suite passed 100 native arm64 race runs; the
+      complete `src/all.bash` suite passed
 - [x] Tagged `encoding/base64` probe reruns four initialized encoding
       pointers per instance; a directly importing caller selects the instance
       globals with a build-wide compiler flag; two importing packages and

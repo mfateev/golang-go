@@ -7,7 +7,6 @@ package ssagen
 import (
 	"cmp"
 	"slices"
-	"strings"
 
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
@@ -22,18 +21,8 @@ import (
 // The generated type gives the current GC a precise pointer map for the
 // package's isolate-owned globals. Package selection is opt-in for this probe.
 var isolateLayoutOffsets map[*types.Sym]int64
-var isolateImportedPackages map[string]bool
 
 func InitIsolateLayout() {
-	if base.Debug.IsolateImports != "" {
-		isolateImportedPackages = make(map[string]bool)
-		for _, path := range strings.Split(base.Debug.IsolateImports, ",") {
-			if path == "" {
-				base.Fatalf("isolate: empty package path in isolateimports")
-			}
-			isolateImportedPackages[path] = true
-		}
-	}
 	if base.Debug.IsolateGlobals == 0 {
 		return
 	}
@@ -119,7 +108,7 @@ func isolatePackageKey() *obj.LSym {
 
 func isolateImportedGlobal(n *ir.Name) bool {
 	pkg := n.Sym().Pkg
-	return pkg != nil && pkg != types.LocalPkg && isolateImportedPackages[pkg.Path]
+	return pkg != nil && pkg != types.LocalPkg && base.IsolateImportSelected(pkg.Path)
 }
 
 func isolateImportedKey(n *ir.Name) *obj.LSym {

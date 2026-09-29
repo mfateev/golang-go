@@ -54,6 +54,7 @@ type DebugFlags struct {
 	IsolateGlobals        int    `help:"redirect this package's globals through a generated isolate layout"`
 	IsolateImports        string `help:"comma-separated imported packages whose globals use isolate layouts"`
 	IsolateInit           int    `help:"keep package initialization assignments executable for isolate replay"`
+	IsolatePackages       string `help:"colon-separated package paths selected for isolate layouts and initialization"`
 	Libfuzzer             int    `help:"enable coverage instrumentation for libfuzzer"`
 	LiteralAllocHash      string `help:"hash value for use in debugging literal allocation optimizations" concurrent:"ok"`
 	LoopVar               int    `help:"shared (0), 1 (private loop variables, default), 2, private + log" concurrent:"ok"`

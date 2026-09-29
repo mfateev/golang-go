@@ -120,6 +120,30 @@ complete `src/all.bash` pass was on the preceding initializer-record commit.
 
 ## Executable package initialization probe
 
+The build-wide `-d=isolatepackages=path1:path2` probe now applies one selected
+set to every compiler invocation. A selected package gets its layout and
+replayable initializer mode automatically; all importers route direct accesses
+to selected package globals through the current instance. The compiler also
+records selected direct imports from this set. The external `e4importtoy`
+test package reads and writes an exported dependency global in two instances
+and verifies that the process global is unchanged. Its tagged suite passed
+100 native arm64 race-detector runs:
+
+```bash
+cd src
+GOMAXPROCS=4 GOGC=20 ../bin/go test -race \
+  -tags=phase0_e4,phase2b_layout,phase2b_dependency,phase2b_autoselection \
+  -gcflags='all=-d=isolatepackages=internal/isolateproto/testdata/e4deptoy:internal/isolateproto/testdata/e4importtoy' \
+  -count=100 internal/isolateproto/testdata/e4importtoy
+```
+
+This is a consistent opt-in selection mechanism, not package discovery or a
+whole-program classification proof. Selected-package reachability and a
+standard-library state audit remain open.
+The existing `encoding/base64` tagged suite passed 100 native arm64 race runs
+with the same build-wide flag selecting `encoding/base64`. The complete native
+`src/all.bash` suite passed after this change, including race and `../test`.
+
 The compiler's opt-in `-d=isolateinit=1` mode keeps package initialization
 assignments in executable code instead of moving them to the process data
 image. The E4 toy now declares `epoch = 41`, then subtracts 40 in its user

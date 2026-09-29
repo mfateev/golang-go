@@ -70,3 +70,26 @@ services still need review before `encoding/base64` can be placed in a
 supported isolate package set. `encoding/json` has shared caches and pools,
 so using it as the first proof would mix initialization with a broader
 process-state audit.
+
+## Build-wide selected-package probe
+
+The opt-in `-d=isolatepackages=path1:path2` compiler flag now carries one
+selected-package set to every compiler invocation in a build. A compiler
+automatically enables layout generation and replayable initialization when its
+own package path is selected. It redirects direct accesses to globals of
+selected imported packages through their layout, and records selected direct
+imports for initializer ordering. This removes the need to pair per-package
+layout flags with a separate imported-global flag for each caller.
+
+The tagged `e4importtoy` test selects both toy packages through one build-wide
+flag. Its external test package is not itself selected, yet direct reads and
+writes of an exported dependency global follow the selected instance. Two
+instances retain independent values and the process value is unchanged. The
+package's complete tagged suite passed 100 native arm64 race-detector runs.
+The existing `encoding/base64` tagged suite also passed 100 native arm64 race
+runs using only `-d=isolatepackages=encoding/base64` for selection.
+
+The selected set is still an explicit build input, not a discovered or audited
+whole-program package partition. The compiler does not yet prove that every
+package reachable from an isolate entry has been classified. The current
+per-package table and manifest remain probe machinery.

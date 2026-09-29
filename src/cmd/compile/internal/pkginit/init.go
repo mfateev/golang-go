@@ -6,7 +6,6 @@ package pkginit
 
 import (
 	"slices"
-	"strings"
 
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
@@ -149,15 +148,9 @@ func MakeTask() {
 
 		// Record direct imports selected for isolate state by this build.
 		// The host reads this immutable list to order package initialization.
-		selected := make(map[string]bool)
-		if base.Debug.IsolateImports != "" {
-			for _, path := range strings.Split(base.Debug.IsolateImports, ",") {
-				selected[path] = true
-			}
-		}
 		var selectedDeps []string
 		for _, pkg := range typecheck.Target.Imports {
-			if selected[pkg.Path] {
+			if base.IsolateImportSelected(pkg.Path) {
 				selectedDeps = append(selectedDeps, pkg.Path)
 			}
 		}
