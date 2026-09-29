@@ -8,6 +8,8 @@ runtime implementation is not complete.
 - [Task status](./TASK_STATUS.md) — current progress and open work
 - [Implementation plan](./IMPLEMENTATION_PLAN.md) — phase gates and acceptance
 - [Design definition](./ISOLATES_DESIGN.md) — goals and decisions
+- [Static programs](./STATIC_PROGRAMS.md) — per-directory config and one-binary build contract
+- [Dynamic loading](./DYNAMIC_LOADING.md) — deferred plugin-based enhancement
 - [Isolate API](./ISOLATE_API.md) — proposed host and isolate surfaces
 - [Language and library subset](./ISOLATE_SUBSET.md) — proposed restrictions
 - [Determinism](./DETERMINISM.md) — time, maps, scheduling, and replay

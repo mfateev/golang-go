@@ -1,6 +1,8 @@
-# Independently built isolate programs and runtime loading
+# Future enhancement: independently built and loaded isolate programs
 
-Status: **feasibility investigation, not an adopted MVP design**.
+Status: **deferred future enhancement, not part of the static MVP**. The MVP
+borrows the per-directory `package main` and `isolate.json` ideas while
+building every selected program into [one executable](./STATIC_PROGRAMS.md).
 
 ## Finding
 
@@ -53,8 +55,8 @@ the [current package selection probe](../../src/cmd/compile/internal/base/isolat
 
 ## Proposed program contract
 
-An isolate directory could contain `package main` and `isolate.json` with a
-stable logical name. The build would produce a plugin with a distinct immutable
+The same isolate directory and logical-name config used by the static build
+could later produce a plugin with a distinct immutable
 artifact identity, plus a manifest of its package closure and state
 descriptors. The logical name selects the workflow program; the artifact
 identity identifies its exact code and must differ for concurrently loaded

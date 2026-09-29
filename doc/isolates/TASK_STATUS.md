@@ -13,7 +13,8 @@ isolates. Driving use case is Temporal workflow isolation.
 - [ISOLATE_API.md](./ISOLATE_API.md) — host API, isolate-side primitives, what workflow code looks like
 - [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) — **the plan**: phases, gating experiments, decision point
 - [PACKAGE_STATE.md](./PACKAGE_STATE.md) — initial process/isolate package-state partition and dependency probe
-- [DYNAMIC_LOADING.md](./DYNAMIC_LOADING.md) — feasibility of independently built programs loaded into one runtime
+- [STATIC_PROGRAMS.md](./STATIC_PROGRAMS.md) — per-directory config and static multi-program build direction
+- [DYNAMIC_LOADING.md](./DYNAMIC_LOADING.md) — deferred feasibility of independently built programs loaded into one runtime
 - [ALTERNATIVES.md](./ALTERNATIVES.md) — rationale for the no-fork path
 
 - **Repo:** [golang/go](https://github.com/golang/go) via fork
@@ -114,6 +115,13 @@ ordinary-Go execution remains unproved.**
       layout type slot, and initialization records together; two-package and
       `encoding/base64` tagged suites passed 100 native arm64 race runs, and
       the complete `src/all.bash` suite passed
+- [x] Static-link feasibility probe compiled two separate `package main`
+      units under distinct internal package paths and called both from one
+      host executable; same-path dependency version mismatch failed link,
+      while distinct versioned import paths coexisted
+- [x] Initial build-side `isolate.json` reader accepts explicitly selected
+      directories, rejects unknown fields and duplicate names, and returns a
+      deterministic program list; focused package tests pass
 - [x] Tagged `encoding/base64` probe reruns four initialized encoding
       pointers per instance; a directly importing caller selects the instance
       globals with a build-wide compiler flag; two importing packages and
@@ -151,6 +159,10 @@ violated. See ISOLATES_DESIGN.md § "The unifying mechanism".
   into one method on the standard boundary interface. See ISOLATE_API.md.
 - **Snapshot/restore** — layout stays relocatable, implementation deferred
   (decision 9).
+- **Independent same-path dependency versions and plugin loading** — the
+  static MVP links one compatible definition per import path. Per-program
+  package namespaces and runtime loading require separate proofs; see
+  STATIC_PROGRAMS.md and DYNAMIC_LOADING.md.
 
 ## Open Questions
 

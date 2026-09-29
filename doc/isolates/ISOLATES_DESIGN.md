@@ -1,7 +1,7 @@
 # Go Isolates — Design Definition
 
 Status: **design draft with Phase 1 prototype and MVP scope revision**.
-Last updated 2026-09-27.
+Last updated 2026-09-29.
 
 ## What an isolate is
 
@@ -77,6 +77,18 @@ Because all isolate code is known at link time (decision 3), the linker can
 compute which packages are reachable from isolate entry points and give only
 those per-isolate `.data`/`.bss` copies. Runtime and shared infrastructure stay
 process-global. This partition is the first concrete artifact to produce.
+
+### Statically linked programs
+
+Each isolate program can live in its own directory with `package main` and a
+small `isolate.json` containing its stable logical name. The build selects
+program directories, compiles their mains under distinct internal paths, and
+links their entry wrappers into the host executable. Many instances of one
+program share its code while retaining separate selected package state. See
+[STATIC_PROGRAMS.md](./STATIC_PROGRAMS.md) for the proposed contract and the
+current linker probe. All programs in the executable use one compatible
+definition per Go import path. Arbitrary versions of the same import path in
+different programs are a future build-system question.
 
 ### Suspend → compact → drop from root set
 
