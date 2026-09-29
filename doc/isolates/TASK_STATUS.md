@@ -223,11 +223,12 @@ The opt-in `encoding/base64` initialized-state probe passed 100 tagged native
 race runs and another complete native `src/all.bash` run.
 
 The 2026-09-29 `Call`/`Inbox` boundary probe passed `src/make.bash`,
-`go test -race -count=100 isolate`, and the focused runtime size assertion.
-The full `go test runtime` run could not pass in this session because the
-sandbox denied `ptrace` and local listening sockets. That run also found a
-`runtime.g` size assertion that was updated and then passed on a focused
-rerun. The full runtime suite has not been rerun after that correction.
+`go test -race -count=100 isolate`, and `go test runtime -count=1`. The
+earlier runtime run found a `runtime.g` size assertion that was corrected;
+it also failed in an execution environment that denied `ptrace` and local
+listening sockets. After those permissions were available, the focused
+`TestUsingVDSO` and `TestNetpollWaiters` checks and the complete runtime
+suite passed.
 
 The active development target is the container's native **Linux arm64**
 (`uname -m` reports `aarch64`; the rebuilt tree's `go version` reports
