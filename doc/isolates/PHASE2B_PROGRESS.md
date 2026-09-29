@@ -144,6 +144,15 @@ The existing `encoding/base64` tagged suite passed 100 native arm64 race runs
 with the same build-wide flag selecting `encoding/base64`. The complete native
 `src/all.bash` suite passed after this change, including race and `../test`.
 
+Selected direct-import records now carry a relocation to each dependency's
+generated package key, alongside its path. A retained record cannot link if
+the selected dependency has no generated layout key. The tagged host helper
+also rejects a manifest whose key differs from the compiler's record before
+replaying initializers. The two-package tagged suite passed 100 native arm64
+race runs with this format. The `encoding/base64` tagged suite passed 100
+native arm64 race runs, and the complete native `src/all.bash` suite passed,
+including race and `../test`.
+
 The compiler's opt-in `-d=isolateinit=1` mode keeps package initialization
 assignments in executable code instead of moving them to the process data
 image. The E4 toy now declares `epoch = 41`, then subtracts 40 in its user

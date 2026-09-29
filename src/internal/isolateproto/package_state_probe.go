@@ -7,10 +7,16 @@
 package isolateproto
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"unsafe"
 )
+
+type packageDependency struct {
+	Path string
+	Key  unsafe.Pointer
+}
 
 // PackageInitSpec is a tagged host-side probe description for one opted-in
 // package. DependencyTask is the compiler's list of direct imports selected
@@ -85,12 +91,15 @@ func NewPackageInstance(specs []PackageInitSpec) (*PackageInstance, error) {
 		state[i] = 1
 		depTask := ordered[i].DependencyTask
 		count := *(*uint32)(depTask)
-		deps := slices.Clone(unsafe.Slice((*string)(unsafe.Add(depTask, 8)), count))
-		slices.Sort(deps)
-		for _, path := range deps {
-			j, ok := index[path]
+		deps := slices.Clone(unsafe.Slice((*packageDependency)(unsafe.Add(depTask, 8)), count))
+		slices.SortFunc(deps, func(a, b packageDependency) int { return cmp.Compare(a.Path, b.Path) })
+		for _, dep := range deps {
+			j, ok := index[dep.Path]
 			if !ok {
-				return fmt.Errorf("isolateproto: selected dependency %q of %q is missing", path, ordered[i].Path)
+				return fmt.Errorf("isolateproto: selected dependency %q of %q is missing", dep.Path, ordered[i].Path)
+			}
+			if dep.Key != ordered[j].Key {
+				return fmt.Errorf("isolateproto: selected dependency %q of %q has a mismatched package key", dep.Path, ordered[i].Path)
 			}
 			if err := visit(j); err != nil {
 				return err

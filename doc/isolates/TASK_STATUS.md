@@ -101,6 +101,10 @@ ordinary-Go execution remains unproved.**
       two-package tagged suite passed 100 native arm64 race runs
       and the `encoding/base64` suite passed 100 native arm64 race runs; the
       complete `src/all.bash` suite passed
+- [x] Selected direct-import metadata includes a dependency identity-key
+      relocation; the host validates it against the explicit manifest before
+      initializer replay, with 100 native arm64 tagged race runs and a full
+      `src/all.bash` pass
 - [x] Tagged `encoding/base64` probe reruns four initialized encoding
       pointers per instance; a directly importing caller selects the instance
       globals with a build-wide compiler flag; two importing packages and

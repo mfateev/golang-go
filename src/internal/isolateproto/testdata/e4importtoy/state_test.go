@@ -136,13 +136,39 @@ func TestPackageInitManifestValidation(t *testing.T) {
 	cycle := struct {
 		count uint32
 		pad   uint32
-		deps  [1]string
-	}{count: 1, deps: [1]string{"dep"}}
+		deps  [1]struct {
+			Path string
+			Key  unsafe.Pointer
+		}
+	}{count: 1}
+	cycle.deps[0].Path = "dep"
+	cycle.deps[0].Key = unsafe.Pointer(&depKey)
 	dep := isolateproto.PackageInitSpec{
 		Path: "dep", Key: unsafe.Pointer(&depKey), Type: depType,
 		DependencyTask: unsafe.Pointer(&cycle), InitTask: unsafe.Pointer(&depInitTask),
 	}
 	if _, err := isolateproto.NewPackageInstance([]isolateproto.PackageInitSpec{dep}); err == nil {
 		t.Error("accepted a package initialization cycle")
+	}
+	wrongKey := cycle
+	wrongKey.deps[0].Path = "internal/isolateproto/testdata/e4deptoy"
+	wrongKey.deps[0].Key = unsafe.Pointer(&importKey)
+	if _, err := isolateproto.NewPackageInstance([]isolateproto.PackageInitSpec{
+		{
+			Path:           "internal/isolateproto/testdata/e4importtoy",
+			Key:            unsafe.Pointer(&importKey),
+			Type:           importType,
+			DependencyTask: unsafe.Pointer(&wrongKey),
+			InitTask:       unsafe.Pointer(&importInitTask),
+		},
+		{
+			Path:           "internal/isolateproto/testdata/e4deptoy",
+			Key:            unsafe.Pointer(&depKey),
+			Type:           depType,
+			DependencyTask: unsafe.Pointer(&depDependencyTask),
+			InitTask:       unsafe.Pointer(&depInitTask),
+		},
+	}); err == nil {
+		t.Error("accepted a selected dependency with the wrong package key")
 	}
 }

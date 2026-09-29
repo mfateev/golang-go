@@ -93,3 +93,10 @@ The selected set is still an explicit build input, not a discovered or audited
 whole-program package partition. The compiler does not yet prove that every
 package reachable from an isolate entry has been classified. The current
 per-package table and manifest remain probe machinery.
+
+The compiler's selected-dependency record now includes each imported package's
+generated identity key as a relocation. A linked importer whose dependency
+record is retained requires that key symbol from the selected dependency.
+The host checks the recorded key against its manifest before replaying any
+initializers. This closes a silent manifest mismatch in the probe; it does not
+discover packages that the build did not select.

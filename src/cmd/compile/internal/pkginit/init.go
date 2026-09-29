@@ -148,10 +148,14 @@ func MakeTask() {
 
 		// Record direct imports selected for isolate state by this build.
 		// The host reads this immutable list to order package initialization.
+		// A key relocation makes linking fail if a selected dependency was
+		// compiled without its isolate layout.
 		var selectedDeps []string
+		selectedPkgs := make(map[string]*types.Pkg)
 		for _, pkg := range typecheck.Target.Imports {
 			if base.IsolateImportSelected(pkg.Path) {
 				selectedDeps = append(selectedDeps, pkg.Path)
+				selectedPkgs[pkg.Path] = pkg
 			}
 		}
 		slices.Sort(selectedDeps)
@@ -169,6 +173,7 @@ func MakeTask() {
 		for _, path := range selectedDeps {
 			depOff = objw.SymPtr(depLSym, depOff, staticdata.StringSym(base.Pos, path), 0)
 			depOff = objw.Uintptr(depLSym, depOff, uint64(len(path)))
+			depOff = objw.SymPtr(depLSym, depOff, selectedPkgs[path].Lookup("isolateLayoutKey").Linksym(), 0)
 		}
 		objw.Global(depLSym, int32(depOff), obj.RODATA|obj.NOPTR)
 	}
