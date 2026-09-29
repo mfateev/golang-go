@@ -100,3 +100,14 @@ record is retained requires that key symbol from the selected dependency.
 The host checks the recorded key against its manifest before replaying any
 initializers. This closes a silent manifest mismatch in the probe; it does not
 discover packages that the build did not select.
+
+The tagged `e4linktoy` fixture retains its generated dependency record at
+link time without directly reading the dependency's globals. It supports a
+negative link check: compile only the importer in isolate mode and select its
+dependency as an import, leaving the dependency unselected. The linker must
+reject the missing layout key. A build-wide selection of both packages must
+link and run. Both outcomes were observed: the negative build failed with an
+undefined `e4deptoy.isolateLayoutKey` relocation from only
+`e4linktoy.isolateDependencyTask`, while the positive build passed. The
+fixture uses a non-inlined dependency call so the initializer does not
+independently reference the dependency's layout symbols.

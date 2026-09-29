@@ -103,3 +103,15 @@ func isolateE4GetPackageBase(key unsafe.Pointer) unsafe.Pointer {
 	}
 	return gp.isolateE4Base
 }
+
+//go:linkname isolateE4GetImportedPackageBase
+func isolateE4GetImportedPackageBase(key unsafe.Pointer) unsafe.Pointer {
+	gp := getg()
+	if gp.isolateE4Bases != nil {
+		return (*isolateE4PackageBases)(gp.isolateE4Bases).base(key)
+	}
+	if gp.isolateE4Base != nil {
+		panic("isolate: imported package has no state in selected isolate")
+	}
+	return nil // ordinary process initialization
+}

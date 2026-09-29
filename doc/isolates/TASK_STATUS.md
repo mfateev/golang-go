@@ -105,6 +105,10 @@ ordinary-Go execution remains unproved.**
       relocation; the host validates it against the explicit manifest before
       initializer replay, with 100 native arm64 tagged race runs and a full
       `src/all.bash` pass
+- [x] Imported-global lookup rejects a legacy single-package base without a
+      package table; 100 native arm64 tagged race runs passed for the
+      rejection path and 100 for the ordinary package-table path; the
+      complete `src/all.bash` suite passed
 - [x] Tagged `encoding/base64` probe reruns four initialized encoding
       pointers per instance; a directly importing caller selects the instance
       globals with a build-wide compiler flag; two importing packages and

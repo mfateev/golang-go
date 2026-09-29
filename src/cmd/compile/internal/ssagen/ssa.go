@@ -5325,7 +5325,7 @@ func (s *state) addr(n ir.Node) *ssa.Value {
 			}
 			if isolateImportedGlobal(n) {
 				key := s.entryNewValue1A(ssaop.OpAddr, types.Types[types.TUNSAFEPTR], isolateImportedKey(n), s.sb)
-				basePtr := s.rtcall(typecheck.LookupRuntimeFunc("isolateE4GetPackageBase"), true, []*types.Type{t}, key)[0]
+				basePtr := s.rtcall(typecheck.LookupRuntimeFunc("isolateE4GetImportedPackageBase"), true, []*types.Type{t}, key)[0]
 				hasBase := s.newValue2(ssaop.OpNeqPtr, types.Types[types.TBOOL], basePtr, s.constNil(t))
 				offsetAddr := s.entryNewValue1A(ssaop.OpAddr, types.NewPtr(types.Types[types.TUINTPTR]), isolateImportedOffset(n), s.sb)
 				offset := s.load(types.Types[types.TUINTPTR], offsetAddr)

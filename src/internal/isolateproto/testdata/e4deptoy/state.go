@@ -17,6 +17,9 @@ func init() {
 
 func Epoch() int { return epoch }
 
+//go:noinline
+func EpochNoInline() int { return epoch }
+
 func Step() int {
 	*count++
 	return *count

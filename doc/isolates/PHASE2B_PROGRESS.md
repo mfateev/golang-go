@@ -153,6 +153,20 @@ race runs with this format. The `encoding/base64` tagged suite passed 100
 native arm64 race runs, and the complete native `src/all.bash` suite passed,
 including race and `../test`.
 
+Imported-global address generation now uses a separate runtime lookup. A
+legacy single-package base cannot serve as the base for an imported package:
+the lookup panics if that base is selected without a package table, while
+ordinary process initialization still uses the process global. The tagged
+`e4layouttoy` cross-base test and the `encoding/base64` positive suite each
+passed 100 native arm64 race runs.
+
+The retained-dependency-record link fixture also passed with both packages
+selected. When only the importer was compiled in isolate mode and its
+dependency was left unselected, linking failed specifically on the key
+relocation from `e4linktoy.isolateDependencyTask`.
+The complete native `src/all.bash` suite passed after the runtime lookup
+change, including race and `../test`.
+
 The compiler's opt-in `-d=isolateinit=1` mode keeps package initialization
 assignments in executable code instead of moving them to the process data
 image. The E4 toy now declares `epoch = 41`, then subtracts 40 in its user
