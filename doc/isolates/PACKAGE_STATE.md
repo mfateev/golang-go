@@ -26,16 +26,17 @@ missing key in a selected table panics instead of silently reading process
 state. With no table selected, ordinary process initialization uses the
 process globals, and the older single-package probe can still use its base.
 
-The tagged host helper `NewPackageInstance` accepts an explicit package
-manifest: identity key, layout type, the compiler's selected dependency record,
-and its immutable initializer record. It validates missing selected dependencies
-and cycles, allocates each selected layout, and runs initializers in dependency
+The tagged host helper `NewPackageInstance` accepts an explicit list of
+compiler-owned package descriptors. Each descriptor contains the package path,
+identity key, layout type slot, selected dependency record, and immutable
+initializer record. The helper validates missing selected dependencies and
+cycles, allocates each selected layout, and runs initializers in dependency
 order. The test deliberately lists the importer before its dependency. The
 importer reads an initialized dependency global, then both packages mutate
 their own graphs. Two instances and an inherited child passed 100 native
 arm64 race-detector runs.
 
-This establishes manifest-driven ordering for the selected package graph.
+This establishes descriptor-driven ordering for the selected package graph.
 Package discovery, automatic dependency selection, and a single contiguous
 base with linker-assigned package offsets remain to be implemented. The tagged
 table and host helper are probes for the access rule, not the final API or
@@ -92,7 +93,12 @@ runs using only `-d=isolatepackages=encoding/base64` for selection.
 The selected set is still an explicit build input, not a discovered or audited
 whole-program package partition. The compiler does not yet prove that every
 package reachable from an isolate entry has been classified. The current
-per-package table and manifest remain probe machinery.
+per-package table and descriptor list remain probe machinery.
+
+The descriptor keeps each package's key, type slot, and initializer records
+together in compiler output. The host supplies descriptor pointers rather
+than pairing those fields manually. Package discovery and a linked-program
+classification proof remain open.
 
 The compiler's selected-dependency record now includes each imported package's
 generated identity key as a relocation. A linked importer whose dependency

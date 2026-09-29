@@ -18,13 +18,12 @@ type packageDependency struct {
 	Key  unsafe.Pointer
 }
 
-// PackageInitSpec is a tagged host-side probe description for one opted-in
-// package. DependencyTask is the compiler's list of direct imports selected
-// for isolate state. Discovery and selection are still supplied by the build.
-type PackageInitSpec struct {
+// packageDescriptor is the compiler-owned metadata for one selected package.
+// Discovery and selection are still supplied by the build.
+type packageDescriptor struct {
 	Path           string
 	Key            unsafe.Pointer
-	Type           unsafe.Pointer
+	TypeSlot       unsafe.Pointer
 	DependencyTask unsafe.Pointer
 	InitTask       unsafe.Pointer
 }
@@ -45,11 +44,17 @@ func isolateSetPackageBases(unsafe.Pointer) unsafe.Pointer
 func isolateRunInitTask(unsafe.Pointer)
 
 // NewPackageInstance allocates the selected packages' layouts and replays
-// their initializers in dependency order. Its input is an explicit manifest;
-// whole-program package selection remains open.
-func NewPackageInstance(specs []PackageInitSpec) (*PackageInstance, error) {
-	ordered := slices.Clone(specs)
-	slices.SortFunc(ordered, func(a, b PackageInitSpec) int {
+// their initializers in dependency order. Its input is an explicit list of
+// compiler-owned descriptors; whole-program discovery remains open.
+func NewPackageInstance(descriptors []unsafe.Pointer) (*PackageInstance, error) {
+	ordered := make([]packageDescriptor, len(descriptors))
+	for i, descriptor := range descriptors {
+		if descriptor == nil {
+			return nil, fmt.Errorf("isolateproto: nil package descriptor at index %d", i)
+		}
+		ordered[i] = *(*packageDescriptor)(descriptor)
+	}
+	slices.SortFunc(ordered, func(a, b packageDescriptor) int {
 		if a.Path < b.Path {
 			return -1
 		}
@@ -63,7 +68,7 @@ func NewPackageInstance(specs []PackageInitSpec) (*PackageInstance, error) {
 	types := make([]unsafe.Pointer, len(ordered))
 	seenKeys := make(map[unsafe.Pointer]bool, len(ordered))
 	for i, spec := range ordered {
-		if spec.Path == "" || spec.Key == nil || spec.Type == nil || spec.DependencyTask == nil || spec.InitTask == nil {
+		if spec.Path == "" || spec.Key == nil || spec.TypeSlot == nil || spec.DependencyTask == nil || spec.InitTask == nil {
 			return nil, fmt.Errorf("isolateproto: incomplete package state spec for %q", spec.Path)
 		}
 		if _, exists := index[spec.Path]; exists {
@@ -75,7 +80,10 @@ func NewPackageInstance(specs []PackageInitSpec) (*PackageInstance, error) {
 		index[spec.Path] = i
 		seenKeys[spec.Key] = true
 		keys[i] = spec.Key
-		types[i] = spec.Type
+		types[i] = *(*unsafe.Pointer)(spec.TypeSlot)
+		if types[i] == nil {
+			return nil, fmt.Errorf("isolateproto: missing package layout type for %q", spec.Path)
+		}
 	}
 
 	state := make([]uint8, len(ordered))

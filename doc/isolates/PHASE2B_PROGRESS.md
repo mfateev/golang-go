@@ -167,6 +167,14 @@ relocation from `e4linktoy.isolateDependencyTask`.
 The complete native `src/all.bash` suite passed after the runtime lookup
 change, including race and `../test`.
 
+The compiler now emits one immutable descriptor per opted-in package with its
+path, identity key, layout type slot, dependency record, and initializer
+record. The tagged host helper accepts descriptor pointers, preventing callers
+from accidentally pairing metadata from different packages. The two-package
+and `encoding/base64` tagged suites each passed 100 native arm64 race runs.
+The complete native `src/all.bash` suite passed after this change, including
+race and `../test`.
+
 The compiler's opt-in `-d=isolateinit=1` mode keeps package initialization
 assignments in executable code instead of moving them to the process data
 image. The E4 toy now declares `epoch = 41`, then subtracts 40 in its user

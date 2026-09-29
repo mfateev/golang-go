@@ -109,6 +109,10 @@ ordinary-Go execution remains unproved.**
       package table; 100 native arm64 tagged race runs passed for the
       rejection path and 100 for the ordinary package-table path; the
       complete `src/all.bash` suite passed
+- [x] Compiler-owned package descriptors carry the path, identity key,
+      layout type slot, and initialization records together; two-package and
+      `encoding/base64` tagged suites passed 100 native arm64 race runs, and
+      the complete `src/all.bash` suite passed
 - [x] Tagged `encoding/base64` probe reruns four initialized encoding
       pointers per instance; a directly importing caller selects the instance
       globals with a build-wide compiler flag; two importing packages and

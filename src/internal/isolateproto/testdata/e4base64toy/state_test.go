@@ -18,27 +18,15 @@ import (
 //go:linkname layoutType encoding/base64.isolateLayoutType
 var layoutType unsafe.Pointer
 
-//go:linkname layoutKey encoding/base64.isolateLayoutKey
-var layoutKey byte
-
-//go:linkname base64InitTask encoding/base64.isolateInitTask
-var base64InitTask byte
-
-//go:linkname base64DependencyTask encoding/base64.isolateDependencyTask
-var base64DependencyTask byte
+//go:linkname base64Descriptor encoding/base64.isolatePackageDescriptor
+var base64Descriptor byte
 
 func newInstance(t *testing.T) *isolateproto.PackageInstance {
 	t.Helper()
 	if layoutType == nil {
 		t.Fatal("compiler did not emit the base64 package layout type")
 	}
-	instance, err := isolateproto.NewPackageInstance([]isolateproto.PackageInitSpec{{
-		Path:           "encoding/base64",
-		Key:            unsafe.Pointer(&layoutKey),
-		Type:           layoutType,
-		DependencyTask: unsafe.Pointer(&base64DependencyTask),
-		InitTask:       unsafe.Pointer(&base64InitTask),
-	}})
+	instance, err := isolateproto.NewPackageInstance([]unsafe.Pointer{unsafe.Pointer(&base64Descriptor)})
 	if err != nil {
 		t.Fatal(err)
 	}

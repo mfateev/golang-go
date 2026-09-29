@@ -176,6 +176,26 @@ func MakeTask() {
 			depOff = objw.SymPtr(depLSym, depOff, selectedPkgs[path].Lookup("isolateLayoutKey").Linksym(), 0)
 		}
 		objw.Global(depLSym, int32(depOff), obj.RODATA|obj.NOPTR)
+
+		// Keep all metadata for one selected package in a single compiler-owned
+		// descriptor. The tagged host passes its address instead of manually
+		// pairing a key, GC type slot, and initializer records.
+		descSym := typecheck.Lookup("isolatePackageDescriptor")
+		if descSym.Def != nil {
+			base.Fatalf("isolate: source declaration conflicts with generated package descriptor symbol")
+		}
+		desc := ir.NewNameAt(base.Pos, descSym, types.Types[types.TUINT8])
+		desc.Class = ir.PEXTERN
+		descSym.Def = desc
+		descLSym := desc.Linksym()
+		descLSym.Set(obj.AttrLinkname, true)
+		descOff := objw.SymPtr(descLSym, 0, staticdata.StringSym(base.Pos, types.LocalPkg.Path), 0)
+		descOff = objw.Uintptr(descLSym, descOff, uint64(len(types.LocalPkg.Path)))
+		descOff = objw.SymPtr(descLSym, descOff, typecheck.Lookup("isolateLayoutKey").Linksym(), 0)
+		descOff = objw.SymPtr(descLSym, descOff, typecheck.Lookup("isolateLayoutType").Linksym(), 0)
+		descOff = objw.SymPtr(descLSym, descOff, depLSym, 0)
+		descOff = objw.SymPtr(descLSym, descOff, lsym, 0)
+		objw.Global(descLSym, int32(descOff), obj.RODATA|obj.NOPTR)
 	}
 
 	if len(deps) == 0 && len(fns) == 0 && types.LocalPkg.Path != "main" && types.LocalPkg.Path != "runtime" {
