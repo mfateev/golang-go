@@ -119,16 +119,20 @@ func runBuildIsolates(ctx context.Context, args []string) {
 			selected[p.ImportPath] = true
 		}
 	}
+	hostReachable := make(map[string]bool)
 	for _, p := range load.PackageList([]*load.Package{host}) {
-		if selected[p.ImportPath] {
-			base.Fatalf("host and isolate programs both import selected package %q", p.ImportPath)
-		}
+		hostReachable[p.ImportPath] = true
 	}
 	selectedPaths := make([]string, 0, len(selected))
+	startupSkip := make([]string, 0, len(selected))
 	for path := range selected {
 		selectedPaths = append(selectedPaths, path)
+		if !hostReachable[path] {
+			startupSkip = append(startupSkip, path)
+		}
 	}
 	slices.Sort(selectedPaths)
+	slices.Sort(startupSkip)
 	forcedGcflags = append(forcedGcflags, "-d=isolatepackages="+strings.Join(selectedPaths, ":"))
 
 	implicit := load.PackagesAndErrors(ld, ctx, load.PackageOpts{}, []string{"unsafe", "runtime", "internal/isolatebridge", "internal/isolateproto"})
@@ -197,6 +201,10 @@ func runBuildIsolates(ctx context.Context, args []string) {
 	source.WriteString("}\nfunc main() { isolateHostMain() }\n")
 
 	buildInfo := host.Internal.BuildInfo
+	var entryGcflags []string
+	if len(startupSkip) != 0 {
+		entryGcflags = append(entryGcflags, "-d=isolateentryskip="+strings.Join(startupSkip, ":"))
+	}
 	host.Internal.ForceLibrary = true
 	host.Internal.BuildInfo = nil
 	for _, p := range loaded {
@@ -215,7 +223,7 @@ func runBuildIsolates(ctx context.Context, args []string) {
 		Internal: load.PackageInternal{
 			Build:      &build.Package{Name: "main"},
 			BuildInfo:  buildInfo,
-			Gcflags:    []string{"-d=isolateentry=1"},
+			Gcflags:    entryGcflags,
 			Imports:    imports,
 			RawImports: importPaths,
 		},

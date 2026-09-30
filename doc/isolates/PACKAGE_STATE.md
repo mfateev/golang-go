@@ -136,11 +136,13 @@ working build-to-runtime path for application package state.
 Standard-library packages remain process-owned in this probe. The build does
 not yet classify them or support a deliberate process-owned application
 package in an isolate program's import graph. A generated-entry compiler mode
-omits selected packages' startup init tasks while retaining their code; the
-entry imports reachable standard packages so their process initializers run
-once. A build test counts selected initializer calls and confirms there is no
-extra startup run. The build rejects a host that reaches selected application
-packages. Initializers should still be pure: the probe does not enforce
+omits startup init tasks only for selected packages unreachable from the host,
+while retaining their code. Selected application packages reached by the host
+also initialize process globals at startup; the same compiled initializer
+replays into each instance's globals. A build test counts both paths and checks
+that host mutations do not affect an instance. The entry imports reachable
+standard packages so their process initializers run once. Initializers should
+still be pure: the probe does not enforce
 determinism, and the host boundary is unavailable until `Start`. The
 per-package table remains a tagged probe rather than the final contiguous
 isolate layout.

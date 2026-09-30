@@ -143,10 +143,10 @@ ordinary-Go execution remains unproved.**
       the same initialized package, and verifies fresh state in each;
       standard-library state remains process-wide
 - [x] Generated-entry compiler mode retains selected application code while
-      omitting its process-startup init tasks. Reachable standard packages
-      still initialize at startup; selected initializers run only at instance
-      creation. A build script checks exact init counts and rejects a host
-      that imports selected application state
+      omitting process-startup init tasks only for packages the host cannot
+      reach. A package imported by both host and isolate initializes once for
+      the process and once per instance; the build script checks separate
+      host and instance state and exact init counts
 - [x] `sync.Pool` discards `Put` and uses fresh `New` values while an isolate
       boundary or selected package-state table is active, preventing a
       process-wide per-P pool from retaining isolate objects or passing them

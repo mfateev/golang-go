@@ -12,8 +12,13 @@ stderr -count=3 '^shared init$'
 ! go build -isolate-dir=./orders -isolate-dir=./orders -o duplicate$GOEXE ./host
 stderr 'duplicate isolate directory'
 
-! go build -isolate-dir=./orders -isolate-dir=./billing -o overlap$GOEXE ./host_overlap
-stderr 'host and isolate programs both import selected package'
+go build -isolate-dir=./orders -o overlap$GOEXE ./host_overlap
+exec ./overlap$GOEXE
+stdout '^host before 101$'
+stdout '^overlap orders:orders:142:102$'
+stdout '^host after 102$'
+stderr -count=2 '^shared init$'
+stderr -count=1 '^orders init$'
 
 -- go.mod --
 module example.org/isolatebuildtest
@@ -57,9 +62,25 @@ func main() {
 -- host_overlap/main.go --
 package main
 
-import _ "example.org/isolatebuildtest/shared"
+import (
+    "example.org/isolatebuildtest/shared"
+    "fmt"
+    "isolate"
+)
 
-func main() {}
+func main() {
+    fmt.Println("host before", shared.Next())
+    program, ok := isolate.LookupProgram("orders")
+    if !ok { panic("missing orders") }
+    instance, err := isolate.New(isolate.Config{Program: program, Input: []byte("orders")})
+    if err != nil { panic(err) }
+    if err := instance.Start(); err != nil { panic(err) }
+    command := <-instance.Commands()
+    fmt.Println("overlap", string(command.Payload))
+    command.Reply([]byte("ok"), nil)
+    <-instance.Done()
+    fmt.Println("host after", shared.Next())
+}
 -- orders/isolate.json --
 {"name":"orders"}
 -- orders/main.go --
@@ -78,6 +99,7 @@ func init() { println("orders init") }
 func main() {
 	counter++
 	input := <-isolate.Inbox()
+	shared.CheckPool()
 	payload := append([]byte("orders:"), input...)
 	payload = append(payload, ':')
 	payload = append(payload, strconv.Itoa(counter)...)
@@ -103,6 +125,7 @@ func init() { println("billing init") }
 
 func main() {
 	input := <-isolate.Inbox()
+	shared.CheckPool()
 	payload := append([]byte("billing:"), input...)
 	payload = append(payload, ':')
 	payload = append(payload, strconv.Itoa(shared.Next())...)
@@ -118,14 +141,17 @@ import "sync"
 
 var counter = 100
 var pool = sync.Pool{New: func() any { return new(int) }}
+var poolReused bool
 
 func init() {
 	first := pool.Get()
 	pool.Put(first)
-	if pool.Get() == first {
-		panic("pool reused a value during isolate initialization")
-	}
+	poolReused = pool.Get() == first
 	println("shared init")
+}
+
+func CheckPool() {
+	if poolReused { panic("pool reused a value during isolate initialization") }
 }
 
 func Next() int {

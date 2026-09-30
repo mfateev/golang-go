@@ -89,7 +89,11 @@ The generated top-level entry retains selected application packages but omits
 their startup init tasks; their initializers run when `isolate.New` creates
 each instance. Those initializers should be pure: the trusted probe does not
 enforce determinism, and `Call`/`Inbox` are unavailable until `Start`.
-The build rejects a host that imports any selected application package.
+If the host and an isolate both import a selected application package, the
+package has one compiled definition but separate process and per-instance
+globals. Its process initializer runs at startup, and its initializer also
+runs for each instance. A build test mutates the host copy and starts an
+isolate that sees its own initial state; the host copy stays unchanged.
 Deliberate process-owned application packages need a separate classification
 mechanism; keep them outside the isolate program's import graph for now.
 While an instance runs or initializes, `sync.Pool` returns fresh values and
