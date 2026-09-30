@@ -1350,6 +1350,19 @@ func (t *SemTable) Dequeue(addr *uint32) bool {
 // mspan wrapper for testing.
 type MSpan mspan
 
+// IsolateLargeAllocOriginForTest reports the allocation context recorded on a
+// new large-object span. It does not imply that the span is isolate-owned.
+func IsolateLargeAllocOriginForTest(owner uintptr) ([]byte, uintptr) {
+	old := isolateSetOwner(owner)
+	b := make([]byte, 64<<10)
+	isolateSetOwner(old)
+	s := spanOfHeap(uintptr(unsafe.Pointer(&b[0])))
+	if s == nil || s.spanclass.sizeclass() != 0 {
+		return b, ^uintptr(0)
+	}
+	return b, s.isolateAllocOwner
+}
+
 // Allocate an mspan for testing.
 func AllocMSpan() *MSpan {
 	var s *mspan

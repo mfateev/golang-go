@@ -179,6 +179,10 @@ ordinary-Go execution remains unproved.**
       children. A race test checks distinct instance IDs and restored host
       context, with `Call`/`Inbox` unavailable during init;
       heap routing and cross-owner checks remain pending
+- [x] Large-object spans record the active numeric allocation ID and clear it
+      on reuse. Focused and race tests check zero and nonzero origins.
+      This is diagnostic metadata: small allocations still share per-P spans,
+      and the provisional `Call`/`Inbox` transport crosses allocation contexts
 - [x] `sync.Pool` discards `Put` and uses fresh `New` values while an isolate
       boundary or selected package-state table is active, preventing a
       process-wide per-P pool from retaining isolate objects or passing them

@@ -38,8 +38,17 @@ its prior value after initialization. The numeric form can later be stored in
 off-heap allocator metadata without retaining a Go pointer there. It is an
 identity for future owned allocation and pointer checks, not an isolate heap.
 The package-state table and `Call`/`Inbox` transport remain
-separate: an initializer has an owner token but cannot call the host boundary
+separate: an initializer has an owner ID but cannot call the host boundary
 before `Start`.
+
+Large-object spans now record the numeric ID active at allocation and clear it
+when reused. This is allocation-origin metadata only. Small-object spans still
+mix allocations from different contexts through the shared per-P cache, and no
+span is reclaimed by isolate. The provisional boundary also crosses ownership
+contexts: `Call` clones its request while running in the isolate, and `Inbox`
+can deliver a host-allocated byte slice. A native owned queue must establish
+the correct allocation context on both sides before origin tags can support
+an ownership verifier.
 
 ## Two-package dependency probe
 
