@@ -114,9 +114,19 @@ func main() {
 -- shared/state.go --
 package shared
 
-var counter = 100
+import "sync"
 
-func init() { println("shared init") }
+var counter = 100
+var pool = sync.Pool{New: func() any { return new(int) }}
+
+func init() {
+	first := pool.Get()
+	pool.Put(first)
+	if pool.Get() == first {
+		panic("pool reused a value during isolate initialization")
+	}
+	println("shared init")
+}
 
 func Next() int {
 	counter++

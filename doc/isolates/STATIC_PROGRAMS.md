@@ -92,6 +92,9 @@ enforce determinism, and `Call`/`Inbox` are unavailable until `Start`.
 The build rejects a host that imports any selected application package.
 Deliberate process-owned application packages need a separate classification
 mechanism; keep them outside the isolate program's import graph for now.
+While an instance runs or initializes, `sync.Pool` returns fresh values and
+discards puts so its process-wide storage cannot pass temporary objects
+between instances. Other standard-library caches remain under audit.
 
 One final executable contains the host and all selected programs. The host
 selects a program by logical name and creates many instances of it. A build

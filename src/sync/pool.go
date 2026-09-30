@@ -83,6 +83,9 @@ type poolLocal struct {
 //go:linkname runtime_randn runtime.randn
 func runtime_randn(n uint32) uint32
 
+//go:linkname runtime_isolateActive runtime.isolateActive
+func runtime_isolateActive() bool
+
 var poolRaceHash [128]uint64
 
 // poolRaceAddr returns an address to use as the synchronization point
@@ -99,6 +102,10 @@ func poolRaceAddr(x any) unsafe.Pointer {
 // Put adds x to the pool.
 func (p *Pool) Put(x any) {
 	if x == nil {
+		return
+	}
+	if runtime_isolateActive() {
+		// An isolate-owned value must not enter a process-wide per-P pool.
 		return
 	}
 	if race.Enabled {
@@ -130,6 +137,17 @@ func (p *Pool) Put(x any) {
 // If Get would otherwise return nil and p.New is non-nil, Get returns
 // the result of calling p.New.
 func (p *Pool) Get() any {
+	if runtime_isolateActive() {
+		// Pool entries may come from another isolate or the host. Treat
+		// the pool as empty while an isolate is executing.
+		if p == nil {
+			panic("nil Pool")
+		}
+		if p.New != nil {
+			return p.New()
+		}
+		return nil
+	}
 	if race.Enabled {
 		race.Disable()
 	}

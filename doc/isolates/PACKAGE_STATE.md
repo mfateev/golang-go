@@ -144,3 +144,18 @@ packages. Initializers should still be pure: the probe does not enforce
 determinism, and the host boundary is unavailable until `Start`. The
 per-package table remains a tagged probe rather than the final contiguous
 isolate layout.
+
+## Process-wide pool boundary
+
+The trusted source-level boundary now treats `sync.Pool` as empty while an
+isolate goroutine executes or its selected package initializers replay.
+`Get` uses `New` if provided, and `Put` drops the value. This prevents a
+process-wide per-P pool from handing an object to another instance or
+retaining an isolate-owned object. A source-level test covers the entry
+goroutine and an inherited child; the static build script also exercises a
+pool inside a selected package initializer.
+
+This handles `sync.Pool` only. Standard packages such as `encoding/json` and
+`fmt` also have process-wide caches; their values and mutation paths still
+need an ownership and determinism audit before those packages can be claimed
+as isolate-safe.

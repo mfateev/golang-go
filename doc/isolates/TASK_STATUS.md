@@ -147,6 +147,10 @@ ordinary-Go execution remains unproved.**
       still initialize at startup; selected initializers run only at instance
       creation. A build script checks exact init counts and rejects a host
       that imports selected application state
+- [x] `sync.Pool` discards `Put` and uses fresh `New` values while an isolate
+      boundary or selected package-state table is active, preventing a
+      process-wide per-P pool from retaining isolate objects or passing them
+      between instances. Focused entry, child, and initializer tests pass
 - [x] Tagged `encoding/base64` probe reruns four initialized encoding
       pointers per instance; a directly importing caller selects the instance
       globals with a build-wide compiler flag; two importing packages and
@@ -263,6 +267,11 @@ The rebuilt `bin/go` also built and ran a standalone two-program example from
 an external module. The startup-initialization change passed `make.bash`, its
 focused `cmd/go` script test, and a subsequent complete Linux arm64
 `src/all.bash` run.
+
+The provisional `sync.Pool` boundary passed focused `sync`, `isolate` race,
+and static-build script tests, followed by a complete Linux arm64
+`src/all.bash` run. Other standard-library caches still require an ownership
+audit.
 
 The active development target is the container's native **Linux arm64**
 (`uname -m` reports `aarch64`; the rebuilt tree's `go version` reports

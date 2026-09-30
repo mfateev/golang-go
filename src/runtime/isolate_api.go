@@ -21,3 +21,9 @@ func isolateSetBoundary(p unsafe.Pointer) unsafe.Pointer {
 	gp.isolateBoundary = p
 	return old
 }
+
+//go:linkname isolateActive
+func isolateActive() bool {
+	gp := getg()
+	return gp.isolateBoundary != nil || gp.isolateE4Bases != nil
+}

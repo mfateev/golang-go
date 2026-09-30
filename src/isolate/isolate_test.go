@@ -9,6 +9,8 @@ import (
 	"internal/isolatebridge"
 	"isolate"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -97,5 +99,37 @@ func TestConcurrentCallsKeepTheirReplies(t *testing.T) {
 	a, z := <-done, <-done
 	if !(a == "second" && z == "host error" || a == "host error" && z == "second") {
 		t.Fatalf("replies = %q, %q", a, z)
+	}
+}
+
+func TestPoolValuesDoNotCrossBoundary(t *testing.T) {
+	var allocations atomic.Int32
+	pool := sync.Pool{New: func() any {
+		allocations.Add(1)
+		return new(int)
+	}}
+	hostValue := new(int)
+	pool.Put(hostValue)
+
+	b := isolatebridge.New(nil)
+	var first, second, childValue any
+	b.Run(func() {
+		first = pool.Get()
+		pool.Put(first)
+		second = pool.Get()
+		pool.Put(second)
+		child := make(chan any, 1)
+		go func() {
+			value := pool.Get()
+			pool.Put(value)
+			child <- value
+		}()
+		childValue = <-child
+	})
+	if first == hostValue || second == hostValue || childValue == hostValue || first == second || first == childValue || second == childValue {
+		t.Fatalf("pool reused a host or isolate value: host=%p first=%p second=%p child=%p", hostValue, first, second, childValue)
+	}
+	if got := allocations.Load(); got != 3 {
+		t.Fatalf("pool allocated %d values inside isolate, want 3", got)
 	}
 }
