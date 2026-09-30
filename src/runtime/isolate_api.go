@@ -25,18 +25,18 @@ func isolateSetBoundary(p unsafe.Pointer) unsafe.Pointer {
 //go:linkname isolateActive
 func isolateActive() bool {
 	gp := getg()
-	return gp.isolateOwner != nil || gp.isolateBoundary != nil || gp.isolateE4Bases != nil
+	return gp.isolateOwner != 0 || gp.isolateBoundary != nil || gp.isolateE4Bases != nil
 }
 
 //go:linkname isolateGetOwner
-func isolateGetOwner() unsafe.Pointer {
+func isolateGetOwner() uintptr {
 	return getg().isolateOwner
 }
 
 //go:linkname isolateSetOwner
-func isolateSetOwner(p unsafe.Pointer) unsafe.Pointer {
+func isolateSetOwner(id uintptr) uintptr {
 	gp := getg()
 	old := gp.isolateOwner
-	gp.isolateOwner = p
+	gp.isolateOwner = id
 	return old
 }

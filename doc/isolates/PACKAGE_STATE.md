@@ -31,11 +31,13 @@ stands; move the registry into a host package or implement an explicit,
 verified split. The earlier `e4compiletoy` special-cased two variables and is
 not evidence that the generated layout mode supports such a split.
 
-The trusted instance now binds one stable owner token before replaying package
-initializers and again when its `main` runs. Native child goroutines inherit
-the token; the host goroutine restores its prior value after initialization.
-This is an identity for future owned allocation and pointer checks, not an
-isolate heap. The package-state table and `Call`/`Inbox` transport remain
+The trusted instance now binds one monotonically assigned numeric owner ID
+before replaying package initializers and again through its state runner and
+`main`. Native child goroutines inherit the ID; the host goroutine restores
+its prior value after initialization. The numeric form can later be stored in
+off-heap allocator metadata without retaining a Go pointer there. It is an
+identity for future owned allocation and pointer checks, not an isolate heap.
+The package-state table and `Call`/`Inbox` transport remain
 separate: an initializer has an owner token but cannot call the host boundary
 before `Start`.
 

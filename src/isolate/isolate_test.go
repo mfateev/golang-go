@@ -16,11 +16,11 @@ import (
 	"sync/atomic"
 	"testing"
 	"unique"
-	"unsafe"
+	_ "unsafe"
 )
 
 //go:linkname runtimeOwner runtime.isolateGetOwner
-func runtimeOwner() unsafe.Pointer
+func runtimeOwner() uintptr
 
 var ownerTestSequence atomic.Uint64
 
@@ -185,12 +185,17 @@ func TestProcessCleanupPathsRejectIsolate(t *testing.T) {
 
 func TestInstanceOwnerSpansInitializationAndChildren(t *testing.T) {
 	name := "test-instance-owner-context-" + strconv.FormatUint(ownerTestSequence.Add(1), 10)
-	var initOwner unsafe.Pointer
-	type observedOwners struct{ main, child unsafe.Pointer }
+	var initOwner uintptr
+	type observedOwners struct{ main, child uintptr }
 	observed := make(chan observedOwners, 1)
 	isolatebridge.RegisterProgram(name, isolatebridge.ProgramEntry{
 		NewState: func() (func(func()), error) {
 			initOwner = runtimeOwner()
+			initializerChild := make(chan uintptr, 1)
+			go func() { initializerChild <- runtimeOwner() }()
+			if got := <-initializerChild; got != initOwner {
+				t.Errorf("initializer child owner = %d, want %d", got, initOwner)
+			}
 			func() {
 				defer func() {
 					if recover() == nil {
@@ -209,13 +214,13 @@ func TestInstanceOwnerSpansInitializationAndChildren(t *testing.T) {
 			}()
 			return func(fn func()) {
 				if got := runtimeOwner(); got != initOwner {
-					t.Errorf("state runner owner = %p, want %p", got, initOwner)
+					t.Errorf("state runner owner = %d, want %d", got, initOwner)
 				}
 				fn()
 			}, nil
 		},
 		Main: func() {
-			child := make(chan unsafe.Pointer, 1)
+			child := make(chan uintptr, 1)
 			go func() { child <- runtimeOwner() }()
 			observed <- observedOwners{runtimeOwner(), <-child}
 		},
@@ -228,15 +233,22 @@ func TestInstanceOwnerSpansInitializationAndChildren(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if initOwner == nil || runtimeOwner() != nil {
-		t.Fatalf("owner after New: initializer=%p host=%p", initOwner, runtimeOwner())
+	if initOwner == 0 || runtimeOwner() != 0 {
+		t.Fatalf("owner after New: initializer=%d host=%d", initOwner, runtimeOwner())
 	}
 	if err := instance.Start(); err != nil {
 		t.Fatal(err)
 	}
 	got := <-observed
 	<-instance.Done()
-	if got.main != initOwner || got.child != initOwner || runtimeOwner() != nil {
-		t.Fatalf("owners: initializer=%p main=%p child=%p host=%p", initOwner, got.main, got.child, runtimeOwner())
+	if got.main != initOwner || got.child != initOwner || runtimeOwner() != 0 {
+		t.Fatalf("owners: initializer=%d main=%d child=%d host=%d", initOwner, got.main, got.child, runtimeOwner())
+	}
+	firstOwner := initOwner
+	if _, err := isolate.New(isolate.Config{Program: program}); err != nil {
+		t.Fatal(err)
+	}
+	if initOwner <= firstOwner || runtimeOwner() != 0 {
+		t.Fatalf("second owner=%d, first owner=%d, host=%d", initOwner, firstOwner, runtimeOwner())
 	}
 }

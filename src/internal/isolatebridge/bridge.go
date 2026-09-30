@@ -19,10 +19,13 @@ import (
 // Boundary is one host command and inbox transport. Its channels are
 // infrastructure for the Phase 2B API probe, not a contained isolate heap.
 type Boundary struct {
+	owner uintptr
 	inbox chan []byte
 	calls chan *Command
 	next  atomic.Uint64
 }
+
+var nextOwner atomic.Uintptr
 
 // Command is one Call waiting for a host response. Payload is a copy owned by
 // the host side of the transport.
@@ -43,7 +46,12 @@ type response struct {
 
 // New creates a boundary with an initial, copied Inbox message.
 func New(initial []byte) *Boundary {
+	owner := nextOwner.Add(1)
+	if owner == 0 {
+		panic("isolate: owner ID exhausted")
+	}
 	b := &Boundary{
+		owner: owner,
 		inbox: make(chan []byte, 1),
 		calls: make(chan *Command),
 	}
@@ -58,7 +66,7 @@ func (b *Boundary) Run(fn func()) {
 	if b == nil || fn == nil {
 		panic("isolate: nil boundary or entry")
 	}
-	oldOwner := setOwner(unsafe.Pointer(b))
+	oldOwner := setOwner(b.owner)
 	defer setOwner(oldOwner)
 	old := setBoundary(unsafe.Pointer(b))
 	defer func() {
@@ -74,7 +82,7 @@ func (b *Boundary) RunOwner(fn func()) {
 	if b == nil || fn == nil {
 		panic("isolate: nil boundary or initializer")
 	}
-	old := setOwner(unsafe.Pointer(b))
+	old := setOwner(b.owner)
 	defer func() {
 		setOwner(old)
 		runtime.KeepAlive(b)
@@ -148,4 +156,4 @@ func getBoundary() unsafe.Pointer
 func setBoundary(unsafe.Pointer) unsafe.Pointer
 
 //go:linkname setOwner runtime.isolateSetOwner
-func setOwner(unsafe.Pointer) unsafe.Pointer
+func setOwner(uintptr) uintptr
