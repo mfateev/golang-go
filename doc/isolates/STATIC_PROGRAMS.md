@@ -101,6 +101,10 @@ once at process startup.
 The script also round-trips data through `encoding/json`, which remains
 unclassified and process-owned in the report. A working round trip does not
 establish safe package-state ownership; see PACKAGE_STATE.md.
+An isolate-selected package cannot directly assign to an unselected imported
+global from a replayed initializer. The build script checks direct and indexed
+`os` writes, and selecting `encoding/json` alone rejects its v2 callback
+assignments into `encoding/json/internal`.
 The generated top-level entry retains selected application packages but omits
 startup init tasks for packages unused by the host. Selected initializers run
 when `isolate.New` creates each instance. Those initializers should be pure:

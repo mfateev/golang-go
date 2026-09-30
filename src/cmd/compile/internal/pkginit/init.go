@@ -95,6 +95,9 @@ func MakeTask() {
 
 	// Record user init functions.
 	for _, fn := range typecheck.Target.Inits {
+		if base.Debug.IsolateGlobals != 0 && base.Debug.IsolateInit != 0 {
+			checkIsolateInitWrites(fn)
+		}
 		// An isolate package reruns variable initialization for each
 		// selected base. Keep assignments in executable init code instead
 		// of moving them into the process-global data image.
@@ -229,4 +232,49 @@ func MakeTask() {
 	// An initTask has pointers, but none into the Go heap.
 	// It's not quite read only, the state field must be modifiable.
 	objw.Global(lsym, int32(ot), obj.NOPTR)
+}
+
+// checkIsolateInitWrites rejects direct writes from a replayed initializer to
+// process-owned globals in imported packages. Such a write would silently
+// modify the process copy each time a new isolate instance is created.
+func checkIsolateInitWrites(fn *ir.Func) {
+	check := func(lhs, stmt ir.Node) {
+		name := isolateInitGlobalRoot(lhs)
+		if name == nil || name.Class != ir.PEXTERN {
+			return
+		}
+		pkg := name.Sym().Pkg
+		if pkg != nil && pkg != types.LocalPkg && !base.IsolateImportSelected(pkg.Path) {
+			base.ErrorfAt(stmt.Pos(), 0, "isolate: initializer writes unselected imported global %s.%s", pkg.Path, name.Sym().Name)
+		}
+	}
+	ir.VisitFuncAndClosures(fn, func(n ir.Node) {
+		switch n := n.(type) {
+		case *ir.AssignStmt:
+			check(n.X, n)
+		case *ir.AssignListStmt:
+			for _, lhs := range n.Lhs {
+				check(lhs, n)
+			}
+		case *ir.AssignOpStmt:
+			check(n.X, n)
+		}
+	})
+}
+
+// isolateInitGlobalRoot follows the assignable part of an expression. Index
+// operands and selector arguments are reads and do not make the target a write
+// to those globals.
+func isolateInitGlobalRoot(n ir.Node) *ir.Name {
+	switch n := n.(type) {
+	case *ir.Name:
+		return n
+	case *ir.SelectorExpr:
+		return isolateInitGlobalRoot(n.X)
+	case *ir.IndexExpr:
+		return isolateInitGlobalRoot(n.X)
+	case *ir.StarExpr:
+		return isolateInitGlobalRoot(n.X)
+	}
+	return nil
 }

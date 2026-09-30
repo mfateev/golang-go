@@ -23,6 +23,14 @@ stderr '-isolate-report requires at least one -isolate-dir'
 ! go build -isolate-dir=./orders -isolate-report=clobber$GOEXE -o clobber$GOEXE ./host
 stderr '-isolate-report must differ from executable output'
 
+! go build -isolate-dir=./badglobal -o reject$GOEXE ./host
+stderr 'isolate: initializer writes unselected imported global os.Stdout'
+stderr 'isolate: initializer writes unselected imported global os.Args'
+stderr 'isolate: initializer writes unselected imported global flag.CommandLine'
+
+! go build -gcflags=all=-d=isolatepackages=encoding/json encoding/json
+stderr 'isolate: initializer writes unselected imported global encoding/json/internal.TransformMarshalError'
+
 go build -isolate-dir=./orders -o overlap$GOEXE ./host_overlap
 exec ./overlap$GOEXE
 stdout '^host before 101$'
@@ -202,6 +210,22 @@ func main() {
 }
 -- billing/isolate.json --
 {"name":"billing"}
+-- badglobal/isolate.json --
+{"name":"badglobal"}
+-- badglobal/main.go --
+package main
+
+import (
+	"flag"
+	"os"
+)
+
+func init() {
+	os.Stdout = nil
+	os.Args[0] = "bad"
+	flag.CommandLine.Usage = nil
+}
+func main() {}
 -- billing/main.go --
 package main
 

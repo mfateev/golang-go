@@ -163,6 +163,10 @@ ordinary-Go execution remains unproved.**
       `encoding/json` while confirming its report status. The v2 initializer
       writes callback globals in `encoding/json/internal`, so selecting JSON
       alone would mutate process dependency state during instance replay
+- [x] The compiler rejects direct replayed initializer writes to unselected
+      imported globals, including indexed writes. A build script checks `os`
+      globals and the `encoding/json/internal` callback assignments. Writes
+      through aliases, calls, and unsafe pointers remain outside this gate
 - [ ] Classify ownership and effects across the broad standard library;
       implement required library and runtime hooks and reject unclassified
       paths before claiming general standard-library support

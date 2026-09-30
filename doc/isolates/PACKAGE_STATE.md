@@ -116,6 +116,11 @@ an `init` function that assigns callback globals in `encoding/json/internal`.
 Selecting `encoding/json` alone would replay those writes into the process
 copy of its dependency. Selecting that dependency requires checking every
 reader, including `encoding/json/v2`, for the same per-instance routing.
+The compiler now rejects direct initializer assignments to globals of
+unselected imported packages, including writes through an index or field.
+Selecting `encoding/json` alone produces diagnostics for its five callback
+assignments. This check covers syntax rooted in an imported global; writes
+through aliases, calls, and unsafe pointers still need separate effect checks.
 
 ## Build-wide selected-package probe
 
