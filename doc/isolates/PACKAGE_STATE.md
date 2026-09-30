@@ -90,15 +90,15 @@ package's complete tagged suite passed 100 native arm64 race-detector runs.
 The existing `encoding/base64` tagged suite also passed 100 native arm64 race
 runs using only `-d=isolatepackages=encoding/base64` for selection.
 
-The selected set is still an explicit build input, not a discovered or audited
-whole-program package partition. The compiler does not yet prove that every
-package reachable from an isolate entry has been classified. The current
-per-package table and descriptor list remain probe machinery.
+In the direct tagged probe, the selected set is an explicit build input, not
+an audited whole-program package partition. The compiler does not yet prove
+that every package reachable from an isolate entry has been classified. The
+current per-package table and descriptor list remain probe machinery.
 
 The descriptor keeps each package's key, type slot, and initializer records
 together in compiler output. The host supplies descriptor pointers rather
-than pairing those fields manually. Package discovery and a linked-program
-classification proof remain open.
+than pairing those fields manually. The static build now discovers application
+dependencies; a linked-program classification proof remains open.
 
 The compiler's selected-dependency record now includes each imported package's
 generated identity key as a relocation. A linked importer whose dependency
@@ -117,3 +117,25 @@ undefined `e4deptoy.isolateLayoutKey` relocation from only
 `e4linktoy.isolateDependencyTask`, while the positive build passed. The
 fixture uses a non-inlined dependency call so the initializer does not
 independently reference the dependency's layout symbols.
+
+## Static build integration
+
+The experimental `go build -isolate-dir` path now walks each configured
+program's package graph and selects its non-standard packages with one
+build-wide `-d=isolatepackages` value. The generated top-level main retains
+one descriptor for each selected package and passes the reachable subset to
+`NewPackageInstance` when the host creates an instance. This reuses the
+descriptor validation and dependency-ordered initializer replay above.
+
+The build script starts `orders` twice and `billing` once. Both programs
+import one initialized application package. `orders` also initializes one of
+its own globals from that package. Each instance observes the dependency's
+fresh initial value and the correct initialization order. This establishes a
+working build-to-runtime path for application package state.
+
+Standard-library packages remain process-owned in this probe. The build does
+not yet classify them or support a deliberate process-owned application
+package in an isolate program's import graph. Ordinary Go startup still runs
+selected packages' initializers once before the host starts, so initializers
+with side effects remain unsupported. The per-package table remains a tagged
+probe rather than the final contiguous isolate layout.

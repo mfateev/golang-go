@@ -1,8 +1,9 @@
 # Statically linked isolate programs
 
-Status: **experimental static build and trusted host bridge implemented**.
-Per-instance state and the native scheduler remain pending. Dynamic loading is
-a [future enhancement](./DYNAMIC_LOADING.md).
+Status: **experimental static build, application-package state, and trusted
+host bridge implemented**. Standard-library state classification and the
+native scheduler remain pending. Dynamic loading is a
+[future enhancement](./DYNAMIC_LOADING.md).
 
 ## Directory contract
 
@@ -77,11 +78,17 @@ for {
 ```
 
 This host loop is a temporary transport API. It does not yet implement the
-planned `Resume`/quiescence contract. The current build runs each selected
-package's ordinary Go initialization once at process startup. Its mutable
-globals are therefore shared across instances unless explicitly compiled
-with the separate opt-in package-state probe. The build does not yet derive
-that selection or replay initializers for a newly started instance.
+planned `Resume`/quiescence contract. The build automatically selects each
+configured `package main` and every reachable non-standard package for the
+tagged package-state probe. `isolate.New` allocates their global layouts and
+replays initializers in dependency order for each instance. A build test
+starts one program twice and another once, with both importing an initialized
+shared package; each run observes fresh state. Standard-library packages
+remain process-owned in this probe. The ordinary Go initializers also run
+once at process startup, so initializers with side effects remain unsupported.
+Application packages that must remain process-owned need a separate
+classification mechanism; keep them outside the isolate program's import
+graph for now.
 
 One final executable contains the host and all selected programs. The host
 selects a program by logical name and creates many instances of it. A build
@@ -163,7 +170,8 @@ manifest remains separate.
 ## Next build slice
 
 The [config reader](../../src/cmd/go/internal/isolatecfg/config.go),
-multi-main loader, and generated entry table are in place. The remaining
-build work is to derive and validate one package-state selection, retain the
-compiler-generated descriptor manifest, and run two instances of one program
-plus one instance of another with independent initialized state.
+multi-main loader, generated entry table, and reachable application-package
+descriptor list are in place. The remaining build work is to classify
+standard-library state, support deliberate process-owned application
+packages, validate the complete selection against every reachable package,
+and replace the tagged table with the final contiguous instance layout.

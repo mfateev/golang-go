@@ -10,6 +10,7 @@ import (
 	"go/build"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -52,6 +53,9 @@ func runBuildIsolates(ctx context.Context, args []string) {
 	programs, err := isolatecfg.LoadDirectories(buildIsolateDirs)
 	if err != nil {
 		base.Fatal(err)
+	}
+	if !slices.Contains(cfg.BuildContext.BuildTags, "phase0_e4") {
+		cfg.BuildContext.BuildTags = append(cfg.BuildContext.BuildTags, "phase0_e4")
 	}
 	ld := modload.NewLoader()
 	ld.InitWorkfile()
@@ -96,8 +100,31 @@ func runBuildIsolates(ctx context.Context, args []string) {
 		}
 		seenPath[p.ImportPath] = true
 	}
+	// In this trusted POC, application packages reached by a program own
+	// instance state. Standard packages remain process-owned pending their
+	// separate state and effect audit.
+	programPaths := make([][]string, len(loaded))
+	selected := make(map[string]bool)
+	for i, root := range loaded {
+		for _, p := range load.PackageList([]*load.Package{root}) {
+			if p.Standard {
+				continue
+			}
+			if p.ImportPath == "" {
+				base.Fatalf("isolate %q has a dependency without an import path", programs[i].Name)
+			}
+			programPaths[i] = append(programPaths[i], p.ImportPath)
+			selected[p.ImportPath] = true
+		}
+	}
+	selectedPaths := make([]string, 0, len(selected))
+	for path := range selected {
+		selectedPaths = append(selectedPaths, path)
+	}
+	slices.Sort(selectedPaths)
+	forcedGcflags = append(forcedGcflags, "-d=isolatepackages="+strings.Join(selectedPaths, ":"))
 
-	implicit := load.PackagesAndErrors(ld, ctx, load.PackageOpts{}, []string{"unsafe", "runtime", "internal/isolatebridge"})
+	implicit := load.PackagesAndErrors(ld, ctx, load.PackageOpts{}, []string{"unsafe", "runtime", "internal/isolatebridge", "internal/isolateproto"})
 	load.CheckPackageErrors(implicit)
 	imports := append([]*load.Package{host}, loaded...)
 	imports = append(imports, implicit...)
@@ -109,9 +136,14 @@ func runBuildIsolates(ctx context.Context, args []string) {
 	var source strings.Builder
 	source.WriteString("package main\nimport (\n")
 	for _, path := range importPaths {
-		if path == "internal/isolatebridge" {
+		switch path {
+		case "internal/isolatebridge":
 			fmt.Fprintf(&source, "isolatebridge %s\n", strconv.Quote(path))
-		} else {
+		case "internal/isolateproto":
+			fmt.Fprintf(&source, "isolateproto %s\n", strconv.Quote(path))
+		case "unsafe":
+			fmt.Fprintf(&source, "unsafe %s\n", strconv.Quote(path))
+		default:
 			fmt.Fprintf(&source, "_ %s\n", strconv.Quote(path))
 		}
 	}
@@ -122,9 +154,24 @@ func runBuildIsolates(ctx context.Context, args []string) {
 		fmt.Fprintf(&source, "//go:linkname isolateProgramMain%d %s.main\n", i, p.ImportPath)
 		fmt.Fprintf(&source, "func isolateProgramMain%d()\n", i)
 	}
+	descriptorIndex := make(map[string]int, len(selectedPaths))
+	for i, path := range selectedPaths {
+		descriptorIndex[path] = i
+		fmt.Fprintf(&source, "//go:linkname isolatePackageDescriptor%d %s.isolatePackageDescriptor\n", i, path)
+		fmt.Fprintf(&source, "var isolatePackageDescriptor%d byte\n", i)
+	}
+	for i, paths := range programPaths {
+		fmt.Fprintf(&source, "func isolateProgramState%d() (func(func()), error) {\n", i)
+		source.WriteString("state, err := isolateproto.NewPackageInstance([]unsafe.Pointer{\n")
+		for _, path := range paths {
+			fmt.Fprintf(&source, "unsafe.Pointer(&isolatePackageDescriptor%d),\n", descriptorIndex[path])
+		}
+		source.WriteString("})\n")
+		source.WriteString("if err != nil { return nil, err }; return state.Run, nil\n}\n")
+	}
 	source.WriteString("func init() {\n")
 	for i, p := range programs {
-		fmt.Fprintf(&source, "isolatebridge.RegisterProgram(%s, isolateProgramMain%d)\n", strconv.Quote(p.Name), i)
+		fmt.Fprintf(&source, "isolatebridge.RegisterProgram(%s, isolatebridge.ProgramEntry{Main: isolateProgramMain%d, NewState: isolateProgramState%d})\n", strconv.Quote(p.Name), i, i)
 	}
 	source.WriteString("}\nfunc main() { isolateHostMain() }\n")
 

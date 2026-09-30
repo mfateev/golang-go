@@ -13,7 +13,7 @@ import (
 // Program identifies one statically linked program in the current binary.
 type Program struct {
 	name  string
-	entry func()
+	entry isolatebridge.ProgramEntry
 }
 
 // Name returns the stable name from the program's isolate.json.
@@ -42,6 +42,7 @@ type Command = isolatebridge.Command
 // uses the ordinary Go heap and scheduler; it does not provide containment.
 type Isolate struct {
 	entry    func()
+	runState func(func())
 	boundary *isolatebridge.Boundary
 	started  atomic.Bool
 	done     chan struct{}
@@ -49,12 +50,21 @@ type Isolate struct {
 
 // New prepares an instance and copies its initial Inbox message.
 func New(cfg Config) (*Isolate, error) {
-	if cfg.Program.entry == nil {
+	if cfg.Program.entry.Main == nil || cfg.Program.entry.NewState == nil {
 		return nil, errors.New("isolate: unknown program")
 	}
+	boundary := isolatebridge.New(cfg.Input)
+	runState, err := cfg.Program.entry.NewState()
+	if err != nil {
+		return nil, err
+	}
+	if runState == nil {
+		return nil, errors.New("isolate: program has no state runner")
+	}
 	return &Isolate{
-		entry:    cfg.Program.entry,
-		boundary: isolatebridge.New(cfg.Input),
+		entry:    cfg.Program.entry.Main,
+		runState: runState,
+		boundary: boundary,
 		done:     make(chan struct{}),
 	}, nil
 }
@@ -67,7 +77,7 @@ func (i *Isolate) Start() error {
 	}
 	go func() {
 		defer close(i.done)
-		i.boundary.Run(i.entry)
+		i.runState(func() { i.boundary.Run(i.entry) })
 	}()
 	return nil
 }

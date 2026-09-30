@@ -103,6 +103,12 @@
 // ends with a slash or backslash, then any resulting executables
 // will be written to that directory.
 //
+// The experimental -isolate-dir flag selects a directory containing a package
+// main and an isolate.json file. It may be repeated to link several programs
+// into one executable with the host package main. The build command generates
+// the program lookup table; see doc/isolates/STATIC_PROGRAMS.md for its current
+// limitations.
+//
 // The build flags are shared by the build, clean, get, install, list, run,
 // and test commands:
 //

@@ -234,9 +234,12 @@ a trusted, per-goroutine [boundary probe](../../src/internal/isolatebridge/bridg
 The static build generates the program selector, and the current host API
 provides `New`, `Start`, `Commands`, `Send`, and `Done`. The probe copies byte
 payloads and correlates concurrent calls, including calls from native child
-goroutines. It still uses ordinary Go channels and the shared heap; native
-isolate ownership, deterministic scheduling, and the final host command queue
-remain to be implemented.
+goroutines. The build now gives each configured program and its reachable
+non-standard packages separate initialized global layouts per instance.
+Standard-library packages still have process-wide state. The transport uses
+ordinary Go channels and the shared heap; native isolate ownership,
+deterministic scheduling, and the final host command queue remain to be
+implemented.
 The Phase 1
 `internal/isolateproto.Register` and `Entry` model remains a reference-model
 dispatch mechanism, not this source contract.

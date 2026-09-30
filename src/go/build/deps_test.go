@@ -873,6 +873,13 @@ var depsRules = `
 	runtime, sort, sync, sync/atomic, time
 	< internal/isolateproto;
 
+	# Experimental source-level isolate API and trusted host transport.
+	bytes, errors, runtime, strings, sync, sync/atomic, unsafe
+	< internal/isolatebridge;
+
+	errors, internal/isolatebridge, sync/atomic
+	< isolate;
+
 	# Test-only packages can have anything they want
 
 	FMT, compress/gzip, embed, encoding/binary

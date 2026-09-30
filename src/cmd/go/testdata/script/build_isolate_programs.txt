@@ -3,8 +3,8 @@
 
 go build -isolate-dir=./orders -isolate-dir=./billing -o worker$GOEXE ./host
 exec ./worker$GOEXE
-stdout 'orders orders:orders'
-stdout 'billing billing:billing'
+stdout -count=2 '^orders orders:orders:142:102$'
+stdout '^billing billing:billing:101$'
 
 ! go build -isolate-dir=./orders -isolate-dir=./orders -o duplicate$GOEXE ./host
 stderr 'duplicate isolate directory'
@@ -45,6 +45,7 @@ func run(name string) {
 
 func main() {
 	run("orders")
+	run("orders")
 	run("billing")
 }
 -- orders/isolate.json --
@@ -52,11 +53,23 @@ func main() {
 -- orders/main.go --
 package main
 
-import "isolate"
+import (
+	"example.org/isolatebuildtest/shared"
+	"isolate"
+	"strconv"
+)
+
+var counter = 40 + shared.Next()
 
 func main() {
+	counter++
 	input := <-isolate.Inbox()
-	response, err := isolate.Call(1, append([]byte("orders:"), input...))
+	payload := append([]byte("orders:"), input...)
+	payload = append(payload, ':')
+	payload = append(payload, strconv.Itoa(counter)...)
+	payload = append(payload, ':')
+	payload = append(payload, strconv.Itoa(shared.Next())...)
+	response, err := isolate.Call(1, payload)
 	if err != nil || string(response) != "ok" {
 		panic("orders reply")
 	}
@@ -66,12 +79,28 @@ func main() {
 -- billing/main.go --
 package main
 
-import "isolate"
+import (
+	"example.org/isolatebuildtest/shared"
+	"isolate"
+	"strconv"
+)
 
 func main() {
 	input := <-isolate.Inbox()
-	response, err := isolate.Call(1, append([]byte("billing:"), input...))
+	payload := append([]byte("billing:"), input...)
+	payload = append(payload, ':')
+	payload = append(payload, strconv.Itoa(shared.Next())...)
+	response, err := isolate.Call(1, payload)
 	if err != nil || string(response) != "ok" {
 		panic("billing reply")
 	}
+}
+-- shared/state.go --
+package shared
+
+var counter = 100
+
+func Next() int {
+	counter++
+	return counter
 }

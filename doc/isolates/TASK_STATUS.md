@@ -126,8 +126,7 @@ ordinary-Go execution remains unproved.**
       normal per-program `func main()` through a trusted per-goroutine
       boundary probe. It copies request, response, and Inbox bytes; correlates
       concurrent calls; and is inherited by native child goroutines. The
-      native owned queue, deterministic scheduler, and static entry binding
-      remain pending
+      native owned queue and deterministic scheduler remain pending
 - [x] Direct-toolchain static probe linked two separately compiled configured
       `package main` directories into one host and ran both through the
       trusted `Call`/`Inbox` boundary
@@ -136,6 +135,13 @@ ordinary-Go execution remains unproved.**
       and links one executable with the host. The trusted host API can look up
       each program, start its `main`, and exchange copied `Call`/`Inbox` bytes;
       a `cmd/go` script test builds and runs two programs by name
+- [x] The static build selects configured `package main` units and their
+      reachable non-standard dependencies for the opt-in package-state mode.
+      It registers the generated descriptors, and `isolate.New` allocates and
+      initializes the selected layouts in dependency order. A build script
+      runs two instances of one program and one of another, both importing
+      the same initialized package, and verifies fresh state in each;
+      standard-library state remains process-wide
 - [x] Tagged `encoding/base64` probe reruns four initialized encoding
       pointers per instance; a directly importing caller selects the instance
       globals with a build-wide compiler flag; two importing packages and
@@ -240,9 +246,15 @@ suite passed.
 
 The 2026-09-30 static build integration passed `src/make.bash`, a focused
 `cmd/go` script test, and a separate two-program build/run from an external
-module. Selected packages still use process-wide initialization and globals;
-the build does not yet derive or replay per-instance package state. The full
-`src/all.bash` suite has not been rerun for this integration.
+module. The next slice also passed `src/make.bash`, the script's initialized
+state check for two instances, and `go test -race isolate`. A later script
+check passed for a dependency imported by two programs and for initializer
+dependency order. Selected package initializers still run once at process
+startup as well as during instance creation. Standard-library state has not
+been classified. The complete Linux arm64 `src/all.bash` suite passed after
+updating the new packages' dependency policy and generated package/help lists.
+The rebuilt `bin/go` also built and ran a standalone two-program example from
+an external module.
 
 The active development target is the container's native **Linux arm64**
 (`uname -m` reports `aarch64`; the rebuilt tree's `go version` reports
