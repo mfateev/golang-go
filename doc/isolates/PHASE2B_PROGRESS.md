@@ -333,3 +333,29 @@ After reinstalling `netbase`, both focused tests and the complete `src/all.bash`
 rerun passed, including the race section and `../test`. The cross-package
 inlining test passed 100 native arm64 race runs; the tagged generic guard
 test passed.
+
+## Exported generic functions with selected globals
+
+On 2026-09-30, the earlier exported-generic guard was replaced by generated
+offset symbols for unexported globals. An exported generic body instantiated
+by an importing package can now read or write those globals through the
+selected package layout. Compiler-generated `.dict.` symbols remain shared
+immutable metadata instead of being mistaken for package variables. The
+static build script calls exported generic read and write functions from an
+isolate, checks that a second instance starts fresh, and verifies that a host
+using the same package retains its own value. The focused script and a
+standalone `-race` build/run passed.
+
+A temporary diagnostic build selected many public standard packages by
+default while keeping runtime and process-service packages out of that probe.
+It compiled and ran a small `fmt`, `strings`, and `encoding/json` workload
+after the generic offset and dictionary fixes. The diagnostic selection knob
+was removed; this result proves compiler feasibility for that workload, not
+standard-library ownership or effect safety. Selecting every package global
+with the current eager layout would also duplicate immutable standard-library
+tables per instance, so default selection needs generic immutable-data sharing
+or lazy materialization to meet the density target.
+
+The generic layout change passed `src/make.bash`, the focused static-build
+script and tagged generic compiler test, a standalone `-race` build/run, and
+a complete Linux arm64 `src/all.bash` run.

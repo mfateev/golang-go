@@ -150,13 +150,18 @@ ordinary-Go execution remains unproved.**
 - [x] The static builder selects audited `encoding/base64` when an isolate
       program reaches it. A script verifies independent `StdEncoding` state
       across two instances and the host, including per-instance initialization
+- [x] Exported generic functions instantiated in importers use selected
+      unexported globals. Generated offsets cover those globals, while generic
+      dictionaries remain shared metadata; the static script checks reads,
+      writes, second-instance reset, and separate host state
 - [ ] Classify ownership and effects across the broad standard library;
       implement required library and runtime hooks and reject unclassified
       paths before claiming general standard-library support
 - [ ] Replace the temporary standard-library selection list with default
       isolate ownership for mutable reachable Go state, an explicit
       process-service exception set, allocation ownership, and cross-owner
-      pointer checks
+      pointer checks. Share immutable tables or materialize state lazily so
+      broad selection does not eagerly copy standard-library data per instance
 - [ ] Make runtime cleanup callbacks owner-aware before supporting `unique`
       and transitive users such as `net/netip`; `uniqueMaps` can hold pointers
       to isolate data, and `runtime.AddCleanup` runs outside the isolate
@@ -248,9 +253,10 @@ with `ENFILE` while reading the repo and removed the tool binaries before
 rebuilding them; focused tests were blocked until the environment recovered.
 
 After container recreation, `src/make.bash` passed on 2026-09-28. The
-opt-in cross-package inlining test passed 100 native arm64 race runs. A new
-tagged compiler test confirms that exported generic functions and methods
-are rejected in the layout mode, closing a caller-side global-access escape.
+opt-in cross-package inlining test passed 100 native arm64 race runs. An
+earlier tagged compiler test required exported generic functions and methods
+to be rejected in layout mode; the 2026-09-30 generic layout change replaced
+that guard with imported access to their unexported globals.
 The complete `src/all.bash` rerun passed, including race and `../test`, after
 restoring the container's missing `/etc/services` through `netbase`.
 The subsequent two-package dependency probe also passed a complete native
@@ -289,6 +295,10 @@ The shared-package startup rule and selected `encoding/base64` state passed
 `src/make.bash`, the focused static-build script, and a complete Linux arm64
 `src/all.bash` run. The script checks distinct host and isolate globals for
 both an application package and `encoding/base64`.
+
+The exported-generic layout change passed `src/make.bash`, the focused
+static-build script, the tagged generic compiler test, a standalone `-race`
+build/run, and a complete Linux arm64 `src/all.bash` run.
 
 The active development target is the container's native **Linux arm64**
 (`uname -m` reports `aarch64`; the rebuilt tree's `go version` reports

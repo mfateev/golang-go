@@ -8,11 +8,10 @@ package isolateproto_test
 
 import (
 	"internal/testenv"
-	"strings"
 	"testing"
 )
 
-func TestIsolateGlobalsRejectExportedGenerics(t *testing.T) {
+func TestIsolateGlobalsAcceptExportedGenerics(t *testing.T) {
 	const pkg = "internal/isolateproto/testdata/e4genericguard"
 	goTool := testenv.GoToolPath(t)
 	cmd := testenv.Command(t, goTool, "build", pkg)
@@ -22,10 +21,7 @@ func TestIsolateGlobalsRejectExportedGenerics(t *testing.T) {
 
 	cmd = testenv.Command(t, goTool, "build", "-gcflags="+pkg+"=-d=isolateglobals=1", pkg)
 	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatalf("opt-in build accepted exported generics:\n%s", out)
-	}
-	if n := strings.Count(string(out), "exported generic function or method is unsupported with isolate globals"); n != 2 {
-		t.Fatalf("got %d guard diagnostics, want 2:\n%s", n, out)
+	if err != nil {
+		t.Fatalf("opt-in build rejected exported generics: %v\n%s", err, out)
 	}
 }

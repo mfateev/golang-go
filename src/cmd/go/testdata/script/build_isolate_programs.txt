@@ -3,7 +3,7 @@
 
 go build -isolate-dir=./orders -isolate-dir=./billing -o worker$GOEXE ./host
 exec ./worker$GOEXE
-stdout -count=2 '^orders orders:orders:142:102$'
+stdout -count=2 '^orders orders:orders:142:151$'
 stdout '^billing billing:billing:101$'
 stdout '^host base64 before \+w==$'
 stdout '^host base64 after \+w==$'
@@ -17,7 +17,7 @@ stderr 'duplicate isolate directory'
 go build -isolate-dir=./orders -o overlap$GOEXE ./host_overlap
 exec ./overlap$GOEXE
 stdout '^host before 101$'
-stdout '^overlap orders:orders:142:102$'
+stdout '^overlap orders:orders:142:151$'
 stdout '^host after 102$'
 stderr -count=2 '^shared init$'
 stderr -count=1 '^orders init$'
@@ -106,6 +106,14 @@ func main() {
 	counter++
 	input := <-isolate.Inbox()
 	shared.CheckPool()
+	if got := shared.PeekCounter(0); got != 101 {
+		panic("generic read did not use initialized isolate state")
+	}
+	shared.SetCounter(149)
+	(shared.GenericCounter[int]{}).Add(1)
+	if got := shared.PeekCounter(1); got != 151 {
+		panic("generic write did not use isolate state")
+	}
 	if got := base64.StdEncoding.EncodeToString([]byte{0xfb}); got != "+w==" {
 		panic("base64 state was not freshly initialized")
 	}
@@ -171,3 +179,11 @@ func Next() int {
 	counter++
 	return counter
 }
+
+func SetCounter[T ~int](n T) { counter = int(n) }
+
+func PeekCounter[T ~int](delta T) int { return counter + int(delta) }
+
+type GenericCounter[T ~int] struct{}
+
+func (GenericCounter[T]) Add(n T) { counter += int(n) }

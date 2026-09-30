@@ -7,6 +7,7 @@ package ssagen
 import (
 	"cmp"
 	"slices"
+	"strings"
 
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
@@ -45,12 +46,10 @@ func InitIsolateLayout() {
 	isolateLayoutOffsets = make(map[*types.Sym]int64, len(globals))
 	for i, n := range globals {
 		isolateLayoutOffsets[n.Sym()] = fields[i].Offset
-		if !types.IsExported(n.Sym().Name) {
-			continue
-		}
 		// An importing compiler invocation cannot know this package's
 		// layout offsets. Export one process-owned offset symbol per
-		// exported global for the tagged cross-package access probe.
+		// global, including unexported globals referenced by exported
+		// generic bodies instantiated in an importing package.
 		offsetSym := typecheck.Lookup("isolate$offset$" + n.Sym().Name)
 		if offsetSym.Def != nil {
 			base.Fatalf("isolate: source declaration conflicts with generated offset symbol")
@@ -108,7 +107,9 @@ func isolatePackageKey() *obj.LSym {
 
 func isolateImportedGlobal(n *ir.Name) bool {
 	pkg := n.Sym().Pkg
-	return pkg != nil && pkg != types.LocalPkg && base.IsolateImportSelected(pkg.Path)
+	// Generic dictionaries are immutable compiler metadata, not source
+	// package variables. They have no slot in the selected package layout.
+	return pkg != nil && pkg != types.LocalPkg && !strings.HasPrefix(n.Sym().Name, ".dict.") && base.IsolateImportSelected(pkg.Path)
 }
 
 func isolateImportedKey(n *ir.Name) *obj.LSym {
