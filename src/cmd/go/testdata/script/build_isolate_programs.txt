@@ -8,6 +8,8 @@ stdout -count=2 '^orders orders:orders:142:151$'
 stdout '^billing billing:billing:101$'
 stdout '^host base64 before \+w==$'
 stdout '^host base64 after \+w==$'
+stdout '^host base32 before 7M======$'
+stdout '^host base32 after 7M======$'
 stderr -count=2 '^orders init$'
 stderr -count=1 '^billing init$'
 stderr -count=3 '^shared init$'
@@ -66,6 +68,8 @@ func main() {
 	for _, p := range report.Packages { packages[p.Path] = p }
 	base64 := packages["encoding/base64"]
 	if !base64.Standard || !base64.InstanceState || !base64.HostReachable || base64.Classification != "selected-standard-probe" { panic("bad base64 classification") }
+	base32 := packages["encoding/base32"]
+	if !base32.Standard || !base32.InstanceState || !base32.HostReachable || base32.Classification != "selected-standard-probe" { panic("bad base32 classification") }
 	shared := packages["example.org/isolatebuildtest/shared"]
 	if shared.Standard || !shared.InstanceState || shared.HostReachable || shared.Classification != "reachable-application" { panic("bad shared classification") }
 	strconv := packages["strconv"]
@@ -75,6 +79,7 @@ func main() {
 package main
 
 import (
+	"encoding/base32"
 	"encoding/base64"
 	"fmt"
 	"isolate"
@@ -103,10 +108,12 @@ func run(name string) {
 }
 
 func main() {
+	fmt.Println("host base32 before", base32.StdEncoding.EncodeToString([]byte{0xfb}))
 	fmt.Println("host base64 before", base64.StdEncoding.EncodeToString([]byte{0xfb}))
 	run("orders")
 	run("orders")
 	run("billing")
+	fmt.Println("host base32 after", base32.StdEncoding.EncodeToString([]byte{0xfb}))
 	fmt.Println("host base64 after", base64.StdEncoding.EncodeToString([]byte{0xfb}))
 }
 -- host_overlap/main.go --
@@ -137,6 +144,7 @@ func main() {
 package main
 
 import (
+	"encoding/base32"
 	"encoding/base64"
 	"example.org/isolatebuildtest/shared"
 	"isolate"
@@ -161,6 +169,13 @@ func main() {
 	}
 	if got := base64.StdEncoding.EncodeToString([]byte{0xfb}); got != "+w==" {
 		panic("base64 state was not freshly initialized")
+	}
+	if got := base32.StdEncoding.EncodeToString([]byte{0xfb}); got != "7M======" {
+		panic("base32 state was not freshly initialized")
+	}
+	base32.StdEncoding = base32.HexEncoding
+	if got := base32.StdEncoding.EncodeToString([]byte{0xfb}); got != "VC======" {
+		panic("base32 isolate state did not change")
 	}
 	base64.StdEncoding = base64.URLEncoding
 	if got := base64.StdEncoding.EncodeToString([]byte{0xfb}); got != "-w==" {

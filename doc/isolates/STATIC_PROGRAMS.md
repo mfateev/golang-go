@@ -89,13 +89,15 @@ for {
 This host loop is a temporary transport API. It does not yet implement the
 planned `Resume`/quiescence contract. The build automatically selects each
 configured `package main`, every reachable non-standard package, and audited
-standard package `encoding/base64` for the tagged package-state probe.
+standard packages `encoding/base32` and `encoding/base64` for the tagged
+package-state probe.
 `isolate.New` allocates their global layouts and replays initializers in
 dependency order for each instance. A build test starts one program twice and
 another once, with both importing an initialized shared package; each run
 observes fresh state. The test also checks separate host and instance copies
-of `encoding/base64.StdEncoding`. Other standard-library packages remain
-process-owned in this probe and initialize once at process startup.
+of `encoding/base32.StdEncoding` and `encoding/base64.StdEncoding`. Other
+standard-library packages remain process-owned in this probe and initialize
+once at process startup.
 The generated top-level entry retains selected application packages but omits
 startup init tasks for packages unused by the host. Selected initializers run
 when `isolate.New` creates each instance. Those initializers should be pure:

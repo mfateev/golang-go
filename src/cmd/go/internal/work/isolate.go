@@ -60,6 +60,7 @@ type isolateReportPackage struct {
 // compiler's per-instance layout and initializer replay. The remaining
 // standard-library graph still needs an ownership and effect audit.
 var isolateOwnedStandardPackages = map[string]bool{
+	"encoding/base32": true,
 	"encoding/base64": true,
 }
 

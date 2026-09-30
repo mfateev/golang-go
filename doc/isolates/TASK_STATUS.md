@@ -147,9 +147,10 @@ ordinary-Go execution remains unproved.**
       reach. A package imported by both host and isolate initializes once for
       the process and once per instance; the build script checks separate
       host and instance state and exact init counts
-- [x] The static builder selects audited `encoding/base64` when an isolate
-      program reaches it. A script verifies independent `StdEncoding` state
-      across two instances and the host, including per-instance initialization
+- [x] The static builder selects audited `encoding/base32` and
+      `encoding/base64` when an isolate program reaches them. A script
+      verifies independent `StdEncoding` state across two instances and the
+      host, including per-instance initialization
 - [x] Exported generic functions instantiated in importers use selected
       unexported globals. Generated offsets cover those globals, while generic
       dictionaries remain shared metadata; the static script checks reads,

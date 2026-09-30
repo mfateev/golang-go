@@ -11,6 +11,7 @@ library.
 | Generated `isolateLayoutType` and `isolateLayoutKey` symbols | Process | They are immutable package metadata used to allocate and select instance state. |
 | Globals in a package compiled with `-d=isolateglobals=1` | Isolate | Every local external variable is placed in that package's generated, GC-described layout. Initializers are rerun with that layout selected. |
 | `encoding/base64` globals in a static isolate build | Isolate | The builder selects this audited standard package when an isolate program reaches it. Each instance initializes its four encoding pointers separately. The process retains its own initialized copy. |
+| `encoding/base32` globals in a static isolate build | Isolate | Its two encoding pointers are initialized by `NewEncoding` in each instance, independent of the process copy. Its imported standard packages remain process-owned in this probe. |
 | Other package globals, including standard-library packages not opted in | Process in this probe | No isolation claim follows from using them. Each package must be classified before an ordinary-Go conformance claim. |
 
 The POC build selects ownership by package path, outside the package's
