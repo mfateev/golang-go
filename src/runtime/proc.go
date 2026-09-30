@@ -4548,6 +4548,7 @@ func gdestroy(gp *g) {
 	gp.labels = nil
 	gp.isolateE4Base = nil
 	gp.isolateE4Bases = nil
+	gp.isolateOwner = nil
 	gp.isolateBoundary = nil
 	if gp.isolateGroup != nil {
 		if gp.isolateAdmitted {
@@ -5418,6 +5419,7 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	newg.runningCleanups.Store(false)
 	newg.isolateE4Base = nil
 	newg.isolateE4Bases = nil
+	newg.isolateOwner = nil
 	newg.isolateBoundary = nil
 	newg.isolateGroup = nil
 	newg.isolateStarted = false
@@ -5429,6 +5431,7 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 		newg.bubble = callergp.bubble
 		newg.isolateE4Base = callergp.isolateE4Base
 		newg.isolateE4Bases = callergp.isolateE4Bases
+		newg.isolateOwner = callergp.isolateOwner
 		newg.isolateBoundary = callergp.isolateBoundary
 		newg.isolateGroup = callergp.isolateGroup
 		if newg.isolateGroup != nil {

@@ -173,6 +173,11 @@ ordinary-Go execution remains unproved.**
       `unique.Make` inside an active isolate; `unique.Make` rejects before
       touching its process map. Tests cover direct calls, `net/netip.WithZone`,
       and a child goroutine. Owner-aware callbacks remain pending
+- [x] Runtime `g` carries a stable instance owner token through initializer
+      replay, the generated state runner, `main`, and native children. A race
+      test checks that host context is restored and `Call`/`Inbox` stay
+      unavailable during init;
+      heap routing and cross-owner checks remain pending
 - [x] `sync.Pool` discards `Put` and uses fresh `New` values while an isolate
       boundary or selected package-state table is active, preventing a
       process-wide per-P pool from retaining isolate objects or passing them

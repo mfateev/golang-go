@@ -58,9 +58,25 @@ func (b *Boundary) Run(fn func()) {
 	if b == nil || fn == nil {
 		panic("isolate: nil boundary or entry")
 	}
+	oldOwner := setOwner(unsafe.Pointer(b))
+	defer setOwner(oldOwner)
 	old := setBoundary(unsafe.Pointer(b))
 	defer func() {
 		setBoundary(old)
+		runtime.KeepAlive(b)
+	}()
+	fn()
+}
+
+// RunOwner binds b's stable instance identity without enabling Call or Inbox.
+// The generated state factory uses it while replaying package initializers.
+func (b *Boundary) RunOwner(fn func()) {
+	if b == nil || fn == nil {
+		panic("isolate: nil boundary or initializer")
+	}
+	old := setOwner(unsafe.Pointer(b))
+	defer func() {
+		setOwner(old)
 		runtime.KeepAlive(b)
 	}()
 	fn()
@@ -130,3 +146,6 @@ func getBoundary() unsafe.Pointer
 
 //go:linkname setBoundary runtime.isolateSetBoundary
 func setBoundary(unsafe.Pointer) unsafe.Pointer
+
+//go:linkname setOwner runtime.isolateSetOwner
+func setOwner(unsafe.Pointer) unsafe.Pointer

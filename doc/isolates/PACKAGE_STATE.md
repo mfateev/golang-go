@@ -30,6 +30,14 @@ stands; move the registry into a host package or implement an explicit,
 verified split. The earlier `e4compiletoy` special-cased two variables and is
 not evidence that the generated layout mode supports such a split.
 
+The trusted instance now binds one stable owner token before replaying package
+initializers and again when its `main` runs. Native child goroutines inherit
+the token; the host goroutine restores its prior value after initialization.
+This is an identity for future owned allocation and pointer checks, not an
+isolate heap. The package-state table and `Call`/`Inbox` transport remain
+separate: an initializer has an owner token but cannot call the host boundary
+before `Start`.
+
 ## Two-package dependency probe
 
 `e4deptoy` and `e4importtoy` are both opted in. The runtime's tagged probe

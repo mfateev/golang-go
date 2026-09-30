@@ -97,9 +97,13 @@ observes fresh state. The test also checks separate host and instance copies
 of `encoding/base64.StdEncoding`. Other standard-library packages remain
 process-owned in this probe and initialize once at process startup.
 The generated top-level entry retains selected application packages but omits
-their startup init tasks; their initializers run when `isolate.New` creates
-each instance. Those initializers should be pure: the trusted probe does not
-enforce determinism, and `Call`/`Inbox` are unavailable until `Start`.
+startup init tasks for packages unused by the host. Selected initializers run
+when `isolate.New` creates each instance. Those initializers should be pure:
+the trusted probe does not enforce determinism, and `Call`/`Inbox` are
+unavailable until `Start`. The runtime nevertheless binds the instance's
+stable owner token during initializer replay and throughout the state runner,
+`main`, and its child goroutines. Heap allocation still uses the ordinary
+process allocator.
 If the host and an isolate both import a selected application package, the
 package has one compiled definition but separate process and per-instance
 globals. Its process initializer runs at startup, and its initializer also

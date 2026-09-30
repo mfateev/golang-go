@@ -54,7 +54,9 @@ func New(cfg Config) (*Isolate, error) {
 		return nil, errors.New("isolate: unknown program")
 	}
 	boundary := isolatebridge.New(cfg.Input)
-	runState, err := cfg.Program.entry.NewState()
+	var runState func(func())
+	var err error
+	boundary.RunOwner(func() { runState, err = cfg.Program.entry.NewState() })
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +79,9 @@ func (i *Isolate) Start() error {
 	}
 	go func() {
 		defer close(i.done)
-		i.runState(func() { i.boundary.Run(i.entry) })
+		i.boundary.RunOwner(func() {
+			i.runState(func() { i.boundary.Run(i.entry) })
+		})
 	}()
 	return nil
 }

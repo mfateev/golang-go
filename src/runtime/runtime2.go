@@ -573,6 +573,7 @@ type g struct {
 	labels          unsafe.Pointer          // profiler labels
 	isolateE4Base   unsafe.Pointer          // tagged Phase 0 global-base experiment
 	isolateE4Bases  unsafe.Pointer          // tagged Phase 2B package-state table probe
+	isolateOwner    unsafe.Pointer          // stable trusted instance identity for future heap ownership
 	isolateBoundary unsafe.Pointer          // provisional host transport for Call and Inbox
 	isolateGroup    *isolateRevocationGroup // tagged Phase 2B first-dispatch experiment
 	isolateStarted  bool
