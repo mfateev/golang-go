@@ -74,6 +74,9 @@ import (
 //
 //go:nocheckptr
 func AddCleanup[T, S any](ptr *T, cleanup func(S), arg S) Cleanup {
+	if isolateActive() {
+		panic("runtime.AddCleanup is unavailable in an isolate")
+	}
 	// This is marked nocheckptr because checkptr doesn't understand the
 	// pointer manipulation done when looking at closure pointers.
 	// Similar code in mbitmap.go works because the functions are

@@ -21,6 +21,9 @@ type Handle[T comparable] struct {
 	value *T
 }
 
+//go:linkname runtime_isolateActive runtime.isolateActive
+func runtime_isolateActive() bool
+
 // Value returns a shallow copy of the T value that produced the Handle.
 // Value is safe for concurrent use by multiple goroutines.
 func (h Handle[T]) Value() T {
@@ -31,6 +34,11 @@ func (h Handle[T]) Value() T {
 // are equal if and only if the values used to produce them are equal.
 // Make is safe for concurrent use by multiple goroutines.
 func Make[T comparable](value T) Handle[T] {
+	if runtime_isolateActive() {
+		// The process-wide map and cleanup callback cannot retain or run
+		// isolate-owned state until callbacks have an owner-aware scheduler.
+		panic("unique.Make is unavailable in an isolate")
+	}
 	// Find the map for type T.
 	typ := abi.TypeFor[T]()
 	if typ.Size() == 0 {

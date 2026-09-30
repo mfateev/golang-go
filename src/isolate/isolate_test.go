@@ -8,10 +8,13 @@ import (
 	"errors"
 	"internal/isolatebridge"
 	"isolate"
+	"net/netip"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"unique"
 )
 
 func TestHostCallsFailClosed(t *testing.T) {
@@ -132,4 +135,43 @@ func TestPoolValuesDoNotCrossBoundary(t *testing.T) {
 	if got := allocations.Load(); got != 3 {
 		t.Fatalf("pool allocated %d values inside isolate, want 3", got)
 	}
+}
+
+func TestProcessCleanupPathsRejectIsolate(t *testing.T) {
+	if got := unique.Make("host").Value(); got != "host" {
+		t.Fatalf("process unique.Make = %q", got)
+	}
+	checkPanic := func(name, want string, fn func()) {
+		t.Helper()
+		defer func() {
+			got, ok := recover().(string)
+			if !ok || !strings.Contains(got, want) {
+				t.Errorf("%s panic = %q, want %q", name, got, want)
+			}
+		}()
+		fn()
+	}
+	b := isolatebridge.New(nil)
+	b.Run(func() {
+		checkPanic("AddCleanup", "runtime.AddCleanup is unavailable", func() {
+			runtime.AddCleanup(new(int), func(int) {}, 0)
+		})
+		checkPanic("SetFinalizer", "runtime.SetFinalizer is unavailable", func() {
+			runtime.SetFinalizer(new(int), func(*int) {})
+		})
+		checkPanic("unique.Make", "unique.Make is unavailable", func() {
+			unique.Make("isolate")
+		})
+		checkPanic("netip.WithZone", "unique.Make is unavailable", func() {
+			netip.MustParseAddr("fe80::1").WithZone("zone")
+		})
+		child := make(chan bool, 1)
+		go func() {
+			defer func() { child <- recover() != nil }()
+			unique.Make("child")
+		}()
+		if !<-child {
+			t.Error("child goroutine accepted unique.Make")
+		}
+	})
 }

@@ -194,4 +194,8 @@ The general rule therefore needs two enforcement points: tag allocated
 objects and reject or mediate cross-owner pointer storage, and dispatch
 callbacks with their owning isolate's lifecycle and scheduler. Until those
 exist, `unique` and its transitive callers cannot be counted as generally
-isolate-safe. The current trusted static build does not enforce this check.
+isolate-safe. The runtime now rejects `SetFinalizer` and `AddCleanup` in an
+active isolate, and `unique.Make` rejects before touching its process-wide
+map. `net/netip.WithZone` therefore fails early inside an isolate. These are
+temporary restrictions, not owner-aware cleanup support. Other process-wide
+stores still need the planned ownership barrier.

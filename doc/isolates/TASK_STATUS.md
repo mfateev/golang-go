@@ -169,6 +169,10 @@ ordinary-Go execution remains unproved.**
 - [ ] Make runtime cleanup callbacks owner-aware before supporting `unique`
       and transitive users such as `net/netip`; `uniqueMaps` can hold pointers
       to isolate data, and `runtime.AddCleanup` runs outside the isolate
+- [x] Provisional runtime guards reject `SetFinalizer`, `AddCleanup`, and
+      `unique.Make` inside an active isolate; `unique.Make` rejects before
+      touching its process map. Tests cover direct calls, `net/netip.WithZone`,
+      and a child goroutine. Owner-aware callbacks remain pending
 - [x] `sync.Pool` discards `Put` and uses fresh `New` values while an isolate
       boundary or selected package-state table is active, preventing a
       process-wide per-P pool from retaining isolate objects or passing them
@@ -303,6 +307,11 @@ both an application package and `encoding/base64`.
 The exported-generic layout change passed `src/make.bash`, the focused
 static-build script, the tagged generic compiler test, a standalone `-race`
 build/run, and a complete Linux arm64 `src/all.bash` run.
+
+The optional package ownership report passed the focused static-build script
+and `TestDocsUpToDate`. The provisional cleanup guards passed `src/make.bash`,
+`go test -race isolate`, ordinary `unique` and `net/netip` tests, and a
+complete Linux arm64 `src/all.bash` run.
 
 The active development target is the container's native **Linux arm64**
 (`uname -m` reports `aarch64`; the rebuilt tree's `go version` reports

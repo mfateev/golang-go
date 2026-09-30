@@ -430,6 +430,9 @@ func blockUntilEmptyFinalizerQueue(timeout int64) bool {
 // need to use appropriate synchronization, such as mutexes or atomic updates,
 // to avoid read-write races.
 func SetFinalizer(obj any, finalizer any) {
+	if isolateActive() {
+		panic("runtime.SetFinalizer is unavailable in an isolate")
+	}
 	e := efaceOf(&obj)
 	etyp := e._type
 	if etyp == nil {

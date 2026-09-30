@@ -215,6 +215,11 @@ import denylist; the rest trap at their entry points.
   `unique.Make` registers `runtime.AddCleanup` internally, and `net/netip`
   calls `unique.Make` for IPv6 zones. The build must check transitive effects
   or the runtime must schedule cleanup with the owning isolate
+
+The provisional runtime now panics on direct `SetFinalizer` and `AddCleanup`
+calls in an active isolate. `unique.Make` also panics before inserting into its
+process-wide map, so the indirect `net/netip.WithZone` path fails early. This
+enforces the current restriction while owner-aware cleanup remains pending.
 - `runtime.LockOSThread` — breaks the isolate↔thread model
 - `runtime.NumCPU`, `NumGoroutine`, `GOMAXPROCS`, `ReadMemStats` — observable
   process state; either banned or virtualized per isolate
