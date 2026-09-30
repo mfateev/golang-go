@@ -128,6 +128,10 @@ ordinary-Go execution remains unproved.**
       concurrent calls; and is inherited by native child goroutines. The
       native owned queue, deterministic scheduler, and static entry binding
       remain pending
+- [x] Direct-toolchain static probe linked two separately compiled configured
+      `package main` directories into one host and ran both through the
+      trusted `Call`/`Inbox` boundary; automatic `cmd/go` build integration
+      remains pending
 - [x] Tagged `encoding/base64` probe reruns four initialized encoding
       pointers per instance; a directly importing caller selects the instance
       globals with a build-wide compiler flag; two importing packages and

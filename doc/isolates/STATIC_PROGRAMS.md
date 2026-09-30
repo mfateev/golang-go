@@ -109,6 +109,24 @@ with a package fingerprint mismatch. After compiling the definitions as
 printed `1 2`. These probes use manual import configurations; a supported
 build must generate and validate them.
 
+After the `isolate` boundary probe was implemented, a third direct-toolchain
+probe compiled `orders` and `billing` directories, each with a normal
+`package main`, an `isolate.json`, and calls to `isolate.Inbox` and
+`isolate.Call`. The host linked both mains under unique internal package
+paths, bound a separate trusted boundary to each invocation, and answered
+their commands. It printed:
+
+```text
+orders orders:orders
+billing billing:billing
+seen ok ok
+```
+
+This proves the source-level API works from two separately compiled mains in
+one binary. The probe still supplies import configurations and entry links
+manually; `cmd/go` does not yet consume the directory configs or generate the
+host manifest.
+
 ## Next build slice
 
 The [config reader](../../src/cmd/go/internal/isolatecfg/config.go) handles
