@@ -130,8 +130,12 @@ ordinary-Go execution remains unproved.**
       remain pending
 - [x] Direct-toolchain static probe linked two separately compiled configured
       `package main` directories into one host and ran both through the
-      trusted `Call`/`Inbox` boundary; automatic `cmd/go` build integration
-      remains pending
+      trusted `Call`/`Inbox` boundary
+- [x] Experimental `go build -isolate-dir` loads configured `package main`
+      directories under distinct paths, generates the name-to-entry table,
+      and links one executable with the host. The trusted host API can look up
+      each program, start its `main`, and exchange copied `Call`/`Inbox` bytes;
+      a `cmd/go` script test builds and runs two programs by name
 - [x] Tagged `encoding/base64` probe reruns four initialized encoding
       pointers per instance; a directly importing caller selects the instance
       globals with a build-wide compiler flag; two importing packages and
@@ -233,6 +237,12 @@ it also failed in an execution environment that denied `ptrace` and local
 listening sockets. After those permissions were available, the focused
 `TestUsingVDSO` and `TestNetpollWaiters` checks and the complete runtime
 suite passed.
+
+The 2026-09-30 static build integration passed `src/make.bash`, a focused
+`cmd/go` script test, and a separate two-program build/run from an external
+module. Selected packages still use process-wide initialization and globals;
+the build does not yet derive or replay per-instance package state. The full
+`src/all.bash` suite has not been rerun for this integration.
 
 The active development target is the container's native **Linux arm64**
 (`uname -m` reports `aarch64`; the rebuilt tree's `go version` reports

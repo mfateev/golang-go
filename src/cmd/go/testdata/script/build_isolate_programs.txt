@@ -1,0 +1,77 @@
+[short] skip 'links a binary'
+[compiler:gccgo] skip
+
+go build -isolate-dir=./orders -isolate-dir=./billing -o worker$GOEXE ./host
+exec ./worker$GOEXE
+stdout 'orders orders:orders'
+stdout 'billing billing:billing'
+
+! go build -isolate-dir=./orders -isolate-dir=./orders -o duplicate$GOEXE ./host
+stderr 'duplicate isolate directory'
+
+-- go.mod --
+module example.org/isolatebuildtest
+
+go 1.26
+-- host/main.go --
+package main
+
+import (
+	"fmt"
+	"isolate"
+)
+
+func run(name string) {
+	program, ok := isolate.LookupProgram(name)
+	if !ok {
+		panic("missing program " + name)
+	}
+	instance, err := isolate.New(isolate.Config{Program: program, Input: []byte(name)})
+	if err != nil {
+		panic(err)
+	}
+	if err := instance.Start(); err != nil {
+		panic(err)
+	}
+	select {
+	case command := <-instance.Commands():
+		fmt.Println(name, string(command.Payload))
+		command.Reply([]byte("ok"), nil)
+	case <-instance.Done():
+		panic("program returned without a command")
+	}
+	<-instance.Done()
+}
+
+func main() {
+	run("orders")
+	run("billing")
+}
+-- orders/isolate.json --
+{"name":"orders"}
+-- orders/main.go --
+package main
+
+import "isolate"
+
+func main() {
+	input := <-isolate.Inbox()
+	response, err := isolate.Call(1, append([]byte("orders:"), input...))
+	if err != nil || string(response) != "ok" {
+		panic("orders reply")
+	}
+}
+-- billing/isolate.json --
+{"name":"billing"}
+-- billing/main.go --
+package main
+
+import "isolate"
+
+func main() {
+	input := <-isolate.Inbox()
+	response, err := isolate.Call(1, append([]byte("billing:"), input...))
+	if err != nil || string(response) != "ok" {
+		panic("billing reply")
+	}
+}

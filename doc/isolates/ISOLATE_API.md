@@ -231,10 +231,12 @@ identity identifies the exact code and dependencies needed for replay.
 
 The source-level `isolate` package now implements `Call` and `Inbox` through
 a trusted, per-goroutine [boundary probe](../../src/internal/isolatebridge/bridge.go).
-The probe copies byte payloads and correlates concurrent calls, including
-calls from native child goroutines. It still uses ordinary Go channels and the
-shared heap; native isolate ownership, deterministic scheduling, the static
-program selector, and the final host command queue remain to be implemented.
+The static build generates the program selector, and the current host API
+provides `New`, `Start`, `Commands`, `Send`, and `Done`. The probe copies byte
+payloads and correlates concurrent calls, including calls from native child
+goroutines. It still uses ordinary Go channels and the shared heap; native
+isolate ownership, deterministic scheduling, and the final host command queue
+remain to be implemented.
 The Phase 1
 `internal/isolateproto.Register` and `Entry` model remains a reference-model
 dispatch mechanism, not this source contract.
@@ -381,6 +383,11 @@ queries, cancellation) is large enough that serialization overhead on calls
 that never leave the process is measurable.
 
 ## Host API
+
+The current trusted POC has `Config{Program, Input}` and an asynchronous
+`Start`/`Commands`/`Send`/`Done` loop. The API below is the planned native
+contract. Its limits, clock, capabilities, `Resume`, and `Kill` are not yet
+implemented in the source-level `isolate` package.
 
 ```go
 package isolate

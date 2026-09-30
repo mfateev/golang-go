@@ -1,7 +1,8 @@
 # Statically linked isolate programs
 
-Status: **MVP build direction; config reader implemented, build integration
-pending**. Dynamic loading is a [future enhancement](./DYNAMIC_LOADING.md).
+Status: **experimental static build and trusted host bridge implemented**.
+Per-instance state and the native scheduler remain pending. Dynamic loading is
+a [future enhancement](./DYNAMIC_LOADING.md).
 
 ## Directory contract
 
@@ -44,10 +45,43 @@ func main() {
 }
 ```
 
-`Call` and `Inbox` work in the trusted boundary probe when the host binds
-one transport to the entry goroutine. The static build does not yet generate
-that entry binding, and the probe has no separate isolate heap or deterministic
-scheduler.
+`Call` and `Inbox` work through a trusted boundary. The static build registers
+each entry by its configured name, and `isolate.New` plus `Start` bind a new
+transport to one invocation. The bridge has no separate isolate heap or
+deterministic scheduler.
+
+From the worker module, build one executable with the host package and the
+selected programs:
+
+```bash
+go build -isolate-dir=./isolates/orders -isolate-dir=./isolates/billing -o worker ./host
+```
+
+The host can look up a program, start it, and answer its calls:
+
+```go
+program, ok := isolate.LookupProgram("orders")
+if !ok { panic("missing orders program") }
+instance, err := isolate.New(isolate.Config{Program: program, Input: request})
+if err != nil { panic(err) }
+if err := instance.Start(); err != nil { panic(err) }
+for {
+    select {
+    case command := <-instance.Commands():
+        result, err := handle(command.Op, command.Payload)
+        command.Reply(result, err)
+    case <-instance.Done():
+        return
+    }
+}
+```
+
+This host loop is a temporary transport API. It does not yet implement the
+planned `Resume`/quiescence contract. The current build runs each selected
+package's ordinary Go initialization once at process startup. Its mutable
+globals are therefore shared across instances unless explicitly compiled
+with the separate opt-in package-state probe. The build does not yet derive
+that selection or replay initializers for a newly started instance.
 
 One final executable contains the host and all selected programs. The host
 selects a program by logical name and creates many instances of it. A build
@@ -59,12 +93,11 @@ completion use the isolate boundary API because `main()` has no parameters or
 return value. The Phase 1 `isolateproto.Register` function registry remains a
 reference-model mechanism, not the proposed source-level program contract.
 
-The build must compile each `package main` under a distinct internal package
-path. Ordinary `go build` assigns a top-level executable's main package the
-path `main`, and `cmd/go` rejects importing another directory's `package
-main`. The static isolate build path will need explicit support in `cmd/go` to
-load these directories as program units, assign unique symbol paths, and
-retain their entry wrappers. A config file alone does not provide that support.
+The build compiles each selected `package main` under its own import path and
+generates a synthetic top-level `main` that registers each program entry and
+calls the host's `main`. Ordinary `go build` still builds one top-level main;
+the experimental `-isolate-dir` path provides this explicit multi-program
+support.
 
 For every program, the build must identify the reachable packages, classify
 their mutable state as isolate-owned or process-owned, pass one coherent
@@ -122,19 +155,15 @@ billing billing:billing
 seen ok ok
 ```
 
-This proves the source-level API works from two separately compiled mains in
-one binary. The probe still supplies import configurations and entry links
-manually; `cmd/go` does not yet consume the directory configs or generate the
-host manifest.
+This proved the source-level API works from two separately compiled mains in
+one binary. The later `cmd/go` integration now reads the directory configs
+and generates the entry table automatically; the probe's native owned-state
+manifest remains separate.
 
 ## Next build slice
 
-The [config reader](../../src/cmd/go/internal/isolatecfg/config.go) handles
-step 1, including duplicate names and deterministic ordering. The remaining
-build slices are:
-
-1. Load each directory as a `package main` program under a unique internal
-   path while keeping the source import graph intact.
-2. Generate the host entry table and linked package-descriptor manifest.
-3. Derive and validate one package-state selection, then run two instances of
-   one program and one instance of another with independent initialized state.
+The [config reader](../../src/cmd/go/internal/isolatecfg/config.go),
+multi-main loader, and generated entry table are in place. The remaining
+build work is to derive and validate one package-state selection, retain the
+compiler-generated descriptor manifest, and run two instances of one program
+plus one instance of another with independent initialized state.
