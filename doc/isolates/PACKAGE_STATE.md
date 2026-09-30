@@ -178,3 +178,20 @@ This handles `sync.Pool` only. Standard packages such as `encoding/json` and
 `fmt` also have process-wide caches; their values and mutation paths still
 need an ownership and determinism audit before those packages can be claimed
 as isolate-safe.
+
+## Indirect runtime ownership example: `unique`
+
+`unique.Make[T]` stores type-specific maps in the process-wide `uniqueMaps`
+global. A comparable `T` can contain a pointer, so the map can retain an
+isolate-owned object. Its canonical map also registers a closure with
+`runtime.AddCleanup`; that callback runs on runtime cleanup machinery outside
+the isolate's scheduler. Merely selecting the `unique` global for an instance
+would separate its map but would not make cleanup execution safe. `net/netip`
+calls `unique.Make` for IPv6 zone values, so this issue is reachable through
+a standard package that otherwise looks like pure value manipulation.
+
+The general rule therefore needs two enforcement points: tag allocated
+objects and reject or mediate cross-owner pointer storage, and dispatch
+callbacks with their owning isolate's lifecycle and scheduler. Until those
+exist, `unique` and its transitive callers cannot be counted as generally
+isolate-safe. The current trusted static build does not enforce this check.

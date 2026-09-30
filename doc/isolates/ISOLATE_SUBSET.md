@@ -211,6 +211,10 @@ import denylist; the rest trap at their entry points.
 
 - `runtime.SetFinalizer` / `runtime.AddCleanup` — nondeterministic timing *and*
   the cross-isolate leak path identified in the design doc
+- A direct ban on these symbols is insufficient for standard-library callers:
+  `unique.Make` registers `runtime.AddCleanup` internally, and `net/netip`
+  calls `unique.Make` for IPv6 zones. The build must check transitive effects
+  or the runtime must schedule cleanup with the owning isolate
 - `runtime.LockOSThread` — breaks the isolate↔thread model
 - `runtime.NumCPU`, `NumGoroutine`, `GOMAXPROCS`, `ReadMemStats` — observable
   process state; either banned or virtualized per isolate

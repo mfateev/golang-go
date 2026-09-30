@@ -157,6 +157,9 @@ ordinary-Go execution remains unproved.**
       isolate ownership for mutable reachable Go state, an explicit
       process-service exception set, allocation ownership, and cross-owner
       pointer checks
+- [ ] Make runtime cleanup callbacks owner-aware before supporting `unique`
+      and transitive users such as `net/netip`; `uniqueMaps` can hold pointers
+      to isolate data, and `runtime.AddCleanup` runs outside the isolate
 - [x] `sync.Pool` discards `Put` and uses fresh `New` values while an isolate
       boundary or selected package-state table is active, preventing a
       process-wide per-P pool from retaining isolate objects or passing them
