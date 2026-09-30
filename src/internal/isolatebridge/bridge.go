@@ -130,18 +130,26 @@ func (b *Boundary) Call(op uint32, payload []byte) ([]byte, error) {
 	if id == 0 {
 		panic("isolate: command ID exhausted")
 	}
-	c := &Command{
-		ID:      id,
-		Op:      op,
-		Payload: bytes.Clone(payload),
-		reply:   make(chan response, 1),
-	}
+	c := newHostCommand(id, op, payload)
 	b.calls <- c
 	r := <-c.reply
 	if r.hasErr {
 		return bytes.Clone(r.payload), errors.New(r.errText)
 	}
 	return bytes.Clone(r.payload), nil
+}
+
+//go:noinline
+func newHostCommand(id uint64, op uint32, payload []byte) *Command {
+	old := setOwner(0)
+	defer setOwner(old)
+	c := &Command{
+		ID:      id,
+		Op:      op,
+		Payload: bytes.Clone(payload),
+		reply:   make(chan response, 1),
+	}
+	return c
 }
 
 // Inbox returns this boundary's copied host-message stream.

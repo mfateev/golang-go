@@ -44,11 +44,12 @@ before `Start`.
 Large-object spans now record the numeric ID active at allocation and clear it
 when reused. This is allocation-origin metadata only. Small-object spans still
 mix allocations from different contexts through the shared per-P cache, and no
-span is reclaimed by isolate. The provisional boundary also crosses ownership
-contexts: `Call` clones its request while running in the isolate, and `Inbox`
-can deliver a host-allocated byte slice. A native owned queue must establish
-the correct allocation context on both sides before origin tags can support
-an ownership verifier.
+span is reclaimed by isolate. The trusted `Call` bridge switches to process
+context while creating a command and copying its request, then copies the
+reply under the isolate ID. A large-payload race test checks all three origins.
+`Inbox` still delivers a host-allocated byte slice. A native owned queue must
+establish the correct allocation context on both sides before origin tags can
+support an ownership verifier.
 
 ## Two-package dependency probe
 

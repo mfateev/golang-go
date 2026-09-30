@@ -16,11 +16,21 @@ import (
 	"sync/atomic"
 	"testing"
 	"unique"
-	_ "unsafe"
+	"unsafe"
 )
 
 //go:linkname runtimeOwner runtime.isolateGetOwner
 func runtimeOwner() uintptr
+
+//go:linkname largeAllocOrigin runtime.isolateLargeAllocOrigin
+func largeAllocOrigin(unsafe.Pointer) (uintptr, bool)
+
+func byteSliceOrigin(b []byte) (uintptr, bool) {
+	if len(b) == 0 {
+		return 0, false
+	}
+	return largeAllocOrigin(unsafe.Pointer(&b[0]))
+}
 
 var ownerTestSequence atomic.Uint64
 
@@ -250,5 +260,48 @@ func TestInstanceOwnerSpansInitializationAndChildren(t *testing.T) {
 	}
 	if initOwner <= firstOwner || runtimeOwner() != 0 {
 		t.Fatalf("second owner=%d, first owner=%d, host=%d", initOwner, firstOwner, runtimeOwner())
+	}
+}
+
+func TestCallCopiesLargeRequestIntoProcessContext(t *testing.T) {
+	name := "test-call-allocation-origin-" + strconv.FormatUint(ownerTestSequence.Add(1), 10)
+	type origins struct {
+		owner, request, reply uintptr
+		requestOK, replyOK    bool
+		err                   error
+	}
+	observed := make(chan origins, 1)
+	isolatebridge.RegisterProgram(name, isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main: func() {
+			owner := runtimeOwner()
+			request := make([]byte, 64<<10)
+			requestOrigin, requestOK := byteSliceOrigin(request)
+			reply, err := isolate.Call(7, request)
+			replyOrigin, replyOK := byteSliceOrigin(reply)
+			observed <- origins{owner, requestOrigin, replyOrigin, requestOK, replyOK, err}
+		},
+	})
+	program, ok := isolate.LookupProgram(name)
+	if !ok {
+		t.Fatal("missing test program")
+	}
+	instance, err := isolate.New(isolate.Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := instance.Start(); err != nil {
+		t.Fatal(err)
+	}
+	command := <-instance.Commands()
+	hostOrigin, hostOK := byteSliceOrigin(command.Payload)
+	command.Reply(make([]byte, 64<<10), nil)
+	got := <-observed
+	<-instance.Done()
+	if command.ID != 1 || command.Op != 7 || got.err != nil {
+		t.Fatalf("command ID=%d op=%d, reply error=%v", command.ID, command.Op, got.err)
+	}
+	if got.owner == 0 || !got.requestOK || got.request != got.owner || !hostOK || hostOrigin != 0 || !got.replyOK || got.reply != got.owner {
+		t.Fatalf("origins: %+v, host request=%d tracked=%t", got, hostOrigin, hostOK)
 	}
 }

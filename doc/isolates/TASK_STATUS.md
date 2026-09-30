@@ -182,7 +182,10 @@ ordinary-Go execution remains unproved.**
 - [x] Large-object spans record the active numeric allocation ID and clear it
       on reuse. Focused and race tests check zero and nonzero origins.
       This is diagnostic metadata: small allocations still share per-P spans,
-      and the provisional `Call`/`Inbox` transport crosses allocation contexts
+      and `Inbox` still crosses allocation contexts
+- [x] The trusted `Call` bridge allocates the host command and request copy in
+      process context, then copies the reply under the isolate ID. A 100-run
+      race test checks large request, host copy, and reply origins
 - [x] `sync.Pool` discards `Put` and uses fresh `New` values while an isolate
       boundary or selected package-state table is active, preventing a
       process-wide per-P pool from retaining isolate objects or passing them

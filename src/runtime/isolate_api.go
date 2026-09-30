@@ -40,3 +40,15 @@ func isolateSetOwner(id uintptr) uintptr {
 	gp.isolateOwner = id
 	return old
 }
+
+// isolateLargeAllocOrigin is a diagnostic for live large heap objects. Small
+// object spans still mix allocation contexts and cannot report an owner.
+//
+//go:linkname isolateLargeAllocOrigin
+func isolateLargeAllocOrigin(p unsafe.Pointer) (uintptr, bool) {
+	s := spanOfHeap(uintptr(p))
+	if s == nil || s.spanclass.sizeclass() != 0 {
+		return 0, false
+	}
+	return s.isolateAllocOwner, true
+}
