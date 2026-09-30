@@ -84,11 +84,14 @@ tagged package-state probe. `isolate.New` allocates their global layouts and
 replays initializers in dependency order for each instance. A build test
 starts one program twice and another once, with both importing an initialized
 shared package; each run observes fresh state. Standard-library packages
-remain process-owned in this probe. The ordinary Go initializers also run
-once at process startup, so initializers with side effects remain unsupported.
-Application packages that must remain process-owned need a separate
-classification mechanism; keep them outside the isolate program's import
-graph for now.
+remain process-owned in this probe and initialize once at process startup.
+The generated top-level entry retains selected application packages but omits
+their startup init tasks; their initializers run when `isolate.New` creates
+each instance. Those initializers should be pure: the trusted probe does not
+enforce determinism, and `Call`/`Inbox` are unavailable until `Start`.
+The build rejects a host that imports any selected application package.
+Deliberate process-owned application packages need a separate classification
+mechanism; keep them outside the isolate program's import graph for now.
 
 One final executable contains the host and all selected programs. The host
 selects a program by logical name and creates many instances of it. A build

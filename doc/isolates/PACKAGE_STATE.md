@@ -135,7 +135,12 @@ working build-to-runtime path for application package state.
 
 Standard-library packages remain process-owned in this probe. The build does
 not yet classify them or support a deliberate process-owned application
-package in an isolate program's import graph. Ordinary Go startup still runs
-selected packages' initializers once before the host starts, so initializers
-with side effects remain unsupported. The per-package table remains a tagged
-probe rather than the final contiguous isolate layout.
+package in an isolate program's import graph. A generated-entry compiler mode
+omits selected packages' startup init tasks while retaining their code; the
+entry imports reachable standard packages so their process initializers run
+once. A build test counts selected initializer calls and confirms there is no
+extra startup run. The build rejects a host that reaches selected application
+packages. Initializers should still be pure: the probe does not enforce
+determinism, and the host boundary is unavailable until `Start`. The
+per-package table remains a tagged probe rather than the final contiguous
+isolate layout.

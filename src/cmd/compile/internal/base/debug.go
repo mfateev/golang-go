@@ -51,6 +51,7 @@ type DebugFlags struct {
 	InlStaticInit         int    `help:"allow static initialization of inlined calls" concurrent:"ok"`
 	InterfaceCycles       int    `help:"allow anonymous interface cycles" concurrent:"ok"`
 	IsolateE4             int    `help:"redirect the E4 toy package global through the current goroutine base"`
+	IsolateEntry          int    `help:"omit selected-package startup init dependencies from a generated isolate entry"`
 	IsolateGlobals        int    `help:"redirect this package's globals through a generated isolate layout"`
 	IsolateImports        string `help:"comma-separated imported packages whose globals use isolate layouts"`
 	IsolateInit           int    `help:"keep package initialization assignments executable for isolate replay"`

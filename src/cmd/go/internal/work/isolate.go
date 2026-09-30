@@ -105,9 +105,11 @@ func runBuildIsolates(ctx context.Context, args []string) {
 	// separate state and effect audit.
 	programPaths := make([][]string, len(loaded))
 	selected := make(map[string]bool)
+	processStd := make(map[string]*load.Package)
 	for i, root := range loaded {
 		for _, p := range load.PackageList([]*load.Package{root}) {
 			if p.Standard {
+				processStd[p.ImportPath] = p
 				continue
 			}
 			if p.ImportPath == "" {
@@ -115,6 +117,11 @@ func runBuildIsolates(ctx context.Context, args []string) {
 			}
 			programPaths[i] = append(programPaths[i], p.ImportPath)
 			selected[p.ImportPath] = true
+		}
+	}
+	for _, p := range load.PackageList([]*load.Package{host}) {
+		if selected[p.ImportPath] {
+			base.Fatalf("host and isolate programs both import selected package %q", p.ImportPath)
 		}
 	}
 	selectedPaths := make([]string, 0, len(selected))
@@ -128,6 +135,20 @@ func runBuildIsolates(ctx context.Context, args []string) {
 	load.CheckPackageErrors(implicit)
 	imports := append([]*load.Package{host}, loaded...)
 	imports = append(imports, implicit...)
+	seenImports := make(map[string]bool, len(imports))
+	for _, p := range imports {
+		seenImports[p.ImportPath] = true
+	}
+	processPaths := make([]string, 0, len(processStd))
+	for path := range processStd {
+		processPaths = append(processPaths, path)
+	}
+	slices.Sort(processPaths)
+	for _, path := range processPaths {
+		if !seenImports[path] {
+			imports = append(imports, processStd[path])
+		}
+	}
 	importPaths := make([]string, len(imports))
 	for i, p := range imports {
 		importPaths[i] = p.ImportPath
@@ -194,6 +215,7 @@ func runBuildIsolates(ctx context.Context, args []string) {
 		Internal: load.PackageInternal{
 			Build:      &build.Package{Name: "main"},
 			BuildInfo:  buildInfo,
+			Gcflags:    []string{"-d=isolateentry=1"},
 			Imports:    imports,
 			RawImports: importPaths,
 		},

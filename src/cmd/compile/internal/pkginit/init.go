@@ -32,6 +32,12 @@ func MakeTask() {
 
 	// Find imported packages with init tasks.
 	for _, pkg := range typecheck.Target.Imports {
+		if base.Debug.IsolateEntry != 0 && base.IsolateImportSelected(pkg.Path) {
+			// The generated process entry imports selected packages to
+			// retain their code, then replays their initializers with an
+			// instance layout. Do not run those initializers at startup.
+			continue
+		}
 		n, ok := pkg.Lookup(".inittask").Def.(*ir.Name)
 		if !ok {
 			continue

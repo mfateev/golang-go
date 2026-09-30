@@ -142,6 +142,11 @@ ordinary-Go execution remains unproved.**
       runs two instances of one program and one of another, both importing
       the same initialized package, and verifies fresh state in each;
       standard-library state remains process-wide
+- [x] Generated-entry compiler mode retains selected application code while
+      omitting its process-startup init tasks. Reachable standard packages
+      still initialize at startup; selected initializers run only at instance
+      creation. A build script checks exact init counts and rejects a host
+      that imports selected application state
 - [x] Tagged `encoding/base64` probe reruns four initialized encoding
       pointers per instance; a directly importing caller selects the instance
       globals with a build-wide compiler flag; two importing packages and
@@ -249,12 +254,15 @@ The 2026-09-30 static build integration passed `src/make.bash`, a focused
 module. The next slice also passed `src/make.bash`, the script's initialized
 state check for two instances, and `go test -race isolate`. A later script
 check passed for a dependency imported by two programs and for initializer
-dependency order. Selected package initializers still run once at process
-startup as well as during instance creation. Standard-library state has not
-been classified. The complete Linux arm64 `src/all.bash` suite passed after
+dependency order. A further focused check passed with process-startup
+initialization suppressed for selected packages and with a host/shared-package
+overlap rejected. Standard-library state has not been classified. The
+complete Linux arm64 `src/all.bash` suite passed after
 updating the new packages' dependency policy and generated package/help lists.
 The rebuilt `bin/go` also built and ran a standalone two-program example from
-an external module.
+an external module. The startup-initialization change passed `make.bash`, its
+focused `cmd/go` script test, and a subsequent complete Linux arm64
+`src/all.bash` run.
 
 The active development target is the container's native **Linux arm64**
 (`uname -m` reports `aarch64`; the rebuilt tree's `go version` reports

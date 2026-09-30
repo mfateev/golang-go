@@ -5,9 +5,15 @@ go build -isolate-dir=./orders -isolate-dir=./billing -o worker$GOEXE ./host
 exec ./worker$GOEXE
 stdout -count=2 '^orders orders:orders:142:102$'
 stdout '^billing billing:billing:101$'
+stderr -count=2 '^orders init$'
+stderr -count=1 '^billing init$'
+stderr -count=3 '^shared init$'
 
 ! go build -isolate-dir=./orders -isolate-dir=./orders -o duplicate$GOEXE ./host
 stderr 'duplicate isolate directory'
+
+! go build -isolate-dir=./orders -isolate-dir=./billing -o overlap$GOEXE ./host_overlap
+stderr 'host and isolate programs both import selected package'
 
 -- go.mod --
 module example.org/isolatebuildtest
@@ -48,6 +54,12 @@ func main() {
 	run("orders")
 	run("billing")
 }
+-- host_overlap/main.go --
+package main
+
+import _ "example.org/isolatebuildtest/shared"
+
+func main() {}
 -- orders/isolate.json --
 {"name":"orders"}
 -- orders/main.go --
@@ -60,6 +72,8 @@ import (
 )
 
 var counter = 40 + shared.Next()
+
+func init() { println("orders init") }
 
 func main() {
 	counter++
@@ -85,6 +99,8 @@ import (
 	"strconv"
 )
 
+func init() { println("billing init") }
+
 func main() {
 	input := <-isolate.Inbox()
 	payload := append([]byte("billing:"), input...)
@@ -99,6 +115,8 @@ func main() {
 package shared
 
 var counter = 100
+
+func init() { println("shared init") }
 
 func Next() int {
 	counter++
