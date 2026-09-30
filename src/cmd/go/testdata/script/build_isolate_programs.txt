@@ -5,6 +5,8 @@ go build -isolate-dir=./orders -isolate-dir=./billing -o worker$GOEXE ./host
 exec ./worker$GOEXE
 stdout -count=2 '^orders orders:orders:142:102$'
 stdout '^billing billing:billing:101$'
+stdout '^host base64 before \+w==$'
+stdout '^host base64 after \+w==$'
 stderr -count=2 '^orders init$'
 stderr -count=1 '^billing init$'
 stderr -count=3 '^shared init$'
@@ -28,6 +30,7 @@ go 1.26
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"isolate"
 )
@@ -55,9 +58,11 @@ func run(name string) {
 }
 
 func main() {
+	fmt.Println("host base64 before", base64.StdEncoding.EncodeToString([]byte{0xfb}))
 	run("orders")
 	run("orders")
 	run("billing")
+	fmt.Println("host base64 after", base64.StdEncoding.EncodeToString([]byte{0xfb}))
 }
 -- host_overlap/main.go --
 package main
@@ -87,6 +92,7 @@ func main() {
 package main
 
 import (
+	"encoding/base64"
 	"example.org/isolatebuildtest/shared"
 	"isolate"
 	"strconv"
@@ -100,6 +106,13 @@ func main() {
 	counter++
 	input := <-isolate.Inbox()
 	shared.CheckPool()
+	if got := base64.StdEncoding.EncodeToString([]byte{0xfb}); got != "+w==" {
+		panic("base64 state was not freshly initialized")
+	}
+	base64.StdEncoding = base64.URLEncoding
+	if got := base64.StdEncoding.EncodeToString([]byte{0xfb}); got != "-w==" {
+		panic("base64 isolate state did not change")
+	}
 	payload := append([]byte("orders:"), input...)
 	payload = append(payload, ':')
 	payload = append(payload, strconv.Itoa(counter)...)

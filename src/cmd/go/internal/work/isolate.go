@@ -35,6 +35,13 @@ func (f *isolateDirsFlag) Set(dir string) error {
 
 var buildIsolateDirs isolateDirsFlag
 
+// These standard packages have been checked for globals that can use the
+// compiler's per-instance layout and initializer replay. The remaining
+// standard-library graph still needs an ownership and effect audit.
+var isolateOwnedStandardPackages = map[string]bool{
+	"encoding/base64": true,
+}
+
 // runBuildIsolates is the first cmd/go integration slice for static isolate
 // programs. It links configured package main directories under their own
 // import paths with one host package main. The generated top-level main
@@ -100,9 +107,8 @@ func runBuildIsolates(ctx context.Context, args []string) {
 		}
 		seenPath[p.ImportPath] = true
 	}
-	// In this trusted POC, application packages reached by a program own
-	// instance state. Standard packages remain process-owned pending their
-	// separate state and effect audit.
+	// Application packages reached by a program own instance state. Only
+	// audited standard packages join that selection in this trusted POC.
 	programPaths := make([][]string, len(loaded))
 	selected := make(map[string]bool)
 	processStd := make(map[string]*load.Package)
@@ -110,7 +116,9 @@ func runBuildIsolates(ctx context.Context, args []string) {
 		for _, p := range load.PackageList([]*load.Package{root}) {
 			if p.Standard {
 				processStd[p.ImportPath] = p
-				continue
+				if !isolateOwnedStandardPackages[p.ImportPath] {
+					continue
+				}
 			}
 			if p.ImportPath == "" {
 				base.Fatalf("isolate %q has a dependency without an import path", programs[i].Name)
@@ -127,7 +135,7 @@ func runBuildIsolates(ctx context.Context, args []string) {
 	startupSkip := make([]string, 0, len(selected))
 	for path := range selected {
 		selectedPaths = append(selectedPaths, path)
-		if !hostReachable[path] {
+		if !hostReachable[path] && processStd[path] == nil {
 			startupSkip = append(startupSkip, path)
 		}
 	}

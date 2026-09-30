@@ -1,8 +1,9 @@
 # Statically linked isolate programs
 
-Status: **experimental static build, application-package state, and trusted
-host bridge implemented**. Standard-library state classification and the
-native scheduler remain pending. Dynamic loading is a
+Status: **experimental static build, application-package state, selected
+standard-library state, and trusted host bridge implemented**. Broad
+standard-library ownership and effect classification and the native scheduler
+remain pending. Dynamic loading is a
 [future enhancement](./DYNAMIC_LOADING.md).
 
 ## Directory contract
@@ -79,12 +80,14 @@ for {
 
 This host loop is a temporary transport API. It does not yet implement the
 planned `Resume`/quiescence contract. The build automatically selects each
-configured `package main` and every reachable non-standard package for the
-tagged package-state probe. `isolate.New` allocates their global layouts and
-replays initializers in dependency order for each instance. A build test
-starts one program twice and another once, with both importing an initialized
-shared package; each run observes fresh state. Standard-library packages
-remain process-owned in this probe and initialize once at process startup.
+configured `package main`, every reachable non-standard package, and audited
+standard package `encoding/base64` for the tagged package-state probe.
+`isolate.New` allocates their global layouts and replays initializers in
+dependency order for each instance. A build test starts one program twice and
+another once, with both importing an initialized shared package; each run
+observes fresh state. The test also checks separate host and instance copies
+of `encoding/base64.StdEncoding`. Other standard-library packages remain
+process-owned in this probe and initialize once at process startup.
 The generated top-level entry retains selected application packages but omits
 their startup init tasks; their initializers run when `isolate.New` creates
 each instance. Those initializers should be pure: the trusted probe does not
@@ -180,8 +183,8 @@ manifest remains separate.
 ## Next build slice
 
 The [config reader](../../src/cmd/go/internal/isolatecfg/config.go),
-multi-main loader, generated entry table, and reachable application-package
-descriptor list are in place. The remaining build work is to classify
-standard-library state, support deliberate process-owned application
+multi-main loader, generated entry table, and reachable selected-package
+descriptor list are in place. The remaining build work is to classify the
+broad standard library, support deliberate process-owned application
 packages, validate the complete selection against every reachable package,
 and replace the tagged table with the final contiguous instance layout.

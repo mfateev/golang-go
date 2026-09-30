@@ -1,7 +1,8 @@
 # Phase 2B package-state partition
 
 This is the first explicit partition for the opt-in compiler probe. It is not
-yet a linked-program reachability manifest or an audit of the standard library.
+yet a linked-program reachability manifest or a complete audit of the standard
+library.
 
 | State | Current owner | Reason |
 |---|---|---|
@@ -9,7 +10,19 @@ yet a linked-program reachability manifest or an audit of the standard library.
 | `internal/isolateproto` name and handle registry | Process | A stable entry name and handle are registered once in the host. Its current function value is a Phase 1 limitation: an adapter that captures isolate state needs a per-instance callable table. |
 | Generated `isolateLayoutType` and `isolateLayoutKey` symbols | Process | They are immutable package metadata used to allocate and select instance state. |
 | Globals in a package compiled with `-d=isolateglobals=1` | Isolate | Every local external variable is placed in that package's generated, GC-described layout. Initializers are rerun with that layout selected. |
+| `encoding/base64` globals in a static isolate build | Isolate | The builder selects this audited standard package when an isolate program reaches it. Each instance initializes its four encoding pointers separately. The process retains its own initialized copy. |
 | Other package globals, including standard-library packages not opted in | Process in this probe | No isolation claim follows from using them. Each package must be classified before an ordinary-Go conformance claim. |
+
+The POC build selects ownership by package path, outside the package's
+source. The compiler implements that selection for global reads, writes, and
+initializer replay. The intended build rule is broader: select all mutable
+Go package state reachable by an isolate unless it belongs to an explicit
+process service. This removes routine per-package memory routing decisions.
+A package still needs changes within its implementation when copying globals
+is insufficient: `sync.Pool` bypasses shared storage during isolate
+execution, and clock, file, network, and other effects need their own
+boundary rules. The current standard-library selection is deliberately
+small while the general rule and its exception checks are implemented.
 
 The current selection boundary is a **whole package**. A package that contains
 both a process registry and mutable workflow state cannot safely opt in as it
@@ -133,9 +146,13 @@ its own globals from that package. Each instance observes the dependency's
 fresh initial value and the correct initialization order. This establishes a
 working build-to-runtime path for application package state.
 
-Standard-library packages remain process-owned in this probe. The build does
-not yet classify them or support a deliberate process-owned application
-package in an isolate program's import graph. A generated-entry compiler mode
+The static build selects `encoding/base64` for per-instance state when an
+isolate program reaches it. A build script checks that two instances each
+start with the default `StdEncoding`, can reassign their own copy, and leave
+the host's process copy unchanged. Other standard-library packages remain
+process-owned pending their ownership and effect audit. The build does not yet
+support a deliberate process-owned application package in an isolate program's
+import graph. A generated-entry compiler mode
 omits startup init tasks only for selected packages unreachable from the host,
 while retaining their code. Selected application packages reached by the host
 also initialize process globals at startup; the same compiled initializer

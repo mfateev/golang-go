@@ -147,6 +147,16 @@ ordinary-Go execution remains unproved.**
       reach. A package imported by both host and isolate initializes once for
       the process and once per instance; the build script checks separate
       host and instance state and exact init counts
+- [x] The static builder selects audited `encoding/base64` when an isolate
+      program reaches it. A script verifies independent `StdEncoding` state
+      across two instances and the host, including per-instance initialization
+- [ ] Classify ownership and effects across the broad standard library;
+      implement required library and runtime hooks and reject unclassified
+      paths before claiming general standard-library support
+- [ ] Replace the temporary standard-library selection list with default
+      isolate ownership for mutable reachable Go state, an explicit
+      process-service exception set, allocation ownership, and cross-owner
+      pointer checks
 - [x] `sync.Pool` discards `Put` and uses fresh `New` values while an isolate
       boundary or selected package-state table is active, preventing a
       process-wide per-P pool from retaining isolate objects or passing them
@@ -259,8 +269,7 @@ module. The next slice also passed `src/make.bash`, the script's initialized
 state check for two instances, and `go test -race isolate`. A later script
 check passed for a dependency imported by two programs and for initializer
 dependency order. A further focused check passed with process-startup
-initialization suppressed for selected packages and with a host/shared-package
-overlap rejected. Standard-library state has not been classified. The
+initialization suppressed for selected packages unused by the host. The
 complete Linux arm64 `src/all.bash` suite passed after
 updating the new packages' dependency policy and generated package/help lists.
 The rebuilt `bin/go` also built and ran a standalone two-program example from
@@ -272,6 +281,11 @@ The provisional `sync.Pool` boundary passed focused `sync`, `isolate` race,
 and static-build script tests, followed by a complete Linux arm64
 `src/all.bash` run. Other standard-library caches still require an ownership
 audit.
+
+The shared-package startup rule and selected `encoding/base64` state passed
+`src/make.bash`, the focused static-build script, and a complete Linux arm64
+`src/all.bash` run. The script checks distinct host and isolate globals for
+both an application package and `encoding/base64`.
 
 The active development target is the container's native **Linux arm64**
 (`uname -m` reports `aarch64`; the rebuilt tree's `go version` reports

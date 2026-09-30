@@ -1,7 +1,7 @@
 # Go Isolates — Design Definition
 
 Status: **design draft with Phase 1 prototype and MVP scope revision**.
-Last updated 2026-09-29.
+Last updated 2026-09-30.
 
 ## What an isolate is
 
@@ -68,15 +68,34 @@ convention.
 ### The host is isolate 0
 
 Rather than special-casing host code against isolate code, the host runs as
-isolate 0. Every global access is then uniformly indirected, and no stdlib
-package needs to exist in two forms (a host copy and an isolate copy).
+isolate 0. Every selected global access is then uniformly indirected. A
+package has one compiled code definition, with separate host and isolate
+state copies where its mutable globals are selected.
 
 ### The isolate-scoped / process-global partition
 
-Because all isolate code is known at link time (decision 3), the linker can
-compute which packages are reachable from isolate entry points and give only
-those per-isolate `.data`/`.bss` copies. Runtime and shared infrastructure stay
-process-global. This partition is the first concrete artifact to produce.
+Because all isolate code is known at link time (decision 3), the build can
+compute the transitive package graph reachable from isolate entry points.
+The target rule is to give every reachable Go package's mutable globals an
+isolate copy by default, including standard-library packages. The compiler
+and runtime then select the current instance's globals and tag allocations
+made in that context with the same owner. Host calls use the host state copy;
+code and immutable type metadata remain shared.
+
+The scheduler, GC, allocator, and other runtime services need an explicit
+process-owned exception set. A process-owned service must not retain an
+isolate pointer or return mutable process state into an isolate without a
+defined boundary operation. Initialization needs separate review when it
+performs I/O, starts goroutines, or changes process state. Clocks, files,
+network calls, and randomness need effect routing in addition to memory
+ownership. The build must reject reachable code whose ownership or effects
+have not been classified; silently sharing its globals is not a valid
+default.
+
+The current static POC selects reachable application packages and
+`encoding/base64`; its standard-library list is a proof of the compiler path,
+not the intended package-by-package ownership policy. Heap allocation
+ownership and cross-owner pointer enforcement are not implemented yet.
 
 ### Statically linked programs
 
