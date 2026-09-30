@@ -98,6 +98,9 @@ observes fresh state. The test also checks separate host and instance copies
 of `encoding/base32.StdEncoding` and `encoding/base64.StdEncoding`. Other
 standard-library packages remain process-owned in this probe and initialize
 once at process startup.
+The script also round-trips data through `encoding/json`, which remains
+unclassified and process-owned in the report. A working round trip does not
+establish safe package-state ownership; see PACKAGE_STATE.md.
 The generated top-level entry retains selected application packages but omits
 startup init tasks for packages unused by the host. Selected initializers run
 when `isolate.New` creates each instance. Those initializers should be pure:

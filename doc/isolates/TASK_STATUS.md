@@ -159,6 +159,10 @@ ordinary-Go execution remains unproved.**
       each program's reachable packages, instance-state selection, and host
       reachability. Unselected standard packages are labeled unclassified;
       the build script verifies selected, shared, and unclassified examples
+- [x] A static build script round-trips isolate values through unclassified
+      `encoding/json` while confirming its report status. The v2 initializer
+      writes callback globals in `encoding/json/internal`, so selecting JSON
+      alone would mutate process dependency state during instance replay
 - [ ] Classify ownership and effects across the broad standard library;
       implement required library and runtime hooks and reject unclassified
       paths before claiming general standard-library support

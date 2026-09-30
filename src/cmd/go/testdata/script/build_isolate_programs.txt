@@ -74,6 +74,8 @@ func main() {
 	if shared.Standard || !shared.InstanceState || shared.HostReachable || shared.Classification != "reachable-application" { panic("bad shared classification") }
 	strconv := packages["strconv"]
 	if !strconv.Standard || strconv.InstanceState || strconv.Classification != "unclassified-standard" { panic("bad strconv classification") }
+	json := packages["encoding/json"]
+	if !json.Standard || json.InstanceState || json.Classification != "unclassified-standard" { panic("bad json classification") }
 }
 -- host/main.go --
 package main
@@ -146,6 +148,7 @@ package main
 import (
 	"encoding/base32"
 	"encoding/base64"
+	"encoding/json"
 	"example.org/isolatebuildtest/shared"
 	"isolate"
 	"strconv"
@@ -157,6 +160,12 @@ func init() { println("orders init") }
 
 func main() {
 	counter++
+	encoded, err := json.Marshal(struct{ Counter int `json:"counter"` }{counter})
+	if err != nil { panic(err) }
+	var decoded struct{ Counter int `json:"counter"` }
+	if err := json.Unmarshal(encoded, &decoded); err != nil || decoded.Counter != counter {
+		panic("json round trip did not preserve isolate value")
+	}
 	input := <-isolate.Inbox()
 	shared.CheckPool()
 	if got := shared.PeekCounter(0); got != 101 {

@@ -106,6 +106,17 @@ supported isolate package set. `encoding/json` has shared caches and pools,
 so using it as the first proof would mix initialization with a broader
 process-state audit.
 
+`encoding/json` remains unclassified in the static build report. A script now
+round-trips an isolate value through it twice, proving that this trusted
+execution path runs, not that its package state is isolated. The v1 encoder
+uses process-wide `sync.Map` caches and `sync.Pool` values; the pool bypass
+prevents process retention of isolate objects, but the cache contents still
+need an ownership proof. Under the default v2 path, `encoding/json` also has
+an `init` function that assigns callback globals in `encoding/json/internal`.
+Selecting `encoding/json` alone would replay those writes into the process
+copy of its dependency. Selecting that dependency requires checking every
+reader, including `encoding/json/v2`, for the same per-instance routing.
+
 ## Build-wide selected-package probe
 
 The opt-in `-d=isolatepackages=path1:path2` compiler flag now carries one

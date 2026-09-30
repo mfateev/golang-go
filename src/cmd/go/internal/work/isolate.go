@@ -59,6 +59,9 @@ type isolateReportPackage struct {
 // These standard packages have been checked for globals that can use the
 // compiler's per-instance layout and initializer replay. The remaining
 // standard-library graph still needs an ownership and effect audit.
+// In particular, encoding/json cannot be selected alone: its v2 initializer
+// writes callback globals in encoding/json/internal, and the dependency's
+// readers would also need per-instance routing.
 var isolateOwnedStandardPackages = map[string]bool{
 	"encoding/base32": true,
 	"encoding/base64": true,
