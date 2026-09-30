@@ -154,6 +154,10 @@ ordinary-Go execution remains unproved.**
       unexported globals. Generated offsets cover those globals, while generic
       dictionaries remain shared metadata; the static script checks reads,
       writes, second-instance reset, and separate host state
+- [x] Optional `go build -isolate-report=FILE` emits a sorted JSON inventory of
+      each program's reachable packages, instance-state selection, and host
+      reachability. Unselected standard packages are labeled unclassified;
+      the build script verifies selected, shared, and unclassified examples
 - [ ] Classify ownership and effects across the broad standard library;
       implement required library and runtime hooks and reject unclassified
       paths before claiming general standard-library support

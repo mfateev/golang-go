@@ -59,6 +59,14 @@ selected programs:
 go build -isolate-dir=./isolates/orders -isolate-dir=./isolates/billing -o worker ./host
 ```
 
+Add `-isolate-report=ownership.json` to write a JSON inventory after a
+successful build. For each configured program it lists every reachable
+package. The package records distinguish instance state, a selected standard
+package probe, and standard packages still left process-wide. A
+`host_reachable` field identifies packages that have both a process copy and
+instance copies. This report describes the current build selection; a
+process-wide standard package in it has **not** been certified isolate-safe.
+
 The host can look up a program, start it, and answer its calls:
 
 ```go
@@ -183,8 +191,9 @@ manifest remains separate.
 ## Next build slice
 
 The [config reader](../../src/cmd/go/internal/isolatecfg/config.go),
-multi-main loader, generated entry table, and reachable selected-package
-descriptor list are in place. The remaining build work is to classify the
-broad standard library, support deliberate process-owned application
-packages, validate the complete selection against every reachable package,
-and replace the tagged table with the final contiguous instance layout.
+multi-main loader, generated entry table, reachable selected-package
+descriptor list, and package ownership report are in place. The remaining
+build work is to classify the broad standard library, support deliberate
+process-owned application packages, validate the complete selection against
+every reachable package, and replace the tagged table with the final
+contiguous instance layout.

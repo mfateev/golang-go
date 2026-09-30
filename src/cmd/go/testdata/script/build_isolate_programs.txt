@@ -1,7 +1,8 @@
 [short] skip 'links a binary'
 [compiler:gccgo] skip
 
-go build -isolate-dir=./orders -isolate-dir=./billing -o worker$GOEXE ./host
+go build -isolate-dir=./orders -isolate-dir=./billing -isolate-report=ownership.json -o worker$GOEXE ./host
+go run ./reportcheck ownership.json
 exec ./worker$GOEXE
 stdout -count=2 '^orders orders:orders:142:151$'
 stdout '^billing billing:billing:101$'
@@ -13,6 +14,12 @@ stderr -count=3 '^shared init$'
 
 ! go build -isolate-dir=./orders -isolate-dir=./orders -o duplicate$GOEXE ./host
 stderr 'duplicate isolate directory'
+
+! go build -isolate-report=unused.json ./host
+stderr '-isolate-report requires at least one -isolate-dir'
+
+! go build -isolate-dir=./orders -isolate-report=clobber$GOEXE -o clobber$GOEXE ./host
+stderr '-isolate-report must differ from executable output'
 
 go build -isolate-dir=./orders -o overlap$GOEXE ./host_overlap
 exec ./overlap$GOEXE
@@ -26,6 +33,44 @@ stderr -count=1 '^orders init$'
 module example.org/isolatebuildtest
 
 go 1.26
+-- reportcheck/main.go --
+package main
+
+import (
+	"encoding/json"
+	"os"
+)
+
+type packageInfo struct {
+	Path string `json:"path"`
+	Standard bool `json:"standard"`
+	InstanceState bool `json:"instance_state"`
+	HostReachable bool `json:"host_reachable"`
+	Classification string `json:"classification"`
+}
+
+func main() {
+	data, err := os.ReadFile(os.Args[1])
+	if err != nil { panic(err) }
+	var report struct {
+		FormatVersion int `json:"format_version"`
+		Programs []struct {
+			Name string `json:"name"`
+			Packages []string `json:"packages"`
+		} `json:"programs"`
+		Packages []packageInfo `json:"packages"`
+	}
+	if err := json.Unmarshal(data, &report); err != nil { panic(err) }
+	if report.FormatVersion != 1 || len(report.Programs) != 2 { panic("bad report header") }
+	packages := make(map[string]packageInfo)
+	for _, p := range report.Packages { packages[p.Path] = p }
+	base64 := packages["encoding/base64"]
+	if !base64.Standard || !base64.InstanceState || !base64.HostReachable || base64.Classification != "selected-standard-probe" { panic("bad base64 classification") }
+	shared := packages["example.org/isolatebuildtest/shared"]
+	if shared.Standard || !shared.InstanceState || shared.HostReachable || shared.Classification != "reachable-application" { panic("bad shared classification") }
+	strconv := packages["strconv"]
+	if !strconv.Standard || strconv.InstanceState || strconv.Classification != "unclassified-standard" { panic("bad strconv classification") }
+}
 -- host/main.go --
 package main
 

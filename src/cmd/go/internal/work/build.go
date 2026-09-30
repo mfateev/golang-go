@@ -64,6 +64,8 @@ main and an isolate.json file. It may be repeated to link several programs
 into one executable with the host package main. The build command generates
 the program lookup table; see doc/isolates/STATIC_PROGRAMS.md for its current
 limitations.
+The experimental -isolate-report flag writes a JSON report of reachable
+packages and their current state selection after a successful isolate build.
 
 The build flags are shared by the build, clean, get, install, list, run,
 and test commands:
@@ -255,6 +257,7 @@ func init() {
 
 	CmdBuild.Flag.StringVar(&cfg.BuildO, "o", "", "output file or directory")
 	CmdBuild.Flag.Var(&buildIsolateDirs, "isolate-dir", "isolate program directory containing isolate.json (repeatable)")
+	CmdBuild.Flag.StringVar(&buildIsolateReport, "isolate-report", "", "write isolate package state report to file")
 
 	AddBuildFlags(CmdBuild, DefaultBuildFlags)
 	AddBuildFlags(CmdInstall, DefaultBuildFlags)
@@ -473,6 +476,9 @@ func runBuild(ctx context.Context, cmd *base.Command, args []string) {
 	if len(buildIsolateDirs) != 0 {
 		runBuildIsolates(ctx, args)
 		return
+	}
+	if buildIsolateReport != "" {
+		base.Fatalf("-isolate-report requires at least one -isolate-dir")
 	}
 	moduleLoader := modload.NewLoader()
 	moduleLoader.InitWorkfile()

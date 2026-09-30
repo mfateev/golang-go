@@ -108,6 +108,8 @@
 // into one executable with the host package main. The build command generates
 // the program lookup table; see doc/isolates/STATIC_PROGRAMS.md for its current
 // limitations.
+// The experimental -isolate-report flag writes a JSON report of reachable
+// packages and their current state selection after a successful isolate build.
 //
 // The build flags are shared by the build, clean, get, install, list, run,
 // and test commands:

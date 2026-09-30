@@ -6,6 +6,7 @@ package work
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"go/build"
 	"os"
@@ -34,6 +35,26 @@ func (f *isolateDirsFlag) Set(dir string) error {
 }
 
 var buildIsolateDirs isolateDirsFlag
+var buildIsolateReport string
+
+type isolateBuildReport struct {
+	FormatVersion int                    `json:"format_version"`
+	Programs      []isolateReportProgram `json:"programs"`
+	Packages      []isolateReportPackage `json:"packages"`
+}
+
+type isolateReportProgram struct {
+	Name     string   `json:"name"`
+	Packages []string `json:"packages"`
+}
+
+type isolateReportPackage struct {
+	Path           string `json:"path"`
+	Standard       bool   `json:"standard"`
+	InstanceState  bool   `json:"instance_state"`
+	HostReachable  bool   `json:"host_reachable"`
+	Classification string `json:"classification"`
+}
 
 // These standard packages have been checked for globals that can use the
 // compiler's per-instance layout and initializer replay. The remaining
@@ -110,18 +131,22 @@ func runBuildIsolates(ctx context.Context, args []string) {
 	// Application packages reached by a program own instance state. Only
 	// audited standard packages join that selection in this trusted POC.
 	programPaths := make([][]string, len(loaded))
+	programReachable := make([][]string, len(loaded))
+	allReachable := make(map[string]*load.Package)
 	selected := make(map[string]bool)
 	processStd := make(map[string]*load.Package)
 	for i, root := range loaded {
 		for _, p := range load.PackageList([]*load.Package{root}) {
+			if p.ImportPath == "" {
+				base.Fatalf("isolate %q has a dependency without an import path", programs[i].Name)
+			}
+			programReachable[i] = append(programReachable[i], p.ImportPath)
+			allReachable[p.ImportPath] = p
 			if p.Standard {
 				processStd[p.ImportPath] = p
 				if !isolateOwnedStandardPackages[p.ImportPath] {
 					continue
 				}
-			}
-			if p.ImportPath == "" {
-				base.Fatalf("isolate %q has a dependency without an import path", programs[i].Name)
 			}
 			programPaths[i] = append(programPaths[i], p.ImportPath)
 			selected[p.ImportPath] = true
@@ -251,9 +276,57 @@ func runBuildIsolates(ctx context.Context, args []string) {
 	if fi, err := os.Stat(cfg.BuildO); err == nil && fi.IsDir() {
 		base.Fatalf("go build -isolate-dir requires a file output, not directory %q", cfg.BuildO)
 	}
+	var reportPath string
+	if buildIsolateReport != "" {
+		output, err := filepath.Abs(cfg.BuildO)
+		if err != nil {
+			base.Fatal(err)
+		}
+		reportPath, err = filepath.Abs(buildIsolateReport)
+		if err != nil {
+			base.Fatal(err)
+		}
+		if reportPath == output {
+			base.Fatalf("-isolate-report must differ from executable output %q", cfg.BuildO)
+		}
+	}
 	pmain.Target = cfg.BuildO
 	pmain.Stale = true
 	pmain.StaleReason = "static isolate program build"
 	a := b.AutoAction(ld, ModeInstall, ModeBuild, pmain)
 	b.Do(ctx, a)
+	if reportPath != "" {
+		report := isolateBuildReport{FormatVersion: 1}
+		for i, program := range programs {
+			paths := slices.Clone(programReachable[i])
+			slices.Sort(paths)
+			report.Programs = append(report.Programs, isolateReportProgram{Name: program.Name, Packages: paths})
+		}
+		paths := make([]string, 0, len(allReachable))
+		for path := range allReachable {
+			paths = append(paths, path)
+		}
+		slices.Sort(paths)
+		for _, path := range paths {
+			p := allReachable[path]
+			classification := "reachable-application"
+			if p.Standard {
+				classification = "unclassified-standard"
+				if selected[path] {
+					classification = "selected-standard-probe"
+				}
+			}
+			report.Packages = append(report.Packages, isolateReportPackage{
+				Path: path, Standard: p.Standard, InstanceState: selected[path],
+				HostReachable: hostReachable[path], Classification: classification,
+			})
+		}
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			base.Fatal(err)
+		}
+		if err := os.WriteFile(reportPath, append(data, '\n'), 0666); err != nil {
+			base.Fatal(err)
+		}
+	}
 }
