@@ -5,9 +5,13 @@
 package isolate
 
 import (
+	"context"
 	"errors"
 	"internal/isolatebridge"
+	"strconv"
+	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Program identifies one statically linked program in the current binary.
@@ -39,19 +43,36 @@ type Command = isolatebridge.Command
 // Isolate is a trusted instance of one statically linked program. This POC
 // uses the ordinary Go heap and scheduler; it does not provide containment.
 type Isolate struct {
-	entry    func()
-	runState func(func())
-	boundary *isolatebridge.Boundary
-	started  atomic.Bool
-	done     chan struct{}
-	err      error // published by closing done
+	entry       func()
+	runState    func(func())
+	boundary    *isolatebridge.Boundary
+	started     atomic.Bool
+	lifecycleMu sync.Mutex
+	killed      bool
+	done        chan struct{}
+	err         error // published by closing done
 }
 
 var errMainPanicked = errors.New("isolate: main panicked")
 var errMainExited = errors.New("isolate: main goroutine exited without returning")
+var errMainRevoked = errors.New("isolate: main goroutine revoked")
 var errInitializerPanicked = errors.New("isolate: package initializer panicked")
 var errInitializerExited = errors.New("isolate: package initializer goroutine exited without returning")
 var errInitializerFailed = errors.New("isolate: package initialization failed")
+
+// KillPendingError reports goroutines still attached to a revoked instance.
+// Running includes goroutines in syscalls; no stack sample is available yet.
+type KillPendingError struct {
+	GoroutineID       uint64
+	ThreadID          int64
+	Stack             string
+	LiveGoroutines    int32
+	RunningGoroutines int32
+}
+
+func (e *KillPendingError) Error() string {
+	return "isolate: kill pending: " + strconv.FormatInt(int64(e.LiveGoroutines), 10) + " goroutines remain"
+}
 
 // New prepares an instance. Its program can request initial input with Call.
 func New(cfg Config) (*Isolate, error) {
@@ -104,25 +125,37 @@ func New(cfg Config) (*Isolate, error) {
 // Start runs the program's ordinary main on a new goroutine. It may be called
 // once. A future runtime scheduler will replace this trusted POC lifecycle.
 func (i *Isolate) Start() error {
-	if i == nil || !i.started.CompareAndSwap(false, true) {
+	if i == nil {
 		return errors.New("isolate: instance already started or nil")
 	}
+	i.lifecycleMu.Lock()
+	defer i.lifecycleMu.Unlock()
+	if i.killed || !i.started.CompareAndSwap(false, true) {
+		return errors.New("isolate: instance already started or revoked")
+	}
+	ready := make(chan struct{})
 	go func() {
 		defer close(i.done)
 		defer i.boundary.Stop()
 		i.boundary.RunOwner(func() {
+			close(ready) // group membership is visible before Start returns
 			returned := false
 			defer func() {
 				if recover() != nil {
 					i.err = errMainPanicked
 				} else if !returned {
-					i.err = errMainExited
+					if i.boundary.Stopped() {
+						i.err = errMainRevoked
+					} else {
+						i.err = errMainExited
+					}
 				}
 			}()
 			i.runState(func() { i.boundary.Run(i.entry) })
 			returned = true
 		})
 	}()
+	<-ready
 	return nil
 }
 
@@ -141,4 +174,35 @@ func (i *Isolate) Wait() error {
 	}
 	<-i.done
 	return i.err
+}
+
+// Kill revokes unstarted children, stops Call waiters, and waits for every
+// attached goroutine to exit. Other runtime waits are not yet interrupted;
+// if ctx expires while one remains, revocation stays in force and Kill returns
+// a pending error. This is a provisional lifecycle, not safe heap teardown.
+func (i *Isolate) Kill(ctx context.Context) error {
+	if i == nil || ctx == nil {
+		return errors.New("isolate: nil instance or context")
+	}
+	i.lifecycleMu.Lock()
+	i.killed = true
+	i.boundary.Stop()
+	i.lifecycleMu.Unlock()
+
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if i.boundary.LiveGoroutines() == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			live := i.boundary.LiveGoroutines()
+			if live == 0 {
+				return nil
+			}
+			return &KillPendingError{LiveGoroutines: live, RunningGoroutines: i.boundary.RunningGoroutines()}
+		case <-ticker.C:
+		}
+	}
 }

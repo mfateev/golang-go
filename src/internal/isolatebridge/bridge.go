@@ -78,6 +78,11 @@ func (b *Boundary) Run(fn func()) {
 		setBoundary(old)
 		runtime.KeepAlive(b)
 	}()
+	select {
+	case <-b.halt:
+		return
+	default:
+	}
 	fn()
 }
 
@@ -117,6 +122,16 @@ func (b *Boundary) RevokeUnstarted() { revokeUnstarted(b.group) }
 func (b *Boundary) Stop() {
 	b.RevokeUnstarted()
 	b.stop.Do(func() { close(b.halt) })
+}
+
+// Stopped reports whether the host has requested this boundary to stop.
+func (b *Boundary) Stopped() bool {
+	select {
+	case <-b.halt:
+		return true
+	default:
+		return false
+	}
 }
 
 // Commands returns the stream of host commands from this boundary.

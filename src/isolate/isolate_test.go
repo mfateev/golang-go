@@ -373,12 +373,24 @@ func TestBoundaryStopWakesCallWaiters(t *testing.T) {
 	}
 
 	blocked := isolatebridge.New()
+	sendReady := make(chan struct{})
 	sendExited := make(chan struct{})
-	go blocked.Run(func() {
+	go func() {
 		defer close(sendExited)
-		_, _ = blocked.Call(2, nil) // no host receiver
-		callReturned.Store(true)
-	})
+		blocked.Run(func() {
+			close(sendReady)
+			_, _ = blocked.Call(2, nil) // no host receiver
+			callReturned.Store(true)
+		})
+	}()
+	<-sendReady
+	deadline := time.Now().Add(time.Second)
+	for blocked.RunningGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if got := blocked.RunningGoroutines(); got != 0 {
+		t.Fatalf("command sender did not park: running=%d", got)
+	}
 	blocked.Stop()
 	<-sendExited
 	if callReturned.Load() || blocked.LiveGoroutines() != 0 {

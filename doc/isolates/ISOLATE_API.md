@@ -513,6 +513,12 @@ request. A stack sample may fail even when the kill request succeeded, so an
 empty `Stack` must be handled. Only a later forceful-kill milestone can claim
 bounded termination of uninterrupted code.
 
+The current source-level `isolate.Isolate.Kill(ctx)` is a narrower probe. It
+stops `Call` waiters and unstarted children, then waits for the runtime group's
+live count. A goroutine parked in another runtime wait can resume while Kill
+is pending. Its pending error reports counts but has no stack or thread
+sample. The complete revocation contract above remains unimplemented.
+
 Everything crossing the boundary — `Command.Payload`, `Event.Payload`, entry
 input, and result — is **bytes, copied**. No typed deep-copy at the runtime
 level: it would need to handle cycles, unexported fields, funcs, and channels,

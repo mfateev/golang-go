@@ -457,6 +457,22 @@ send, and a main child parked in `Call`; the static two-program script passes.
 `Goexit` still runs defers, and unrelated channel, semaphore, timer, and
 netpoll waits remain outside this stop path.
 
+The source-level host now exposes a provisional `Kill(ctx)`. `Start` waits
+until main has joined its runtime group, so a concurrent kill cannot mistake
+an undispatched main for a stopped instance. Kill permanently stops the
+boundary, revokes unstarted children, and waits for the group's live count to
+reach zero. It returns `KillPendingError` with live and running counts when
+the context expires. Its stack, goroutine ID, and thread ID fields remain
+empty. `Wait` distinguishes a main goroutine stopped by Kill from one that
+called `Goexit` on its own. A second Kill can finish after a pending goroutine
+exits. Focused
+100-run race tests cover a Call waiter, an unrelated channel waiter, killing
+before Start, and concurrent Start/Kill; the static multi-program script
+passes. A separate race test holds the generated state runner before `main`
+and confirms that `Boundary.Run` skips entry after Kill. A goroutine parked
+on another runtime wait can resume and run user
+code while Kill is pending. The live count also is not safe heap teardown.
+
 ## Process-owned Unicode regexp cache
 
 `regexp/syntax` lazily builds a Unicode alias map through `sync.Once`. A first

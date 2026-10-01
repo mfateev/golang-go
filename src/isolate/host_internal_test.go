@@ -5,6 +5,8 @@
 package isolate
 
 import (
+	"context"
+	"errors"
 	"internal/isolatebridge"
 	"runtime"
 	"sync/atomic"
@@ -50,6 +52,165 @@ func TestMainExitRevokesUnstartedChildren(t *testing.T) {
 	}
 	if grandchildRan.Load() {
 		t.Fatal("grandchild started after main exit")
+	}
+}
+
+func TestKillStopsCallWaiter(t *testing.T) {
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main:     func() { _, _ = isolatebridge.Current().Call(1, nil) },
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	command := <-i.Commands()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := i.Kill(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Wait(); err != errMainRevoked {
+		t.Fatalf("Wait after Kill = %v, want %v", err, errMainRevoked)
+	}
+	command.Reply(nil, nil)
+	if i.boundary.LiveGoroutines() != 0 {
+		t.Fatal("Kill returned with live goroutines")
+	}
+	if err := i.Kill(ctx); err != nil {
+		t.Fatalf("repeated Kill = %v", err)
+	}
+}
+
+func TestKillPendingOnOtherWait(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main:     func() { close(entered); <-release },
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	err = i.Kill(ctx)
+	var pending *KillPendingError
+	if !errors.As(err, &pending) || pending.LiveGoroutines == 0 {
+		t.Fatalf("Kill on unrelated channel wait = %v, want pending live goroutine", err)
+	}
+	close(release)
+	if err := i.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Kill(context.Background()); err != nil {
+		t.Fatalf("Kill after exit = %v", err)
+	}
+}
+
+func TestKillPreventsLateMainEntry(t *testing.T) {
+	runnerEntered := make(chan struct{})
+	releaseRunner := make(chan struct{})
+	var mainRan atomic.Bool
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) {
+			return func(fn func()) {
+				close(runnerEntered)
+				<-releaseRunner
+				fn()
+			}, nil
+		},
+		Main: func() { mainRan.Store(true) },
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	<-runnerEntered
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	var pending *KillPendingError
+	if err := i.Kill(ctx); !errors.As(err, &pending) {
+		t.Fatalf("Kill before main entry = %v, want pending", err)
+	}
+	close(releaseRunner)
+	if err := i.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if mainRan.Load() {
+		t.Fatal("main entered after revocation")
+	}
+	if err := i.Kill(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestKillBeforeStart(t *testing.T) {
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main:     func() { t.Error("revoked program ran") },
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Kill(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err == nil {
+		t.Fatal("Start succeeded after Kill")
+	}
+}
+
+func TestConcurrentStartKill(t *testing.T) {
+	for range 100 {
+		var killReturned atomic.Bool
+		var ranAfterKill atomic.Bool
+		program := Program{entry: isolatebridge.ProgramEntry{
+			NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+			Main: func() {
+				if killReturned.Load() {
+					ranAfterKill.Store(true)
+				}
+			},
+		}}
+		i, err := New(Config{Program: program})
+		if err != nil {
+			t.Fatal(err)
+		}
+		startResult := make(chan error, 1)
+		killResult := make(chan error, 1)
+		go func() { startResult <- i.Start() }()
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			err := i.Kill(ctx)
+			if err == nil {
+				killReturned.Store(true)
+			}
+			killResult <- err
+		}()
+		startErr := <-startResult
+		if err := <-killResult; err != nil {
+			t.Fatal(err)
+		}
+		if startErr == nil {
+			<-i.Done()
+		}
+		if ranAfterKill.Load() || i.boundary.LiveGoroutines() != 0 {
+			t.Fatalf("Kill returned before main stopped: ran=%t, live=%d", ranAfterKill.Load(), i.boundary.LiveGoroutines())
+		}
 	}
 }
 

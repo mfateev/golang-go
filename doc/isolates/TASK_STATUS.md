@@ -99,7 +99,11 @@ ordinary-Go execution remains unproved.**
 - [x] The provisional `Call` bridge stops command-send and reply-receive
       waiters when main exits or preparation fails. They exit through `Goexit`;
       two 100-run race tests and the static program script pass. Other runtime
-      waiters and a public native `Kill(ctx)` remain open
+      waiters and complete native `Kill(ctx)` revocation remain open
+- [x] A provisional source-level `Kill(ctx)` fences startup, stops the Call
+      bridge, and waits for zero live group members. It returns pending counts
+      for unrelated runtime waits; those goroutines can still resume, so
+      whole-isolate revocation and safe teardown remain open
 - [x] Opt-in compiler mode keeps static package assignments executable so a
       fresh E4 toy base can replay variable initialization before user `init`
 - [x] Opt-in compiler-generated package layout and runtime GC type separate
