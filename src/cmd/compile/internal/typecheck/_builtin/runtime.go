@@ -134,6 +134,7 @@ func deferrangefunc() interface{}
 
 func rand() uint64
 func rand32() uint32
+func isolateGetOwner() uintptr
 
 // *byte is really *runtime.Type
 func makemap64(mapType *byte, hint int64, mapbuf *any) (hmap map[any]any)

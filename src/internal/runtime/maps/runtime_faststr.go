@@ -262,6 +262,7 @@ func runtime_mapassign_faststr(typ *abi.MapType, m *Map, key string) unsafe.Poin
 	if m == nil {
 		panic(errNilAssign)
 	}
+	m.checkIsolateWrite()
 	if race.Enabled {
 		callerpc := sys.GetCallerPC()
 		pc := abi.FuncPCABIInternal(runtime_mapassign_faststr)

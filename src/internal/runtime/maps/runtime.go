@@ -162,6 +162,7 @@ func runtime_mapassign(typ *abi.MapType, m *Map, key unsafe.Pointer) unsafe.Poin
 	if m == nil {
 		panic(errNilAssign)
 	}
+	m.checkIsolateWrite()
 	if race.Enabled {
 		callerpc := sys.GetCallerPC()
 		pc := abi.FuncPCABIInternal(runtime_mapassign)

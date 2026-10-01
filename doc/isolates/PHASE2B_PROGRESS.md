@@ -447,3 +447,27 @@ cache at process startup. The static two-program script compiles and matches
 a Unicode class in an isolate; its ordinary and race builds pass. The broader
 `regexp` effect and reader-ownership audit remains open, as does a generic
 way to classify and share immutable standard-library state.
+
+## Map owner check
+
+`internal/runtime/maps.Map` now carries the active numeric owner at creation.
+The compiler's stack-allocated small-map fast path sets the same field without
+calling a runtime constructor. All ordinary assignment paths, including fast
+string and integer keys, plus reflection, `delete`, and `clear`, check the
+current owner before writing. A process-owned map can be read from an isolate
+but cannot be changed through a local alias. The header grows by 8 bytes on
+64-bit systems and 4 bytes on 32-bit systems. A 100-run race test covers
+process maps, `unicode.Categories`, another isolate's map, and allowed local
+maps. The static two-program script exposed and then verified the compiler
+fast-path fix.
+`maps.Clone` now sets the copy's owner to its caller rather than retaining
+the source header's owner. Cloning a process map into an isolate is allowed;
+cloning another isolate's map is rejected. The first full-suite run reached
+the final test directory and exposed a missing liveness expectation in
+`live_regabi.go` for the new compiler call. With that expectation updated,
+the final `src/all.bash` run passed, including `GOEXPERIMENT=nojsonv2`, race,
+and the final test directory.
+
+The check does not follow pointers in map values, protect process-owned
+slices, or supply deterministic map iteration. Cross-owner pointer storage
+and allocation ownership remain separate work.

@@ -380,12 +380,14 @@ func (w *walkState) walkMakeMap(n *ir.MakeExpr, init *ir.Nodes) ir.Node {
 		// allocated by makemap. Therefore, no groups need to be
 		// allocated in this code path.
 		if n.Esc() == ir.EscNone {
-			// Only need to initialize m.seed since
-			// m map has been allocated on the stack already.
+			// Initialize the seed and owner of the stack-allocated map.
 			// m.seed = uintptr(rand())
 			rand := w.mkcall("rand", types.Types[types.TUINT64], init)
 			seedSym := mapType.Field(1).Sym // m.seed see reflectdata/map.go
 			w.appendWalkStmt(init, ir.NewAssignStmt(base.Pos, ir.NewSelectorExpr(base.Pos, ir.ODOT, m, seedSym), typecheck.Conv(rand, types.Types[types.TUINTPTR])))
+			owner := w.mkcall("isolateGetOwner", types.Types[types.TUINTPTR], init)
+			ownerSym := mapType.Field(9).Sym // m.owner see reflectdata/map.go
+			w.appendWalkStmt(init, ir.NewAssignStmt(base.Pos, ir.NewSelectorExpr(base.Pos, ir.ODOT, m, ownerSym), owner))
 			return typecheck.ConvNop(m, t)
 		}
 		// Call runtime.makemap_small to allocate a

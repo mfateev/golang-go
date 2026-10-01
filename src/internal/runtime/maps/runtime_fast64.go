@@ -183,6 +183,7 @@ func runtime_mapassign_fast64(typ *abi.MapType, m *Map, key uint64) unsafe.Point
 	if m == nil {
 		panic(errNilAssign)
 	}
+	m.checkIsolateWrite()
 	if race.Enabled {
 		callerpc := sys.GetCallerPC()
 		pc := abi.FuncPCABIInternal(runtime_mapassign_fast64)
@@ -401,6 +402,7 @@ func runtime_mapassign_fast64ptr(typ *abi.MapType, m *Map, key unsafe.Pointer) u
 	if m == nil {
 		panic(errNilAssign)
 	}
+	m.checkIsolateWrite()
 	if race.Enabled {
 		callerpc := sys.GetCallerPC()
 		pc := abi.FuncPCABIInternal(runtime_mapassign_fast64ptr)

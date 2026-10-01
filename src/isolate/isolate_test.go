@@ -12,7 +12,9 @@ import (
 	"internal/isolatebridge"
 	"isolate"
 	"iter"
+	"maps"
 	"net/netip"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -20,6 +22,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode"
 	"unique"
 	"unsafe"
 )
@@ -91,6 +94,70 @@ func TestFmtStandardStreamsRejectIsolate(t *testing.T) {
 			}()
 		}
 	})
+}
+
+func TestMapWritesStayWithOwner(t *testing.T) {
+	processString := map[string]int{"x": 1}
+	process32 := map[uint32]int{1: 2}
+	process64 := map[uint64]int{1: 3}
+	ptr := new(int)
+	processPointer := map[*int]int{ptr: 5}
+	processStruct := map[struct{ A, B string }]int{{"a", "b"}: 4}
+	unicodeAlias := unicode.Categories
+	defer delete(unicodeAlias, "IsolateProbe")
+	if unicodeAlias["L"] == nil {
+		t.Fatal("missing process Unicode category")
+	}
+	wantReject := func(name string, call func()) {
+		defer func() {
+			if got := recover(); got != "isolate: map write crosses owner boundary" {
+				t.Errorf("%s panic = %v", name, got)
+			}
+		}()
+		call()
+	}
+	b := isolatebridge.New()
+	var owned map[string]int
+	b.Run(func() {
+		if unicodeAlias["L"] == nil || processString["x"] != 1 {
+			t.Error("process map read failed")
+		}
+		owned = map[string]int{"x": 1}
+		owned["x"] = 2
+		clone := maps.Clone(processString)
+		clone["x"] = 9
+		if processString["x"] != 1 || clone["x"] != 9 {
+			t.Error("cloning a process map did not create isolate-owned state")
+		}
+		wantReject("string", func() { processString["x"] = 8 })
+		wantReject("uint32", func() { process32[1] = 8 })
+		wantReject("uint64", func() { process64[1] = 8 })
+		wantReject("pointer", func() { processPointer[ptr] = 8 })
+		wantReject("struct", func() { processStruct[struct{ A, B string }{"a", "b"}] = 8 })
+		wantReject("delete", func() { delete(processString, "x") })
+		wantReject("clear", func() { clear(processString) })
+		wantReject("reflect", func() { reflect.ValueOf(processString).SetMapIndex(reflect.ValueOf("x"), reflect.ValueOf(8)) })
+		wantReject("Unicode alias", func() { unicodeAlias["IsolateProbe"] = unicodeAlias["L"] })
+	})
+	if len(processString) != 1 || processString["x"] != 1 || process32[1] != 2 || process64[1] != 3 || processPointer[ptr] != 5 || processStruct[struct{ A, B string }{"a", "b"}] != 4 || unicodeAlias["IsolateProbe"] != nil {
+		t.Fatal("isolate changed process-owned map")
+	}
+	second := isolatebridge.New()
+	second.Run(func() { wantReject("other isolate", func() { owned["x"] = 3 }) })
+	wantReject("host", func() { owned["x"] = 3 })
+	wantCloneReject := func(name string, call func()) {
+		defer func() {
+			if got := recover(); got != "isolate: map clone crosses owner boundary" {
+				t.Errorf("%s clone panic = %v", name, got)
+			}
+		}()
+		call()
+	}
+	second.Run(func() { wantCloneReject("other isolate", func() { _ = maps.Clone(owned) }) })
+	wantCloneReject("host", func() { _ = maps.Clone(owned) })
+	if owned["x"] != 2 {
+		t.Fatal("cross-owner write changed isolate-owned map")
+	}
 }
 
 func TestCallReceivesHostRequests(t *testing.T) {

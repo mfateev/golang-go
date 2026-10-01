@@ -25,16 +25,17 @@ The host forces a GC before and after creating the instances, keeps every
 instance reachable, and reports the `HeapAlloc`, `HeapObjects`, and
 `TotalAlloc` differences. Each variant runs in a fresh process. On Linux
 arm64, after the host boundary moved to a `Call`-only API, two runs on
-2026-10-01 agreed to about 1 byte per instance:
+2026-10-01 agreed to about 1 byte per instance. A later run after map-owner
+tagging and the initializer worker gave these updated values:
 
 | Program import | Retained bytes/instance | Retained objects/instance | Allocated bytes/instance |
 |---|---:|---:|---:|
-| None | 434 | 10 | 506 |
-| `time` | 1,850 | 22 | 2,026 |
-| `reflect` | 2,450 | 13 | 2,626 |
-| `encoding/json/jsontext` | 3,146 | 44 | 3,546 |
-| `encoding/json/v2` | 10,410 | 99 | 12,186 |
-| `encoding/json` | 10,690 | 103 | 12,626 |
+| None | 435 | 10 | 723 |
+| `time` | 1,851 | 22 | 2,243 |
+| `reflect` | 2,451 | 13 | 2,843 |
+| `encoding/json/jsontext` | 3,146 | 44 | 3,762 |
+| `encoding/json/v2` | 10,410 | 99 | 12,402 |
+| `encoding/json` | 10,691 | 103 | 12,843 |
 
 Removing the unused Inbox channel and its initial message reduced every
 variant by about 144 retained bytes and two objects per instance. The JSON
@@ -54,6 +55,12 @@ Attaching a runtime goroutine group to each boundary added about 24 retained
 bytes and one object per prepared instance. The table includes that group,
 plus about 16 bytes for the provisional main failure result field. It
 excludes stacks for goroutines created after `Start`.
+
+The map header now includes one pointer-sized owner ID. The prepared-state
+retained floor changed by at most about 1.5 bytes per instance in this run;
+the allocations before GC rose by about 217 bytes per instance because `New`
+uses a short-lived goroutine to contain initializer `Goexit`. These data do
+not measure map-heavy live workflows or map-operation CPU cost.
 
 This is a heap floor for the current eager POC, not an RSS or live-workflow
 measurement. It makes lazy or shared immutable package state a concrete

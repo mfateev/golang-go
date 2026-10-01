@@ -185,6 +185,7 @@ func MapType() *types.Type {
 	//     // N.B Padding
 	//
 	//     clearSeq uint64
+	//     owner uintptr
 	// }
 	// must match internal/runtime/maps/map.go:Map.
 	fields := []*types.Field{
@@ -197,6 +198,7 @@ func MapType() *types.Type {
 		makefield("writing", types.Types[types.TUINT8]),
 		makefield("tombstonePossible", types.Types[types.TBOOL]),
 		makefield("clearSeq", types.Types[types.TUINT64]),
+		makefield("owner", types.Types[types.TUINTPTR]),
 	}
 
 	n := ir.NewDeclNameAt(src.NoXPos, ir.OTYPE, ir.Pkgs.InternalMaps.Lookup("Map"))
@@ -207,9 +209,9 @@ func MapType() *types.Type {
 	m.SetUnderlying(types.NewStruct(fields))
 	types.CalcSize(m)
 
-	// The size of Map should be 48 bytes on 64 bit
-	// and 32 bytes on 32 bit platforms.
-	if size := int64(2*8 + 4*types.PtrSize /* one extra for globalDepth/globalShift/writing + padding */); m.Size() != size {
+	// The size of Map should be 56 bytes on 64 bit
+	// and 36 bytes on 32 bit platforms.
+	if size := int64(2*8 + 5*types.PtrSize /* one extra for globalDepth/globalShift/writing + padding */); m.Size() != size {
 		base.Fatalf("internal/runtime/maps.Map size not correct: got %d, want %d", m.Size(), size)
 	}
 

@@ -221,6 +221,10 @@ ordinary-Go execution remains unproved.**
       on reuse. Focused and race tests check zero and nonzero origins.
       This is diagnostic metadata: small allocations still share per-P spans,
       while incoming requests now use owner-copied `Call` replies
+- [x] Map headers carry the creator's numeric owner, including optimized
+      stack maps. Assignment, deletion, and clearing across owners fail closed
+      even through aliases or reflection; map value pointers and other data
+      structures still need cross-owner write checks
 - [x] The trusted `Call` bridge allocates the host command and request copy in
       process context, then copies the reply under the isolate ID. A 100-run
       race test checks large request, host copy, and reply origins

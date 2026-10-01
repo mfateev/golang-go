@@ -52,6 +52,21 @@ The former `Inbox` path delivered a host-allocated byte slice. Incoming
 requests now arrive as `Call` replies, which are copied under the receiver's
 isolate owner. The native allocator and cross-owner verifier remain pending.
 
+Go map headers now record the numeric owner active at creation. The runtime
+constructors tag heap maps; the compiler also tags its optimized small maps
+whose headers live on the stack. Generic and fast-key assignments, reflected
+assignments, `delete`, and `clear` reject a mutation from another owner. Reads
+of process-owned maps remain possible, so an isolate can use large read-only
+standard tables without duplicating them. A source-level race test checks a
+local alias to `unicode.Categories`, several key layouts, reflection, and a
+map made by another isolate. The map header grows by one pointer-sized field.
+`maps.Clone` reads a process map and tags the new header with the caller's
+owner, so the isolate can modify its clone. It rejects cloning a map owned by
+another isolate.
+This is a mutation guard, not general pointer ownership: a map value can
+contain a mutable pointer, slice, or interface that still needs a cross-owner
+write check. It also does not make a map's iteration order deterministic.
+
 ## Two-package dependency probe
 
 `e4deptoy` and `e4importtoy` are both opted in. The runtime's tagged probe

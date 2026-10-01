@@ -262,6 +262,10 @@ type Map struct {
 	// clearSeq is a sequence counter of calls to Clear. It is used to
 	// detect map clears during iteration.
 	clearSeq uint64
+
+	// The isolate owner active when this map was created. Zero is the
+	// process. This guards map mutations through aliases to shared globals.
+	owner uintptr
 }
 
 // Use 64-bit hash on 64-bit systems, except on Wasm, where we use
@@ -286,6 +290,7 @@ func NewMap(mt *abi.MapType, hint uintptr, m *Map, maxAlloc uintptr) *Map {
 	}
 
 	m.seed = uintptr(rand())
+	m.owner = isolateMapOwner()
 
 	if hint <= abi.MapGroupSlots {
 		// A small map can fill all 8 slots, so no need to increase
@@ -350,6 +355,7 @@ func NewMap(mt *abi.MapType, hint uintptr, m *Map, maxAlloc uintptr) *Map {
 func NewEmptyMap() *Map {
 	m := new(Map)
 	m.seed = uintptr(rand())
+	m.owner = isolateMapOwner()
 	// See comment in NewMap. No need to eager allocate a group.
 	return m
 }
@@ -503,6 +509,7 @@ func (m *Map) Put(typ *abi.MapType, key, elem unsafe.Pointer) {
 //
 // PutSlot never returns nil.
 func (m *Map) PutSlot(typ *abi.MapType, key unsafe.Pointer) unsafe.Pointer {
+	m.checkIsolateWrite()
 	if m.writing != 0 {
 		fatal("concurrent map writes")
 	}
@@ -666,6 +673,9 @@ func (m *Map) growToTable(typ *abi.MapType) *table {
 }
 
 func (m *Map) Delete(typ *abi.MapType, key unsafe.Pointer) {
+	if m != nil {
+		m.checkIsolateWrite()
+	}
 	if m == nil || m.Used() == 0 {
 		if err := mapKeyError(typ, key); err != nil {
 			panic(err) // see issue 23734
@@ -754,6 +764,9 @@ func (m *Map) deleteSmall(typ *abi.MapType, hash uintptr, key unsafe.Pointer) {
 
 // Clear deletes all entries from the map resulting in an empty map.
 func (m *Map) Clear(typ *abi.MapType) {
+	if m != nil {
+		m.checkIsolateWrite()
+	}
 	if m == nil || m.Used() == 0 && !m.tombstonePossible {
 		return
 	}
@@ -804,6 +817,10 @@ func (m *Map) clearSmall(typ *abi.MapType) {
 
 func (m *Map) Clone(typ *abi.MapType) *Map {
 	// Note: this should never be called with a nil map.
+	owner := isolateMapOwner()
+	if m.owner != 0 && m.owner != owner {
+		panic("isolate: map clone crosses owner boundary")
+	}
 	if m.writing != 0 {
 		fatal("concurrent map clone and map write")
 	}
@@ -811,6 +828,7 @@ func (m *Map) Clone(typ *abi.MapType) *Map {
 	// Shallow copy the Map structure.
 	m2 := new(Map)
 	*m2 = *m
+	m2.owner = owner
 	m = m2
 
 	// We need to just deep copy the dirPtr field.
