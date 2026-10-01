@@ -18,8 +18,9 @@ import (
 // The high bit of admission records revocation; the low bits count goroutines
 // admitted at first dispatch and not yet destroyed. A complete isolate also
 // needs ownership of every parked waiter and a dispatch fence before Kill can
-// report that no goroutine can resume execution. pollWaits covers only network
-// poll waits, whose cleanup still runs on the resumed goroutine.
+// report that no goroutine can resume execution. pollWaits and sleepWaits
+// cover network poll and time.Sleep waits; their cleanup still runs on the
+// resumed goroutine.
 type isolateRevocationGroup struct {
 	admission atomic.Uint64
 	live      atomic.Int32
@@ -27,6 +28,8 @@ type isolateRevocationGroup struct {
 	runnable  atomic.Int32 // Conservative count of group Gs in or entering _Grunnable.
 	pollLock  mutex
 	pollWaits *g
+	sleepLock mutex
+	sleepWaits *g
 }
 
 // defined constants
@@ -586,6 +589,9 @@ type g struct {
 	isolatePollNext *g
 	isolatePollDesc unsafe.Pointer // runtime-owned pollDesc while registered; FD reference keeps it alive
 	isolatePollMode int32
+	isolateSleepPrev *g
+	isolateSleepNext *g
+	isolateSleepState uint8
 	isolateStarted  bool
 	isolateAdmitted bool
 	timer           *timer        // cached timer for time.Sleep

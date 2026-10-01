@@ -104,9 +104,11 @@ ordinary-Go execution remains unproved.**
       bridge, and waits for zero live group members. It returns pending counts
       for unsupported runtime waits; those goroutines can still resume, so
       whole-isolate revocation and safe teardown remain open
-- [x] `time.Sleep` checks revocation before entry and after its normal timer
-      wakeup. A pending Kill can finish once that timer fires without running
-      the next user instruction; early timer wakeup remains open
+- [x] Real `time.Sleep` waits register with the runtime group. Kill stops
+      pending sleep timers and wakes their Gs early; a callback already in
+      progress wakes its own G. Each G unregisters before exiting without
+      returning to user code. Fake synctest timers retain ordinary wakeup;
+      timer-channel waits remain open
 - [x] Ordinary channel send and receive check revocation at entry and after
       their normal parked-wait cleanup. A pending Kill can finish after a
       channel wakeup without returning to user code; early waiter detachment

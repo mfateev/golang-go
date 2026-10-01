@@ -452,7 +452,7 @@ func TestRevokedSleepDoesNotResumeUserCode(t *testing.T) {
 	go b.Run(func() {
 		defer close(exited)
 		close(entered)
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(time.Hour)
 		resumed.Store(true)
 	})
 	<-entered
@@ -467,10 +467,40 @@ func TestRevokedSleepDoesNotResumeUserCode(t *testing.T) {
 	select {
 	case <-exited:
 	case <-time.After(5 * time.Second):
-		t.Fatal("sleeping goroutine did not exit after timer fired")
+		t.Fatal("sleeping goroutine did not exit after revocation")
 	}
 	if resumed.Load() {
 		t.Fatal("sleep returned to user code after revocation")
+	}
+}
+
+func TestSleepRevocationTimerRace(t *testing.T) {
+	for n := 0; n < 200; n++ {
+		b := isolatebridge.New()
+		entered := make(chan struct{})
+		exited := make(chan struct{})
+		go func() {
+			defer close(exited)
+			b.Run(func() {
+				close(entered)
+				time.Sleep(time.Millisecond)
+			})
+		}()
+		<-entered
+		deadline := time.Now().Add(5 * time.Second)
+		for b.LiveGoroutines() != 0 && b.RunningGoroutines() != 0 && time.Now().Before(deadline) {
+			runtime.Gosched()
+		}
+		if b.LiveGoroutines() != 0 && b.RunningGoroutines() != 0 {
+			t.Fatal("short sleeper did not park")
+		}
+		time.Sleep(time.Duration(n%4) * 250 * time.Microsecond)
+		b.Stop()
+		select {
+		case <-exited:
+		case <-time.After(5 * time.Second):
+			t.Fatal("short sleeper did not exit after timer or revocation")
+		}
 	}
 }
 

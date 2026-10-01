@@ -63,7 +63,7 @@ NONE < vgetrandom;
 NONE < timerSend;
 
 # Scheduler, timers, netpoll
-NONE < allocmW, execW, cpuprof, pollCache, pollDesc, wakeableSleep;
+NONE < allocmW, execW, cpuprof, pollCache, pollDesc, isolateSleep, wakeableSleep;
 scavenge, sweep, testR, wakeableSleep, timerSend < hchan;
 assistQueue,
   cleanupQueue,
@@ -72,6 +72,7 @@ assistQueue,
   forcegc,
   updateMaxProcsG,
   hchan,
+  isolateSleep,
   pollDesc, # pollDesc can interact with timers, which can lock sched.
   scavenge,
   strongFromWeakQueue,
@@ -91,7 +92,7 @@ sched < allg, allp;
 NONE < notifyList;
 hchan, notifyList < sudog;
 
-hchan, pollDesc, wakeableSleep < timers;
+hchan, isolateSleep, pollDesc, wakeableSleep < timers;
 timers, timerSend < timer < netpollInit;
 
 # Semaphores

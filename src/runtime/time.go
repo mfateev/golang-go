@@ -329,6 +329,81 @@ const verifyTimers = false
 
 // time.now is implemented in assembly.
 
+const (
+	isolateSleepNone uint8 = iota
+	isolateSleepRegistered
+	isolateSleepArmed
+	isolateSleepTimerReady
+	isolateSleepRevocationReady
+	isolateSleepRevocationPendingTimer
+)
+
+func (group *isolateRevocationGroup) registerSleep(gp *g) bool {
+	lockWithRank(&group.sleepLock, lockRankIsolateSleep)
+	if group.admission.Load()&isolateRevokedBit != 0 {
+		unlock(&group.sleepLock)
+		return false
+	}
+	if gp.isolateSleepState != isolateSleepNone {
+		throw("isolate: goroutine registered two sleeps")
+	}
+	gp.isolateSleepState = isolateSleepRegistered
+	gp.isolateSleepNext = group.sleepWaits
+	if gp.isolateSleepNext != nil {
+		gp.isolateSleepNext.isolateSleepPrev = gp
+	}
+	group.sleepWaits = gp
+	unlock(&group.sleepLock)
+	return true
+}
+
+// removeSleep requires group.sleepLock. The caller has resumed the G after
+// the chosen wake, or canceled its park before arming the timer.
+func (group *isolateRevocationGroup) removeSleep(gp *g) {
+	assertLockHeld(&group.sleepLock)
+	if gp.isolateSleepState == isolateSleepNone {
+		throw("isolate: goroutine missing registered sleep")
+	}
+	if gp.isolateSleepPrev == nil {
+		group.sleepWaits = gp.isolateSleepNext
+	} else {
+		gp.isolateSleepPrev.isolateSleepNext = gp.isolateSleepNext
+	}
+	if gp.isolateSleepNext != nil {
+		gp.isolateSleepNext.isolateSleepPrev = gp.isolateSleepPrev
+	}
+	gp.isolateSleepPrev, gp.isolateSleepNext = nil, nil
+	gp.isolateSleepState = isolateSleepNone
+}
+
+func (group *isolateRevocationGroup) unregisterSleep(gp *g) {
+	lockWithRank(&group.sleepLock, lockRankIsolateSleep)
+	group.removeSleep(gp)
+	unlock(&group.sleepLock)
+}
+
+// isolateRevokeSleepWaiters claims armed sleepers before their timers fire.
+// If a timer callback has already started, it performs the wake instead.
+func isolateRevokeSleepWaiters(group *isolateRevocationGroup) {
+	var ready gList
+	lockWithRank(&group.sleepLock, lockRankIsolateSleep)
+	for gp := group.sleepWaits; gp != nil; gp = gp.isolateSleepNext {
+		if gp.isolateSleepState != isolateSleepArmed {
+			continue
+		}
+		if gp.timer.stop() {
+			gp.isolateSleepState = isolateSleepRevocationReady
+			ready.push(gp)
+		} else {
+			gp.isolateSleepState = isolateSleepRevocationPendingTimer
+		}
+	}
+	unlock(&group.sleepLock)
+	for gp := ready.pop(); gp != nil; gp = ready.pop() {
+		goready(gp, 0)
+	}
+}
+
 // timeSleep puts the current goroutine to sleep for at least ns nanoseconds.
 //
 //go:linkname timeSleep time.Sleep
@@ -366,7 +441,14 @@ func timeSleep(ns int64) {
 		resetForSleep(gp, nil)
 		gopark(nil, nil, waitReasonSleep, traceBlockSleep, 1)
 	} else {
+		if group := gp.isolateGroup; group != nil && !group.registerSleep(gp) {
+			isolateExitIfRevoked()
+			throw("isolate: rejected sleep without revocation")
+		}
 		gopark(resetForSleep, nil, waitReasonSleep, traceBlockSleep, 1)
+		if group := gp.isolateGroup; group != nil && gp.isolateSleepState != isolateSleepNone {
+			group.unregisterSleep(gp)
+		}
 	}
 	isolateExitIfRevoked()
 }
@@ -376,6 +458,21 @@ func timeSleep(ns int64) {
 // sleep and there are many goroutines then the P can wind up running the
 // timer function, goroutineReady, before the goroutine has been parked.
 func resetForSleep(gp *g, _ unsafe.Pointer) bool {
+	if group := gp.isolateGroup; group != nil && gp.isolateSleepState != isolateSleepNone {
+		lockWithRank(&group.sleepLock, lockRankIsolateSleep)
+		if group.admission.Load()&isolateRevokedBit != 0 {
+			group.removeSleep(gp)
+			unlock(&group.sleepLock)
+			return false
+		}
+		if gp.isolateSleepState != isolateSleepRegistered {
+			throw("isolate: sleep timer armed in wrong state")
+		}
+		gp.timer.reset(gp.sleepWhen, 0)
+		gp.isolateSleepState = isolateSleepArmed
+		unlock(&group.sleepLock)
+		return true
+	}
 	gp.timer.reset(gp.sleepWhen, 0)
 	return true
 }
@@ -446,7 +543,24 @@ func resetTimer(t *timeTimer, when, period int64) bool {
 
 // Ready the goroutine arg.
 func goroutineReady(arg any, _ uintptr, _ int64) {
-	goready(arg.(*g), 0)
+	gp := arg.(*g)
+	if group := gp.isolateGroup; group != nil {
+		lockWithRank(&group.sleepLock, lockRankIsolateSleep)
+		switch gp.isolateSleepState {
+		case isolateSleepArmed, isolateSleepRevocationPendingTimer:
+			gp.isolateSleepState = isolateSleepTimerReady
+			unlock(&group.sleepLock)
+			goready(gp, 0)
+			return
+		case isolateSleepRevocationReady:
+			unlock(&group.sleepLock)
+			return
+		case isolateSleepRegistered:
+			throw("isolate: timer fired before sleep was armed")
+		}
+		unlock(&group.sleepLock)
+	}
+	goready(gp, 0)
 }
 
 // addHeap adds t to the timers heap.

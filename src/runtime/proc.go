@@ -4554,6 +4554,9 @@ func gdestroy(gp *g) {
 	if gp.isolatePollDesc != nil || gp.isolatePollPrev != nil || gp.isolatePollNext != nil {
 		throw("isolate: exiting goroutine still registered in poll wait list")
 	}
+	if gp.isolateSleepState != isolateSleepNone || gp.isolateSleepPrev != nil || gp.isolateSleepNext != nil {
+		throw("isolate: exiting goroutine still registered in sleep wait list")
+	}
 
 	casgstatus(gp, _Grunning, _Gdead)
 	// Phase 0 kill probe: discard preemption and waiter records only after

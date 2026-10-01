@@ -515,7 +515,8 @@ bounded termination of uninterrupted code.
 
 The current source-level `isolate.Isolate.Kill(ctx)` is a narrower probe. It
 stops `Call` waiters and unstarted children, then waits for the runtime group's
-live count. Direct channel and `time.Sleep` waits exit after their ordinary
+live count. Real `time.Sleep` waits wake early on revocation and unregister
+their timers before exiting. Direct channel waits exit after their ordinary
 wakeup cleanup. Multi-case `select` also exits after it removes its channel
 wait records on normal wakeup. A goroutine parked in another unsupported wait
 can still resume while Kill is pending. A loop that calls `runtime.Gosched`

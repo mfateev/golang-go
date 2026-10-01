@@ -483,7 +483,7 @@ and confirms that `Boundary.Run` skips entry after Kill. A goroutine parked
 in an unsupported wait, such as `select` or a semaphore, can resume and run
 user code while Kill is pending. The live count also is not safe heap teardown.
 
-The runtime now checks group revocation on both sides of `time.Sleep`. A
+The runtime initially checked group revocation on both sides of `time.Sleep`. A
 goroutine already parked there completes the ordinary timer wakeup, then
 exits with `Goexit` before returning to user code. Kill remains pending until
 that timer fires; it does not yet wake or detach the timer. Ten race runs of
@@ -605,3 +605,16 @@ the compiler change. The complete `src/all.bash` suite also passes.
 `src/all.bash` passed with the read guard. After removing a redundant check
 from map lookups, the 100-run race test, static two-program script, and
 focused map/runtime tests passed again.
+
+## Early wake for real time.Sleep
+
+Real `time.Sleep` waits now register the sleeping G in the runtime group.
+Revocation stops each armed timer before waking its G. When timer expiry has
+already started its callback, the callback performs the wake instead, so
+there is only one `goready`. A revocation that arrives before the timer is
+armed cancels the park. On resume, the G removes its group registration and
+exits before returning to user code. Fake synctest timers retain their normal
+wakeup path. Timer-channel waits and arbitrary timer callbacks are separate.
+Focused tests cover host Kill of one and two hour-long sleepers, direct
+bridge Stop, and short timer expiry racing revocation. The race tests passed
+100 runs with `GOGC=1`; static lock ranking and the 32-bit G layout passed.
