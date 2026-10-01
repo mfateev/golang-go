@@ -466,12 +466,12 @@ the context expires. Its stack, goroutine ID, and thread ID fields remain
 empty. `Wait` distinguishes a main goroutine stopped by Kill from one that
 called `Goexit` on its own. A second Kill can finish after a pending goroutine
 exits. Focused
-100-run race tests cover a Call waiter, an unrelated channel waiter, killing
+100-run race tests cover a Call waiter, a channel waiter, killing
 before Start, and concurrent Start/Kill; the static multi-program script
 passes. A separate race test holds the generated state runner before `main`
 and confirms that `Boundary.Run` skips entry after Kill. A goroutine parked
-on another runtime wait can resume and run user
-code while Kill is pending. The live count also is not safe heap teardown.
+in an unsupported wait, such as `select` or a semaphore, can resume and run
+user code while Kill is pending. The live count also is not safe heap teardown.
 
 The runtime now checks group revocation on both sides of `time.Sleep`. A
 goroutine already parked there completes the ordinary timer wakeup, then
@@ -481,6 +481,16 @@ both a direct bridge stop and a host Kill cover this path. Other wait types
 still need their own cleanup and post-wait fence. The complete `src/all.bash`
 suite passes after updating `go/build`'s declared dependencies for the
 provisional host `Kill` API.
+
+Ordinary channel send and receive now check revocation before the operation
+and after a parked wait has released its `sudog`, cleared the G waiting state,
+and adjusted timer-channel counts. A revoked waiter can finish its normal
+wakeup cleanup but exits before the next user instruction. Kill remains
+pending while the channel is still blocked; this does not yet detach its
+waiter or wake it early. The 100-run race tests cover both send and receive,
+plus a pending host Kill that completes after a channel wakeup. Existing
+admission tests now use an already running child so they continue to exercise
+the separate first-dispatch fence.
 
 ## Process-owned Unicode regexp cache
 

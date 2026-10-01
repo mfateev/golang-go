@@ -325,22 +325,26 @@ func TestBoundaryTracksNativeChildren(t *testing.T) {
 
 func TestBoundaryRevokesUnstartedChildren(t *testing.T) {
 	b := isolatebridge.New()
-	release := make(chan struct{})
+	var release atomic.Bool
 	ready := make(chan struct{})
 	childExited := make(chan struct{})
+	var grandchildCreated atomic.Bool
 	var grandchildRan atomic.Bool
 	b.Run(func() {
 		go func() {
+			defer close(childExited)
 			close(ready)
-			<-release
+			for !release.Load() {
+				runtime.Gosched()
+			}
+			grandchildCreated.Store(true)
 			go func() { grandchildRan.Store(true) }()
-			close(childExited)
 		}()
 		<-ready
 	})
 	b.RevokeUnstarted()
 	b.RevokeUnstarted() // repeated revocation is harmless
-	close(release)
+	release.Store(true)
 	<-childExited
 	deadline := time.Now().Add(time.Second)
 	for b.LiveGoroutines() != 0 && time.Now().Before(deadline) {
@@ -348,6 +352,9 @@ func TestBoundaryRevokesUnstartedChildren(t *testing.T) {
 	}
 	if got := b.LiveGoroutines(); got != 0 {
 		t.Fatalf("after revocation, live goroutines = %d, want 0", got)
+	}
+	if !grandchildCreated.Load() {
+		t.Fatal("already running child did not create a grandchild")
 	}
 	if grandchildRan.Load() {
 		t.Fatal("revoked grandchild entered user code")
@@ -425,6 +432,50 @@ func TestRevokedSleepDoesNotResumeUserCode(t *testing.T) {
 	}
 	if resumed.Load() {
 		t.Fatal("sleep returned to user code after revocation")
+	}
+}
+
+func TestRevokedChannelWaitDoesNotResumeUserCode(t *testing.T) {
+	for _, name := range []string{"receive", "send"} {
+		t.Run(name, func(t *testing.T) {
+			b := isolatebridge.New()
+			ch := make(chan int)
+			entered := make(chan struct{})
+			exited := make(chan struct{})
+			var resumed atomic.Bool
+			go b.Run(func() {
+				defer close(exited)
+				close(entered)
+				if name == "receive" {
+					<-ch
+				} else {
+					ch <- 1
+				}
+				resumed.Store(true)
+			})
+			<-entered
+			deadline := time.Now().Add(time.Second)
+			for b.RunningGoroutines() != 0 && b.LiveGoroutines() != 0 && time.Now().Before(deadline) {
+				runtime.Gosched()
+			}
+			if b.LiveGoroutines() != 1 || b.RunningGoroutines() != 0 {
+				t.Fatalf("channel operation did not park: live=%d running=%d", b.LiveGoroutines(), b.RunningGoroutines())
+			}
+			b.Stop()
+			if name == "receive" {
+				ch <- 1
+			} else {
+				<-ch
+			}
+			select {
+			case <-exited:
+			case <-time.After(5 * time.Second):
+				t.Fatal("channel waiter did not exit after wakeup")
+			}
+			if resumed.Load() {
+				t.Fatal("channel operation returned to user code after revocation")
+			}
+		})
 	}
 }
 

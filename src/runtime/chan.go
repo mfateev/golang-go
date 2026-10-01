@@ -166,6 +166,7 @@ func chansend1(c *hchan, elem unsafe.Pointer) {
 // If block == false and the send cannot proceed immediately, it returns false.
 // Otherwise, it waits as needed for the send to complete and returns true.
 func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
+	isolateExitIfRevoked()
 	if c == nil {
 		if !block {
 			return false
@@ -292,6 +293,7 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 	}
 	mysg.c.set(nil)
 	releaseSudog(mysg)
+	isolateExitIfRevoked()
 	if closed {
 		if c.closed == 0 {
 			throw("chansend: spurious wakeup")
@@ -514,6 +516,7 @@ func chanrecv2(c *hchan, elem unsafe.Pointer) (received bool) {
 // Otherwise, fills in *ep with an element and returns (true, true).
 // A non-nil ep must point to the heap or the caller's stack.
 func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool) {
+	isolateExitIfRevoked()
 	// raceenabled: don't need to check ep, as it is always on the stack
 	// or is new memory allocated by reflect.
 
@@ -674,6 +677,7 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 	gp.param = nil
 	mysg.c.set(nil)
 	releaseSudog(mysg)
+	isolateExitIfRevoked()
 	return true, success
 }
 

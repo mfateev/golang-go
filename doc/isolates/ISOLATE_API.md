@@ -515,8 +515,9 @@ bounded termination of uninterrupted code.
 
 The current source-level `isolate.Isolate.Kill(ctx)` is a narrower probe. It
 stops `Call` waiters and unstarted children, then waits for the runtime group's
-live count. A goroutine parked in another runtime wait can resume while Kill
-is pending. Its pending error reports counts but has no stack or thread
+live count. Direct channel and `time.Sleep` waits exit after their ordinary
+wakeup cleanup; a goroutine parked in an unsupported wait can still resume
+while Kill is pending. Its pending error reports counts but has no stack or thread
 sample. The complete revocation contract above remains unimplemented.
 
 Everything crossing the boundary — `Command.Payload`, `Event.Payload`, entry

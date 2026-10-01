@@ -15,18 +15,22 @@ import (
 )
 
 func TestMainExitRevokesUnstartedChildren(t *testing.T) {
-	release := make(chan struct{})
+	var release atomic.Bool
 	ready := make(chan struct{})
 	childExited := make(chan struct{})
+	var grandchildCreated atomic.Bool
 	var grandchildRan atomic.Bool
 	program := Program{entry: isolatebridge.ProgramEntry{
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			go func() {
+				defer close(childExited)
 				close(ready)
-				<-release
+				for !release.Load() {
+					runtime.Gosched()
+				}
+				grandchildCreated.Store(true)
 				go func() { grandchildRan.Store(true) }()
-				close(childExited)
 			}()
 			<-ready
 		},
@@ -41,7 +45,7 @@ func TestMainExitRevokesUnstartedChildren(t *testing.T) {
 	if err := i.Wait(); err != nil {
 		t.Fatal(err)
 	}
-	close(release)
+	release.Store(true)
 	<-childExited
 	deadline := time.Now().Add(time.Second)
 	for i.boundary.LiveGoroutines() != 0 && time.Now().Before(deadline) {
@@ -49,6 +53,9 @@ func TestMainExitRevokesUnstartedChildren(t *testing.T) {
 	}
 	if got := i.boundary.LiveGoroutines(); got != 0 {
 		t.Fatalf("after main exit, live goroutines = %d, want 0", got)
+	}
+	if !grandchildCreated.Load() {
+		t.Fatal("already running child did not create a grandchild")
 	}
 	if grandchildRan.Load() {
 		t.Fatal("grandchild started after main exit")
@@ -85,12 +92,17 @@ func TestKillStopsCallWaiter(t *testing.T) {
 	}
 }
 
-func TestKillPendingOnOtherWait(t *testing.T) {
+func TestKillPendingOnChannelWait(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
+	var resumed atomic.Bool
 	program := Program{entry: isolatebridge.ProgramEntry{
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
-		Main:     func() { close(entered); <-release },
+		Main: func() {
+			close(entered)
+			<-release
+			resumed.Store(true)
+		},
 	}}
 	i, err := New(Config{Program: program})
 	if err != nil {
@@ -100,16 +112,26 @@ func TestKillPendingOnOtherWait(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-entered
+	deadline := time.Now().Add(time.Second)
+	for i.boundary.RunningGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if i.boundary.RunningGoroutines() != 0 || i.boundary.LiveGoroutines() != 1 {
+		t.Fatal("main did not park on channel")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 	defer cancel()
 	err = i.Kill(ctx)
 	var pending *KillPendingError
 	if !errors.As(err, &pending) || pending.LiveGoroutines == 0 {
-		t.Fatalf("Kill on unrelated channel wait = %v, want pending live goroutine", err)
+		t.Fatalf("Kill on channel wait = %v, want pending live goroutine", err)
 	}
 	close(release)
-	if err := i.Wait(); err != nil {
-		t.Fatal(err)
+	if err := i.Wait(); err != errMainRevoked {
+		t.Fatalf("Wait after revoked channel receive = %v, want %v", err, errMainRevoked)
+	}
+	if resumed.Load() {
+		t.Fatal("main resumed after revoked channel receive")
 	}
 	if err := i.Kill(context.Background()); err != nil {
 		t.Fatalf("Kill after exit = %v", err)
@@ -161,13 +183,15 @@ func TestKillPendingSleepStopsAtTimer(t *testing.T) {
 
 func TestKillPreventsLateMainEntry(t *testing.T) {
 	runnerEntered := make(chan struct{})
-	releaseRunner := make(chan struct{})
+	var releaseRunner atomic.Bool
 	var mainRan atomic.Bool
 	program := Program{entry: isolatebridge.ProgramEntry{
 		NewState: func() (func(func()), error) {
 			return func(fn func()) {
 				close(runnerEntered)
-				<-releaseRunner
+				for !releaseRunner.Load() {
+					runtime.Gosched()
+				}
 				fn()
 			}, nil
 		},
@@ -187,7 +211,7 @@ func TestKillPreventsLateMainEntry(t *testing.T) {
 	if err := i.Kill(ctx); !errors.As(err, &pending) {
 		t.Fatalf("Kill before main entry = %v, want pending", err)
 	}
-	close(releaseRunner)
+	releaseRunner.Store(true)
 	if err := i.Wait(); err != nil {
 		t.Fatal(err)
 	}

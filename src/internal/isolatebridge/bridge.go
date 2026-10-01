@@ -20,12 +20,13 @@ import (
 // Boundary is one host command transport. Its channel is
 // infrastructure for the Phase 2B API probe, not a contained isolate heap.
 type Boundary struct {
-	owner uintptr
-	group unsafe.Pointer
-	calls chan *Command
-	next  atomic.Uint64
-	halt  chan struct{}
-	stop  sync.Once
+	owner   uintptr
+	group   unsafe.Pointer
+	calls   chan *Command
+	next    atomic.Uint64
+	halt    chan struct{}
+	stop    sync.Once
+	stopped atomic.Bool
 }
 
 var nextOwner atomic.Uintptr
@@ -78,10 +79,8 @@ func (b *Boundary) Run(fn func()) {
 		setBoundary(old)
 		runtime.KeepAlive(b)
 	}()
-	select {
-	case <-b.halt:
+	if b.Stopped() {
 		return
-	default:
 	}
 	fn()
 }
@@ -121,18 +120,14 @@ func (b *Boundary) RevokeUnstarted() { revokeUnstarted(b.group) }
 // runtime waiters and active code still require native revocation.
 func (b *Boundary) Stop() {
 	b.RevokeUnstarted()
-	b.stop.Do(func() { close(b.halt) })
+	b.stop.Do(func() {
+		b.stopped.Store(true)
+		close(b.halt)
+	})
 }
 
 // Stopped reports whether the host has requested this boundary to stop.
-func (b *Boundary) Stopped() bool {
-	select {
-	case <-b.halt:
-		return true
-	default:
-		return false
-	}
-}
+func (b *Boundary) Stopped() bool { return b.stopped.Load() }
 
 // Commands returns the stream of host commands from this boundary.
 func (b *Boundary) Commands() <-chan *Command {

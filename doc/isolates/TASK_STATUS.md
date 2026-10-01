@@ -102,11 +102,15 @@ ordinary-Go execution remains unproved.**
       waiters and complete native `Kill(ctx)` revocation remain open
 - [x] A provisional source-level `Kill(ctx)` fences startup, stops the Call
       bridge, and waits for zero live group members. It returns pending counts
-      for unrelated runtime waits; those goroutines can still resume, so
+      for unsupported runtime waits; those goroutines can still resume, so
       whole-isolate revocation and safe teardown remain open
 - [x] `time.Sleep` checks revocation before entry and after its normal timer
       wakeup. A pending Kill can finish once that timer fires without running
       the next user instruction; early timer wakeup remains open
+- [x] Ordinary channel send and receive check revocation at entry and after
+      their normal parked-wait cleanup. A pending Kill can finish after a
+      channel wakeup without returning to user code; early waiter detachment
+      and `select` remain open
 - [x] Opt-in compiler mode keeps static package assignments executable so a
       fresh E4 toy base can replay variable initialization before user `init`
 - [x] Opt-in compiler-generated package layout and runtime GC type separate
