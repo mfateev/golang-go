@@ -48,7 +48,7 @@ the general scheduler execution fence required above.
 | `sync.Mutex`, `WaitGroup`, and related semaphores | `sudog` in a hashed `semaRoot` queue | `sema.go` releases the record after wakeup; non-head queue removal must preserve other waiters. |
 | `sync.Cond` | Ticketed `sudog` in `notifyList`, also in `gp.waiting` | `sema.go` clears the G waiting pointer and releases the record. Removing an earlier ticket must preserve later `Signal` behavior. |
 | `time.Sleep` and timer channels | Per-G timer or channel timer linked into runtime timer machinery | `time.Sleep` now checks revocation after its normal wakeup and exits before user code; it is not woken early. Timer channels still need wait detachment and post-wakeup checks. |
-| Network poll | `pollDesc.rg` or `wg` and deadline timers | `netpoll.go` stores the G in a poll semaphore and may ready it from I/O or a deadline. |
+| Network poll | `pollDesc.rg` or `wg` and deadline timers | `poll_runtime_pollWait` now checks revocation before waiting and after `netpollblock` clears the G from the poll semaphore. A revoked G exits after normal I/O readiness or deadline wakeup, before retrying I/O. Kill does not yet wake or detach a parked poll waiter early; `poll_runtime_pollWaitCanceled` remains separate. |
 | Current `isolate.Call` | Channel send and reply receive on the provisional bridge | The trusted bridge now selects each wait against a stop channel and exits the waiting G with `Goexit`. A late host reply uses a buffered channel. This handles the two bridge waits but does not detach arbitrary runtime channel waiters; the bridge is not yet a native owned command queue. |
 
 The table is an initial inventory, not a complete scheduler proof. Runtime
@@ -56,6 +56,13 @@ coroutines switch Gs without `execute`/`dropg`; group accounting covers those
 switches, but revocation still needs an admission check there. GC assist may
 temporarily change G status while the same G continues on its M, so G status
 alone is not an execution fence.
+
+Semaphore and `sync.Cond` waiters need more than a generic post-wakeup
+`Goexit` check. A mutex semaphore may have already transferred lock ownership
+to the waking G. Conversely, `sync.Cond.Wait` releases the caller's lock
+before parking and reacquires it only after `notifyListWait` returns; exiting
+inside `notifyListWait` can make a caller's deferred unlock fail. Their
+revocation paths must preserve those lock obligations.
 
 ## Acceptance cases
 

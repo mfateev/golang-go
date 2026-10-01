@@ -340,6 +340,7 @@ func poll_runtime_pollReset(pd *pollDesc, mode int) int {
 //
 //go:linkname poll_runtime_pollWait internal/poll.runtime_pollWait
 func poll_runtime_pollWait(pd *pollDesc, mode int) int {
+	isolateExitIfRevoked()
 	errcode := netpollcheckerr(pd, int32(mode))
 	if errcode != pollNoError {
 		return errcode
@@ -349,6 +350,8 @@ func poll_runtime_pollWait(pd *pollDesc, mode int) int {
 		netpollarm(pd, mode)
 	}
 	for !netpollblock(pd, int32(mode), false) {
+		// netpollblock has removed the waiting G from pd.rg or pd.wg.
+		isolateExitIfRevoked()
 		errcode = netpollcheckerr(pd, int32(mode))
 		if errcode != pollNoError {
 			return errcode
@@ -357,6 +360,7 @@ func poll_runtime_pollWait(pd *pollDesc, mode int) int {
 		// but before we had a chance to run, timeout has been reset.
 		// Pretend it has not happened and retry.
 	}
+	isolateExitIfRevoked()
 	return pollNoError
 }
 

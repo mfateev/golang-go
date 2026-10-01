@@ -114,6 +114,10 @@ ordinary-Go execution remains unproved.**
 - [x] Multi-case `select` checks revocation at entry and after removing all
       channel wait records on normal wakeup. A pending Kill can finish after
       a selected channel wakes; early waiter detachment remains open
+- [x] Network poll waits check revocation before entry and after the poll
+      semaphore no longer holds the waiting G. A pending Kill can finish after
+      normal I/O readiness without retrying user I/O; early poller detachment
+      and canceled-I/O waits remain open
 - [x] Exported `runtime.Gosched` checks revocation before yielding and after
       resuming, so a goroutine that repeatedly yields can exit after Kill.
       Internal runtime yields remain separate; arbitrary preemption and
