@@ -4,7 +4,8 @@ This is the implementation checklist for the trusted MVP's whole-isolate
 `Kill(ctx)`. The provisional host method stops `Call` waits and waits for the
 runtime group's live count; unrelated waits can resume while it is pending.
 The group has a first-dispatch admission bit, a live goroutine count, a
-conservative runnable count, and a count of goroutines associated with an M.
+conservative runnable count, a count of goroutines associated with an M, and
+a provisional registry of network poll waits.
 None is yet a safe teardown condition. See [ISOLATE_API.md](./ISOLATE_API.md)
 for the requested host contract and
 [PHASE2B_PROGRESS.md](./PHASE2B_PROGRESS.md) for the implemented probes.
@@ -48,7 +49,7 @@ the general scheduler execution fence required above.
 | `sync.Mutex`, `WaitGroup`, and related semaphores | `sudog` in a hashed `semaRoot` queue | `sema.go` releases the record after wakeup; non-head queue removal must preserve other waiters. `WaitGroup.Wait` now checks revocation on entry and after semaphore cleanup, race-state restoration, and the reuse check. It still needs an ordinary `Done` to wake a parked waiter. Mutex and other semaphore users remain open. |
 | `sync.Cond` | Ticketed `sudog` in `notifyList`, also in `gp.waiting` | `sema.go` clears the G waiting pointer and releases the record. Removing an earlier ticket must preserve later `Signal` behavior. |
 | `time.Sleep` and timer channels | Per-G timer or channel timer linked into runtime timer machinery | `time.Sleep` now checks revocation after its normal wakeup and exits before user code; it is not woken early. Timer channels still need wait detachment and post-wakeup checks. |
-| Network poll | `pollDesc.rg` or `wg` and deadline timers | `poll_runtime_pollReset` checks before preparing a read or write, and `poll_runtime_pollWait` checks before waiting and after `netpollblock` clears the G from the poll semaphore. A revoked G exits after normal I/O readiness or deadline wakeup, before retrying I/O. Kill does not yet wake or detach a parked poll waiter early; `poll_runtime_pollWaitCanceled` remains separate. |
+| Network poll | `pollDesc.rg` or `wg` and deadline timers | `poll_runtime_pollReset` checks before preparing I/O. A normal poll wait registers its descriptor with the isolate group after entering `pdWait`. Revocation clears registered poll semaphores and readies parked Gs; each G then completes normal cleanup and exits at the post-wait fence. This does not yet discard a waiter without scheduling it. `poll_runtime_pollWaitCanceled` remains separate. |
 | Current `isolate.Call` | Channel send and reply receive on the provisional bridge | The trusted bridge now selects each wait against a stop channel and exits the waiting G with `Goexit`. A late host reply uses a buffered channel. This handles the two bridge waits but does not detach arbitrary runtime channel waiters; the bridge is not yet a native owned command queue. |
 
 The table is an initial inventory, not a complete scheduler proof. Runtime

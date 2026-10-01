@@ -528,16 +528,25 @@ tests, and the complete Linux arm64 `src/all.bash` suite pass.
 
 The network poll wait now checks revocation before entering and after
 `netpollblock` has removed the G from the descriptor's read or write
-semaphore. A revoked goroutine wakes on normal I/O readiness or a deadline,
-then exits before retrying I/O. A Linux pipe test verifies that host Kill
-remains pending while the read is parked, the waiter exits after the host
-writes, and the host can still read that byte through the released file lock.
+semaphore. A revoked goroutine exits before retrying I/O. The group now
+registers a normal poll wait after its descriptor reaches `pdWait`, and the
+revocation CAS wakes every registered waiter. Races with poll registration,
+readiness, and descriptor close use the poll semaphore's atomic states; a
+waiter still completes its ordinary cleanup on its own G. A Linux pipe test
+verifies that host Kill finishes without writing to the pipe, and the host
+can use the descriptor afterward. A two-waiter test checks that both Gs
+exit without reading. That test exposed a lifecycle race: `Boundary.Stop`
+must mark the instance stopped before waking poll waiters so `Wait` reports
+revocation rather than an unexplained main exit.
 `poll_runtime_pollReset` also checks revocation before preparing a descriptor
 for a ready read or write. A second Linux pipe test holds a running goroutine
 until revocation, then confirms that the ready read exits and leaves the byte
-for the host. Both focused tests passed 100 race-detector runs. Kill does not
-yet wake or detach a parked poll waiter early, and the canceled-I/O wait path
-is not covered. A generic post-wakeup `Goexit` in `sync.Cond` is not safe: `Wait`
+for the host. The three focused tests passed 1,000 race-detector runs; the
+one-waiter and two-waiter cases also passed 100 runs with `GOGC=1` and static
+lock ranking. The registry uses links in runtime G records, so registration
+does not allocate into the isolate heap. Kill still schedules woken Gs for
+cleanup, and the canceled-I/O wait path is not covered.
+A generic post-wakeup `Goexit` in `sync.Cond` is not safe: `Wait`
 reacquires its caller's lock only after the runtime wait returns, so a
 deferred unlock can fail if that reacquisition is skipped.
 

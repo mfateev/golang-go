@@ -546,6 +546,66 @@ func netpollgoready(gp *g, traceskip int) {
 	goready(gp, traceskip+1)
 }
 
+// registerPollWait makes a poll wait visible to group revocation after its
+// semaphore has entered pdWait, but before its goroutine commits to parking.
+func (group *isolateRevocationGroup) registerPollWait(gp *g, pd *pollDesc, mode int32) bool {
+	lock(&group.pollLock)
+	if group.admission.Load()&isolateRevokedBit != 0 {
+		unlock(&group.pollLock)
+		return false
+	}
+	if gp.isolatePollDesc != nil {
+		throw("isolate: goroutine registered two poll waits")
+	}
+	gp.isolatePollDesc = unsafe.Pointer(pd)
+	gp.isolatePollMode = mode
+	gp.isolatePollNext = group.pollWaits
+	if gp.isolatePollNext != nil {
+		gp.isolatePollNext.isolatePollPrev = gp
+	}
+	group.pollWaits = gp
+	unlock(&group.pollLock)
+	return true
+}
+
+func (group *isolateRevocationGroup) unregisterPollWait(gp *g) {
+	lock(&group.pollLock)
+	if gp.isolatePollDesc == nil {
+		throw("isolate: goroutine missing registered poll wait")
+	}
+	if gp.isolatePollPrev == nil {
+		group.pollWaits = gp.isolatePollNext
+	} else {
+		gp.isolatePollPrev.isolatePollNext = gp.isolatePollNext
+	}
+	if gp.isolatePollNext != nil {
+		gp.isolatePollNext.isolatePollPrev = gp.isolatePollPrev
+	}
+	gp.isolatePollPrev, gp.isolatePollNext = nil, nil
+	gp.isolatePollDesc = nil
+	gp.isolatePollMode = 0
+	unlock(&group.pollLock)
+}
+
+// isolateRevokePollWaiters wakes registered poll waits without marking their
+// descriptors ready for I/O. The resumed G completes normal semaphore cleanup
+// before poll_runtime_pollWait's revocation fence exits it.
+func isolateRevokePollWaiters(group *isolateRevocationGroup) {
+	var ready gList
+	var delta int32
+	lock(&group.pollLock)
+	for waiter := group.pollWaits; waiter != nil; waiter = waiter.isolatePollNext {
+		if gp := netpollunblock((*pollDesc)(waiter.isolatePollDesc), waiter.isolatePollMode, false, &delta); gp != nil {
+			ready.push(gp)
+		}
+	}
+	unlock(&group.pollLock)
+	for gp := ready.pop(); gp != nil; gp = ready.pop() {
+		netpollgoready(gp, 0)
+	}
+	netpollAdjustWaiters(delta)
+}
+
 // returns true if IO is ready, or false if timed out or closed
 // waitio - wait only for completed IO, ignore errors
 // Concurrent calls to netpollblock in the same mode are forbidden, as pollDesc
@@ -577,7 +637,20 @@ func netpollblock(pd *pollDesc, mode int32, waitio bool) bool {
 	// this is necessary because runtime_pollUnblock/runtime_pollSetDeadline/deadlineimpl
 	// do the opposite: store to closing/rd/wd, publishInfo, load of rg/wg
 	if waitio || netpollcheckerr(pd, mode) == pollNoError {
-		gopark(netpollblockcommit, unsafe.Pointer(gpp), waitReasonIOWait, traceBlockNet, 5)
+		gp := getg()
+		group := gp.isolateGroup
+		registered := false
+		mayPark := true
+		if group != nil && !waitio {
+			registered = group.registerPollWait(gp, pd, mode)
+			mayPark = registered
+		}
+		if mayPark {
+			gopark(netpollblockcommit, unsafe.Pointer(gpp), waitReasonIOWait, traceBlockNet, 5)
+		}
+		if registered {
+			group.unregisterPollWait(gp)
+		}
 	}
 	// be careful to not lose concurrent pdReady notification
 	old := gpp.Swap(pdNil)

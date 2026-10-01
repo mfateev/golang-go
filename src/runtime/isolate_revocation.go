@@ -35,7 +35,11 @@ func isolateFirstDispatchRevoked(gp *g) bool {
 func (group *isolateRevocationGroup) revoke() {
 	for {
 		state := group.admission.Load()
-		if state&isolateRevokedBit != 0 || group.admission.CompareAndSwap(state, state|isolateRevokedBit) {
+		if state&isolateRevokedBit != 0 {
+			return
+		}
+		if group.admission.CompareAndSwap(state, state|isolateRevokedBit) {
+			isolateRevokePollWaiters(group)
 			return
 		}
 	}

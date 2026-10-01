@@ -116,8 +116,9 @@ ordinary-Go execution remains unproved.**
       a selected channel wakes; early waiter detachment remains open
 - [x] Network poll preparation checks revocation before ready I/O, and waits
       check again after the poll semaphore no longer holds the waiting G.
-      A pending Kill can finish after normal I/O readiness without retrying
-      user I/O; early poller detachment and canceled-I/O waits remain open
+      The group registers normal poll waits and revocation now wakes them
+      without host I/O; each resumed G finishes poll cleanup before exiting.
+      Direct waiter discard and canceled-I/O waits remain open
 - [x] `sync.WaitGroup.Wait` checks revocation at entry and after its semaphore
       wait, race-detector restoration, and reuse check. A pending Kill can
       finish after `Done` wakes it; early waiter detachment and other

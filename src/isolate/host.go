@@ -176,9 +176,9 @@ func (i *Isolate) Wait() error {
 	return i.err
 }
 
-// Kill revokes unstarted children, stops Call waiters, and waits for every
-// attached goroutine to exit. Other runtime waits are not yet interrupted;
-// if ctx expires while one remains, revocation stays in force and Kill returns
+// Kill revokes unstarted children, wakes Call and registered network poll
+// waiters, and waits for every attached goroutine to exit. Other runtime waits
+// are not yet interrupted. If ctx expires while one remains, Kill returns
 // a pending error. This is a provisional lifecycle, not safe heap teardown.
 func (i *Isolate) Kill(ctx context.Context) error {
 	if i == nil || ctx == nil {

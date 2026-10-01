@@ -116,16 +116,18 @@ func (b *Boundary) RunningGoroutines() int32 { return groupRunning(b.group) }
 func (b *Boundary) RunnableGoroutines() int32 { return groupRunnable(b.group) }
 
 // RevokeUnstarted prevents group children that have not begun executing from
-// entering user code. It does not stop running or parked goroutines.
+// entering user code and wakes registered network poll waiters. Other running
+// and parked goroutines are not stopped by this method alone.
 func (b *Boundary) RevokeUnstarted() { revokeUnstarted(b.group) }
 
-// Stop fences unstarted children and wakes goroutines parked in Call.
+// Stop fences unstarted children and wakes goroutines parked in Call or a
+// registered network poll wait.
 // A reply that wins just before Stop may leave its caller active. Other
 // runtime waiters and active code still require native revocation.
 func (b *Boundary) Stop() {
-	b.RevokeUnstarted()
 	b.stop.Do(func() {
 		b.stopped.Store(true)
+		b.RevokeUnstarted()
 		close(b.halt)
 	})
 }

@@ -67,3 +67,6 @@ func netpollAnyWaiters() bool {
 
 func netpollAdjustWaiters(delta int32) {
 }
+
+func isolateRevokePollWaiters(group *isolateRevocationGroup) {
+}
