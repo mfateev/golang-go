@@ -5,6 +5,7 @@
 package isolate_test
 
 import (
+	"context"
 	"errors"
 	"internal/isolatebridge"
 	"isolate"
@@ -15,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 	"unique"
 	"unsafe"
 )
@@ -191,6 +193,48 @@ func TestProcessCleanupPathsRejectIsolate(t *testing.T) {
 			t.Error("child goroutine accepted unique.Make")
 		}
 	})
+}
+
+func TestAfterFuncRejectsUnownedCallback(t *testing.T) {
+	b := isolatebridge.New(nil)
+	b.Run(func() {
+		defer func() {
+			got, ok := recover().(string)
+			if !ok || got != "time: AfterFunc is unavailable inside an isolate" {
+				t.Errorf("AfterFunc panic = %v, want isolate rejection", got)
+			}
+		}()
+		time.AfterFunc(0, func() {})
+	})
+}
+
+func TestContextCallbacksRejectUnownedRegistration(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		want string
+		call func()
+	}{
+		{"AfterFunc", "context: AfterFunc is unavailable inside an isolate", func() {
+			context.AfterFunc(context.Background(), func() {})
+		}},
+		{"WithTimeout", "context: future deadlines are unavailable inside an isolate", func() {
+			_, cancel := context.WithTimeout(context.Background(), time.Hour)
+			cancel()
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			b := isolatebridge.New(nil)
+			b.Run(func() {
+				defer func() {
+					got, ok := recover().(string)
+					if !ok || got != tt.want {
+						t.Errorf("panic = %v, want %q", got, tt.want)
+					}
+				}()
+				tt.call()
+			})
+		})
+	}
 }
 
 func TestInstanceOwnerSpansInitializationAndChildren(t *testing.T) {

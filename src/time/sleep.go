@@ -180,8 +180,16 @@ func After(d Duration) <-chan Time {
 // be used to cancel the call using its Stop method.
 // The returned Timer's C field is not used and will be nil.
 func AfterFunc(d Duration, f func()) *Timer {
+	if runtime_isolateActive() {
+		// The timer fires on a runtime goroutine. Its go statement would
+		// start f without the isolate that registered it.
+		panic("time: AfterFunc is unavailable inside an isolate")
+	}
 	return newTimer(when(d), 0, goFunc, f, nil)
 }
+
+//go:linkname runtime_isolateActive runtime.isolateActive
+func runtime_isolateActive() bool
 
 func goFunc(arg any, seq uintptr, delta int64) {
 	go arg.(func())()

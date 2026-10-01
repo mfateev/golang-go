@@ -63,7 +63,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	_ "unsafe"
 )
+
+//go:linkname runtime_isolateActive runtime.isolateActive
+func runtime_isolateActive() bool
 
 // A Context carries a deadline, a cancellation signal, and other values across
 // API boundaries.
@@ -324,6 +328,11 @@ func Cause(c Context) error {
 // If ctx has a "AfterFunc(func()) func() bool" method,
 // AfterFunc will use it to schedule the call.
 func AfterFunc(ctx Context, f func()) (stop func() bool) {
+	if runtime_isolateActive() {
+		// A later cancellation may run on a process goroutine, which
+		// would create the callback goroutine without isolate ownership.
+		panic("context: AfterFunc is unavailable inside an isolate")
+	}
 	a := &afterFuncCtx{
 		f: f,
 	}
@@ -641,6 +650,11 @@ func WithDeadlineCause(parent Context, d time.Time, cause error) (Context, Cance
 	if cur, ok := parent.Deadline(); ok && cur.Before(d) {
 		// The current deadline is already sooner than the new one.
 		return WithCancel(parent)
+	}
+	if runtime_isolateActive() && time.Until(d) > 0 {
+		// Reject before registering a child on parent. The timer callback
+		// cannot yet be dispatched with the registering isolate's owner.
+		panic("context: future deadlines are unavailable inside an isolate")
 	}
 	c := &timerCtx{
 		deadline: d,

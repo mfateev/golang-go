@@ -262,6 +262,13 @@ Only one registered `Task` runs at a time in that prototype. Its
 The current source-level `isolate` package instead uses a normal `main()` and
 ordinary Go primitives; native deterministic scheduling is still pending.
 
+`time.AfterFunc` currently panics when registered inside a native isolate.
+Its callback would otherwise start from the process timer goroutine without
+the registering isolate's ownership. `context.AfterFunc` and future
+`context.WithDeadline` and `context.WithTimeout` calls also reject registration
+inside an isolate. These are temporary restrictions until callbacks and timers
+are host-driven.
+
 ---
 
 ## Boundary interfaces — DEFERRED
