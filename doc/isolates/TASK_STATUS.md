@@ -159,10 +159,12 @@ ordinary-Go execution remains unproved.**
       each program's reachable packages, instance-state selection, and host
       reachability. Unselected standard packages are labeled unclassified;
       the build script verifies selected, shared, and unclassified examples
-- [x] A static build script round-trips isolate values through unclassified
-      `encoding/json` while confirming its report status. The v2 initializer
-      writes callback globals in `encoding/json/internal`, so selecting JSON
-      alone would mutate process dependency state during instance replay
+- [x] A static build script first exposed that `encoding/json` v2 writes
+      callback globals in `encoding/json/internal`, making JSON-only selection
+      unsafe. The builder now selects JSON's mutable v2 dependency family and
+      `reflect` together. The script round-trips JSON and checks distinct v2
+      default-options objects across two instances and the host; heap and
+      effect ownership remain unproved
 - [x] The compiler rejects direct writes from selected package code to
       unselected imported globals, including writes in initializers, ordinary
       functions, closures, and indexed assignments. A build script checks

@@ -12,6 +12,7 @@ library.
 | Globals in a package compiled with `-d=isolateglobals=1` | Isolate | Every local external variable is placed in that package's generated, GC-described layout. Initializers are rerun with that layout selected. |
 | `encoding/base64` globals in a static isolate build | Isolate | The builder selects this audited standard package when an isolate program reaches it. Each instance initializes its four encoding pointers separately. The process retains its own initialized copy. |
 | `encoding/base32` globals in a static isolate build | Isolate | Its two encoding pointers are initialized by `NewEncoding` in each instance, independent of the process copy. Its imported standard packages remain process-owned in this probe. |
+| `encoding/json`, its mutable v2 dependency family, and `reflect` globals in a static isolate build | Isolate | The builder selects these packages together. Their callback globals, options, and caches use per-instance layouts; the host retains process copies. Heap and effect ownership are still unproved. |
 | Other package globals, including standard-library packages not opted in | Process in this probe | No isolation claim follows from using them. Each package must be classified before an ordinary-Go conformance claim. |
 
 The POC build selects ownership by package path, outside the package's
@@ -106,13 +107,16 @@ supported isolate package set. `encoding/json` has shared caches and pools,
 so using it as the first proof would mix initialization with a broader
 process-state audit.
 
-`encoding/json` remains unclassified in the static build report. A script now
-round-trips an isolate value through it twice, proving that this trusted
-execution path runs, not that its package state is isolated. The v1 encoder
-uses process-wide `sync.Map` caches and `sync.Pool` values; the pool bypass
-prevents process retention of isolate objects, but the cache contents still
-need an ownership proof. Under the default v2 path, `encoding/json` also has
-an `init` function that assigns callback globals in `encoding/json/internal`.
+The static build now selects `encoding/json`, `encoding/json/v2`,
+`encoding/json/internal`, `encoding/json/internal/jsonopts`,
+`encoding/json/jsontext`, and `reflect` together. The v1 encoder's `sync.Map`
+caches and the selected reflection caches use per-instance globals;
+`sync.Pool` bypass prevents process pools from retaining isolate objects.
+The script round-trips JSON in two instances and confirms that both instances
+and the host see distinct `jsonopts.DefaultOptionsV2` objects through the
+public v2 API. This establishes one selected-global path, not general JSON
+heap or effect safety. Under the default v2 path, `encoding/json` has an
+`init` function that assigns callback globals in `encoding/json/internal`.
 Selecting `encoding/json` alone would replay those writes into the process
 copy of its dependency. Selecting that dependency requires checking every
 reader, including `encoding/json/v2`, for the same per-instance routing.
@@ -124,7 +128,10 @@ of an imported global, plus send and close on an imported global channel.
 Selecting `encoding/json` alone produces diagnostics for its five callback
 assignments. This check covers syntax rooted in an imported global; writes
 through aliases, ordinary calls, and unsafe pointers still need separate
-effect checks.
+effect checks. A selected `encoding/json/v2` build also needs selected
+`encoding/json/internal/jsonopts` for its initializer writes. Selecting
+`reflect` currently covers its type and layout caches and an inlined
+`reflect.escapes` write to a dummy global in an unreachable branch.
 
 ## Build-wide selected-package probe
 
@@ -215,10 +222,10 @@ retaining an isolate-owned object. A source-level test covers the entry
 goroutine and an inherited child; the static build script also exercises a
 pool inside a selected package initializer.
 
-This handles `sync.Pool` only. Standard packages such as `encoding/json` and
-`fmt` also have process-wide caches; their values and mutation paths still
-need an ownership and determinism audit before those packages can be claimed
-as isolate-safe.
+This handles `sync.Pool` only. Selected JSON and reflection globals now use
+per-instance layouts, but their allocation paths and calls into unselected
+packages still need an ownership and determinism audit. Other standard
+packages may retain process-wide caches.
 
 ## Indirect runtime ownership example: `unique`
 

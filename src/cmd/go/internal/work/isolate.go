@@ -56,15 +56,20 @@ type isolateReportPackage struct {
 	Classification string `json:"classification"`
 }
 
-// These standard packages have been checked for globals that can use the
-// compiler's per-instance layout and initializer replay. The remaining
-// standard-library graph still needs an ownership and effect audit.
-// In particular, encoding/json cannot be selected alone: its v2 initializer
-// writes callback globals in encoding/json/internal, and the dependency's
-// readers would also need per-instance routing.
+// These standard packages participate in the per-instance state probe. This
+// is not a complete ownership or effect audit of their dependency graph.
+// The JSON v2 initializer writes callback globals in internal and jsonopts;
+// its readers need the same per-instance routing. Reflect is selected with
+// JSON because its type caches can retain values created by an isolate.
 var isolateOwnedStandardPackages = map[string]bool{
-	"encoding/base32": true,
-	"encoding/base64": true,
+	"encoding/base32":                 true,
+	"encoding/base64":                 true,
+	"encoding/json":                   true,
+	"encoding/json/internal":          true,
+	"encoding/json/internal/jsonopts": true,
+	"encoding/json/jsontext":          true,
+	"encoding/json/v2":                true,
+	"reflect":                         true,
 }
 
 // runBuildIsolates is the first cmd/go integration slice for static isolate

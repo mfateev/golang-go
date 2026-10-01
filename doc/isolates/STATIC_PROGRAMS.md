@@ -88,19 +88,20 @@ for {
 
 This host loop is a temporary transport API. It does not yet implement the
 planned `Resume`/quiescence contract. The build automatically selects each
-configured `package main`, every reachable non-standard package, and audited
-standard packages `encoding/base32` and `encoding/base64` for the tagged
-package-state probe.
+configured `package main`, every reachable non-standard package, and selected
+standard packages `encoding/base32`, `encoding/base64`, the mutable
+`encoding/json` v2 family, and `reflect` for the tagged package-state probe.
 `isolate.New` allocates their global layouts and replays initializers in
 dependency order for each instance. A build test starts one program twice and
 another once, with both importing an initialized shared package; each run
 observes fresh state. The test also checks separate host and instance copies
-of `encoding/base32.StdEncoding` and `encoding/base64.StdEncoding`. Other
-standard-library packages remain process-owned in this probe and initialize
-once at process startup.
-The script also round-trips data through `encoding/json`, which remains
-unclassified and process-owned in the report. A working round trip does not
-establish safe package-state ownership; see PACKAGE_STATE.md.
+of `encoding/base32.StdEncoding` and `encoding/base64.StdEncoding`. It also
+round-trips data through `encoding/json` and checks that two instances and the
+host see distinct v2 default-options objects. The JSON family and `reflect`
+are marked as selected in the report. Other standard-library packages remain
+process-owned in this probe and initialize once at process startup. These
+checks do not establish complete JSON heap or effect ownership; see
+PACKAGE_STATE.md.
 An isolate-selected package cannot directly assign to an unselected imported
 global. The build script checks direct, indexed, and field writes from
 initializers, `main`, and a closure. Selecting `encoding/json` alone rejects

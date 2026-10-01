@@ -10,9 +10,14 @@ stdout '^host base64 before \+w==$'
 stdout '^host base64 after \+w==$'
 stdout '^host base32 before 7M======$'
 stdout '^host base32 after 7M======$'
+stdout '^json options isolated$'
 stderr -count=2 '^orders init$'
 stderr -count=1 '^billing init$'
 stderr -count=3 '^shared init$'
+
+[cgo] [race] go build -race -isolate-dir=./orders -isolate-dir=./billing -o worker_race$GOEXE ./host
+[cgo] [race] exec ./worker_race$GOEXE
+[cgo] [race] stdout '^json options isolated$'
 
 ! go build -isolate-dir=./orders -isolate-dir=./orders -o duplicate$GOEXE ./host
 stderr 'duplicate isolate directory'
@@ -91,7 +96,11 @@ func main() {
 	strconv := packages["strconv"]
 	if !strconv.Standard || strconv.InstanceState || strconv.Classification != "unclassified-standard" { panic("bad strconv classification") }
 	json := packages["encoding/json"]
-	if !json.Standard || json.InstanceState || json.Classification != "unclassified-standard" { panic("bad json classification") }
+	if !json.Standard || !json.InstanceState || json.Classification != "selected-standard-probe" { panic("bad json classification") }
+	for _, path := range []string{"encoding/json/internal", "encoding/json/internal/jsonopts", "encoding/json/jsontext", "encoding/json/v2", "reflect"} {
+		p := packages[path]
+		if !p.Standard || !p.InstanceState || p.Classification != "selected-standard-probe" { panic("bad selected JSON dependency: " + path) }
+	}
 }
 -- host/main.go --
 package main
@@ -99,11 +108,19 @@ package main
 import (
 	"encoding/base32"
 	"encoding/base64"
+	jsonv2 "encoding/json/v2"
 	"fmt"
 	"isolate"
+	"reflect"
+	"strconv"
+	"strings"
 )
 
-func run(name string) {
+// Retain completed instances so the allocator cannot reuse a layout address
+// before the JSON options pointer comparison.
+var instances []*isolate.Isolate
+
+func run(name string) uintptr {
 	program, ok := isolate.LookupProgram(name)
 	if !ok {
 		panic("missing program " + name)
@@ -112,24 +129,42 @@ func run(name string) {
 	if err != nil {
 		panic(err)
 	}
+	instances = append(instances, instance)
 	if err := instance.Start(); err != nil {
 		panic(err)
 	}
 	select {
 	case command := <-instance.Commands():
-		fmt.Println(name, string(command.Payload))
+		payload := string(command.Payload)
+		var optionPtr uintptr
+		if name == "orders" {
+			var encodedPtr string
+			var ok bool
+			payload, encodedPtr, ok = strings.Cut(payload, "|")
+			if !ok { panic("missing JSON options pointer") }
+			n, err := strconv.ParseUint(encodedPtr, 10, 64)
+			if err != nil { panic(err) }
+			optionPtr = uintptr(n)
+		}
+		fmt.Println(name, payload)
 		command.Reply([]byte("ok"), nil)
+		<-instance.Done()
+		return optionPtr
 	case <-instance.Done():
 		panic("program returned without a command")
 	}
-	<-instance.Done()
 }
 
 func main() {
 	fmt.Println("host base32 before", base32.StdEncoding.EncodeToString([]byte{0xfb}))
 	fmt.Println("host base64 before", base64.StdEncoding.EncodeToString([]byte{0xfb}))
-	run("orders")
-	run("orders")
+	hostOptions := reflect.ValueOf(jsonv2.DefaultOptionsV2()).Pointer()
+	firstOptions := run("orders")
+	secondOptions := run("orders")
+	if firstOptions == 0 || firstOptions == secondOptions || firstOptions == hostOptions || secondOptions == hostOptions {
+		panic("JSON options share state")
+	}
+	fmt.Println("json options isolated")
 	run("billing")
 	fmt.Println("host base32 after", base32.StdEncoding.EncodeToString([]byte{0xfb}))
 	fmt.Println("host base64 after", base64.StdEncoding.EncodeToString([]byte{0xfb}))
@@ -141,6 +176,7 @@ import (
     "example.org/isolatebuildtest/shared"
     "fmt"
     "isolate"
+    "strings"
 )
 
 func main() {
@@ -151,7 +187,9 @@ func main() {
     if err != nil { panic(err) }
     if err := instance.Start(); err != nil { panic(err) }
     command := <-instance.Commands()
-    fmt.Println("overlap", string(command.Payload))
+    payload, _, ok := strings.Cut(string(command.Payload), "|")
+    if !ok { panic("missing JSON options pointer") }
+    fmt.Println("overlap", payload)
     command.Reply([]byte("ok"), nil)
     <-instance.Done()
     fmt.Println("host after", shared.Next())
@@ -165,8 +203,10 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"example.org/isolatebuildtest/shared"
 	"isolate"
+	"reflect"
 	"strconv"
 )
 
@@ -211,6 +251,8 @@ func main() {
 	payload = append(payload, strconv.Itoa(counter)...)
 	payload = append(payload, ':')
 	payload = append(payload, strconv.Itoa(shared.Next())...)
+	payload = append(payload, '|')
+	payload = strconv.AppendUint(payload, uint64(reflect.ValueOf(jsonv2.DefaultOptionsV2()).Pointer()), 10)
 	response, err := isolate.Call(1, payload)
 	if err != nil || string(response) != "ok" {
 		panic("orders reply")
