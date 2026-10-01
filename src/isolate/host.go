@@ -44,7 +44,12 @@ type Isolate struct {
 	boundary *isolatebridge.Boundary
 	started  atomic.Bool
 	done     chan struct{}
+	err      error // published by closing done
 }
+
+var errMainPanicked = errors.New("isolate: main panicked")
+var errMainExited = errors.New("isolate: main goroutine exited without returning")
+var errInitializerPanicked = errors.New("isolate: package initializer panicked")
 
 // New prepares an instance. Its program can request initial input with Call.
 func New(cfg Config) (*Isolate, error) {
@@ -54,7 +59,14 @@ func New(cfg Config) (*Isolate, error) {
 	boundary := isolatebridge.New()
 	var runState func(func())
 	var err error
-	boundary.RunOwner(func() { runState, err = cfg.Program.entry.NewState() })
+	boundary.RunOwner(func() {
+		defer func() {
+			if recover() != nil {
+				err = errInitializerPanicked
+			}
+		}()
+		runState, err = cfg.Program.entry.NewState()
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +90,16 @@ func (i *Isolate) Start() error {
 	go func() {
 		defer close(i.done)
 		i.boundary.RunOwner(func() {
+			returned := false
+			defer func() {
+				if recover() != nil {
+					i.err = errMainPanicked
+				} else if !returned {
+					i.err = errMainExited
+				}
+			}()
 			i.runState(func() { i.boundary.Run(i.entry) })
+			returned = true
 		})
 	}()
 	return nil
@@ -88,5 +109,15 @@ func (i *Isolate) Start() error {
 // each request using Command.Reply.
 func (i *Isolate) Commands() <-chan *Command { return i.boundary.Commands() }
 
-// Done is closed when the program's main returns.
+// Done is closed when the program's main goroutine exits.
 func (i *Isolate) Done() <-chan struct{} { return i.done }
+
+// Wait waits for main to return or terminate and reports its failure.
+// Native child goroutines are not yet covered by this provisional lifecycle.
+func (i *Isolate) Wait() error {
+	if i == nil || !i.started.Load() {
+		return errors.New("isolate: instance not started")
+	}
+	<-i.done
+	return i.err
+}

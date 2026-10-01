@@ -29,12 +29,12 @@ arm64, after the host boundary moved to a `Call`-only API, two runs on
 
 | Program import | Retained bytes/instance | Retained objects/instance | Allocated bytes/instance |
 |---|---:|---:|---:|
-| None | 418 | 10 | 490 |
-| `time` | 1,834 | 22 | 2,010 |
-| `reflect` | 2,434 | 13 | 2,610 |
-| `encoding/json/jsontext` | 3,130 | 44 | 3,530 |
-| `encoding/json/v2` | 10,394 | 99 | 12,170 |
-| `encoding/json` | 10,674 | 103 | 12,610 |
+| None | 434 | 10 | 506 |
+| `time` | 1,850 | 22 | 2,026 |
+| `reflect` | 2,450 | 13 | 2,626 |
+| `encoding/json/jsontext` | 3,146 | 44 | 3,546 |
+| `encoding/json/v2` | 10,410 | 99 | 12,186 |
+| `encoding/json` | 10,690 | 103 | 12,626 |
 
 Removing the unused Inbox channel and its initial message reduced every
 variant by about 144 retained bytes and two objects per instance. The JSON
@@ -52,7 +52,8 @@ one package. The JSON v2 and JSON variants also reach `time`, so selecting
 
 Attaching a runtime goroutine group to each boundary added about 24 retained
 bytes and one object per prepared instance. The table includes that group,
-but it excludes stacks for goroutines created after `Start`.
+plus about 16 bytes for the provisional main failure result field. It
+excludes stacks for goroutines created after `Start`.
 
 This is a heap floor for the current eager POC, not an RSS or live-workflow
 measurement. It makes lazy or shared immutable package state a concrete

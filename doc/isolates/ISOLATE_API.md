@@ -235,7 +235,10 @@ identity identifies the exact code and dependencies needed for replay.
 The source-level `isolate` package now implements `Call` through
 a trusted, per-goroutine [boundary probe](../../src/internal/isolatebridge/bridge.go).
 The static build generates the program selector, and the current host API
-provides `New`, `Start`, `Commands`, and `Done`. The probe copies byte
+provides `New`, `Start`, `Commands`, `Done`, and `Wait`. `Wait` reports a panic
+or `Goexit` from the program's `main` goroutine without terminating the host;
+`New` returns an error for a package initializer panic. Native child failures
+remain outside this provisional lifecycle. The probe copies byte
 payloads and correlates concurrent calls, including calls from native child
 goroutines. The build now gives each configured program, its reachable
 non-standard packages, and selected standard packages separate initialized
@@ -419,7 +422,7 @@ that never leave the process is measurable.
 ## Host API
 
 The current trusted POC has `Config{Program}` and an asynchronous
-`Start`/`Commands`/`Done` loop. The API below is the planned native
+`Start`/`Commands`/`Done`/`Wait` loop. The API below is the planned native
 contract. Its limits, clock, capabilities, `Resume`, and `Kill` are not yet
 implemented in the source-level `isolate` package.
 

@@ -92,6 +92,7 @@ for {
     case request := <-requests:
         queued = append(queued, request)
     case <-instance.Done():
+        if err := instance.Wait(); err != nil { panic(err) }
         return
     }
     for len(pending) > 0 && len(queued) > 0 {
@@ -102,7 +103,9 @@ for {
 ```
 
 This host loop is a temporary transport API. It does not yet implement the
-planned `Resume`/quiescence contract. The build automatically selects each
+planned `Resume`/quiescence contract. `Wait` reports failure of the main
+goroutine; child goroutine failures and termination are not yet contained.
+The build automatically selects each
 configured `package main`, every reachable non-standard package, and selected
 standard packages `encoding/base32`, `encoding/base64`, the mutable
 `encoding/json` v2 family, `reflect`, and `time` for the package-state probe.

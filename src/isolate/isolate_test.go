@@ -382,6 +382,64 @@ func TestInstanceOwnerSpansInitializationAndChildren(t *testing.T) {
 	}
 }
 
+func TestMainFailureReportedToHost(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		main func()
+		want string
+	}{
+		{"return", func() {}, ""},
+		{"panic", func() { panic("boom") }, "isolate: main panicked"},
+		{"Goexit", runtime.Goexit, "isolate: main goroutine exited without returning"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			name := "test-main-failure-" + strconv.FormatUint(ownerTestSequence.Add(1), 10)
+			isolatebridge.RegisterProgram(name, isolatebridge.ProgramEntry{
+				NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+				Main:     tt.main,
+			})
+			program, ok := isolate.LookupProgram(name)
+			if !ok {
+				t.Fatal("missing test program")
+			}
+			instance, err := isolate.New(isolate.Config{Program: program})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := instance.Wait(); err == nil || err.Error() != "isolate: instance not started" {
+				t.Fatalf("Wait before Start = %v", err)
+			}
+			if err := instance.Start(); err != nil {
+				t.Fatal(err)
+			}
+			<-instance.Done()
+			got := instance.Wait()
+			if tt.want == "" && got != nil || tt.want != "" && (got == nil || got.Error() != tt.want) {
+				t.Fatalf("Wait = %v, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInitializerPanicReportedToHost(t *testing.T) {
+	name := "test-initializer-failure-" + strconv.FormatUint(ownerTestSequence.Add(1), 10)
+	isolatebridge.RegisterProgram(name, isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { panic("boom") },
+		Main:     func() {},
+	})
+	program, ok := isolate.LookupProgram(name)
+	if !ok {
+		t.Fatal("missing test program")
+	}
+	instance, err := isolate.New(isolate.Config{Program: program})
+	if instance != nil || err == nil || err.Error() != "isolate: package initializer panicked" {
+		t.Fatalf("New = %v, %v, want initializer failure", instance, err)
+	}
+	if owner := runtimeOwner(); owner != 0 {
+		t.Fatalf("owner after failed New = %d, want process owner", owner)
+	}
+}
+
 func TestCallCopiesLargeRequestIntoProcessContext(t *testing.T) {
 	name := "test-call-allocation-origin-" + strconv.FormatUint(ownerTestSequence.Add(1), 10)
 	type origins struct {

@@ -141,6 +141,10 @@ ordinary-Go execution remains unproved.**
       initialization and entry. Native children inherit membership, and an
       internal live count includes parked children; this is not quiescence or
       `Kill` support
+- [x] `Wait` reports a normal return, panic, or `Goexit` from the isolate
+      program's main goroutine after `Done`; `New` returns an error for an
+      initializer panic. Child goroutine panics remain a process-wide failure
+      until native lifecycle handling exists
 - [x] Direct-toolchain static probe linked two separately compiled configured
       `package main` directories into one host and ran both through the
       trusted `Call` boundary (the original probe also had `Inbox`)

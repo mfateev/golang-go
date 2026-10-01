@@ -398,3 +398,14 @@ This count is not quiescence: it includes an attached host goroutine during
 initialization or a direct boundary run, and it does not track timer work,
 running state, or every scheduler wakeup. No host `Kill` claim follows from it.
 Its prepared-instance cost is about 24 retained bytes and one object.
+
+## Main goroutine failure reporting
+
+The trusted host API now has `Wait`, which observes `Done` and returns a
+process-owned error when the program's main goroutine panics or calls
+`runtime.Goexit`. The error contains no panic value, so an isolate-owned
+pointer or a user-defined formatter cannot escape through it. A focused test
+checks normal return, panic, and `Goexit`. `New` also catches a panic during
+selected package initialization and returns a process-owned error. This does
+not catch panics in native child goroutines, `Goexit` during synchronous
+initialization, detach waiters, or reclaim instance memory.
