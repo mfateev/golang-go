@@ -437,3 +437,13 @@ timer callbacks, or prevent a new dispatch. Runtime work after `dropg` may
 also still reference instance records. `Kill(ctx)` therefore remains open.
 The waiter inventory and required detach order are in
 [RUNTIME_REVOCATION.md](./RUNTIME_REVOCATION.md).
+
+## Process-owned Unicode regexp cache
+
+`regexp/syntax` lazily builds a Unicode alias map through `sync.Once`. A first
+use inside an isolate would write isolate-allocated data into process-global
+state. The static probe's `phase0_e4` build now initializes this immutable
+cache at process startup. The static two-program script compiles and matches
+a Unicode class in an isolate; its ordinary and race builds pass. The broader
+`regexp` effect and reader-ownership audit remains open, as does a generic
+way to classify and share immutable standard-library state.

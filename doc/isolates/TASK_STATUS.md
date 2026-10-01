@@ -231,6 +231,10 @@ ordinary-Go execution remains unproved.**
 - [x] `fmt` rejects its six implicit process stdin/stdout functions inside an
       isolate; string formatting and explicit reader/writer calls still work.
       Explicit stream effects remain unclassified
+- [x] The static probe initializes `regexp/syntax`'s Unicode alias cache at
+      process startup, and the multi-program script exercises a Unicode regex
+      inside an isolate. Generic immutable sharing and reader effects remain
+      unclassified
 - [x] Tagged `encoding/base64` probe reruns four initialized encoding
       pointers per instance; a directly importing caller selects the instance
       globals with a build-wide compiler flag; two importing packages and

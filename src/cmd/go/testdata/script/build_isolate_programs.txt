@@ -227,6 +227,7 @@ import (
 	"example.org/isolatebuildtest/shared"
 	"isolate"
 	"reflect"
+	"regexp"
 	"strconv"
 	"time"
 )
@@ -237,6 +238,9 @@ func init() { println("orders init") }
 
 func main() {
 	counter++
+	if !regexp.MustCompile(`\p{Han}+`).MatchString("漢字") {
+		panic("Unicode regexp did not match")
+	}
 	if time.Local == time.UTC { panic("time.Local did not start fresh") }
 	time.Local = time.UTC
 	if time.Now().Location() != time.UTC { panic("time.Now did not use instance Local") }

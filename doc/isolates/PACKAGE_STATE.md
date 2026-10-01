@@ -244,6 +244,18 @@ reference a process resource, and formatting can invoke user `Stringer` or
 `Formatter` methods. The build report therefore still marks `fmt`
 unclassified until effects and indirect retention are checked.
 
+`regexp` also uses `sync.Pool` for reusable match machines, which the isolate
+pool bypass discards. Most other package globals in `regexp` and
+`regexp/syntax` are tables initialized once and then read. The exception is
+`regexp/syntax.aliases`, a `sync.Once` cache of Unicode names that would be
+allocated by whichever isolate first parsed a Unicode class. In the static
+probe's `phase0_e4` build, `regexp/syntax` now constructs that immutable cache
+during process initialization. The multi-program script compiles and matches
+a Unicode class from an isolate. This is a package-specific process-init
+measure, not a general immutable-sharing rule; reader-backed regexp methods
+can still invoke process I/O through an explicit reader, so the build report
+continues to mark `regexp` unclassified.
+
 ## Indirect runtime ownership example: `unique`
 
 `unique.Make[T]` stores type-specific maps in the process-wide `uniqueMaps`
