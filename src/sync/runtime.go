@@ -16,6 +16,10 @@ func runtime_Semacquire(s *uint32)
 // SemacquireWaitGroup is like Semacquire, but for WaitGroup.Wait.
 func runtime_SemacquireWaitGroup(s *uint32, synctestDurable bool)
 
+// Stop a revoked isolate goroutine only after WaitGroup has restored its race
+// detector state and released its semaphore waiter.
+func runtime_isolateExitIfRevoked()
+
 // Semacquire(RW)Mutex(R) is like Semacquire, but for profiling contended
 // Mutexes and RWMutexes.
 // If lifo is true, queue waiter at the head of wait queue.

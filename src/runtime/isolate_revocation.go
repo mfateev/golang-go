@@ -4,6 +4,8 @@
 
 package runtime
 
+import _ "unsafe" // for go:linkname
+
 const isolateRevokedBit = uint64(1) << 63
 
 // isolateFirstDispatchRevoked admits a newly created goroutine only if its
@@ -39,13 +41,19 @@ func (group *isolateRevocationGroup) revoke() {
 	}
 }
 
-// isolateExitIfRevoked is a provisional post-wait fence. It runs after a
-// waiter's ordinary cleanup, while the G is again executing Go code.
+// isolateExitIfRevoked is a provisional boundary fence. After a blocking
+// operation, its caller must first release the waiter's runtime records and
+// restore any library state needed by Goexit and the caller's defers.
 func isolateExitIfRevoked() {
 	group := getg().isolateGroup
 	if group != nil && group.admission.Load()&isolateRevokedBit != 0 {
 		Goexit()
 	}
+}
+
+//go:linkname sync_runtime_isolateExitIfRevoked sync.runtime_isolateExitIfRevoked
+func sync_runtime_isolateExitIfRevoked() {
+	isolateExitIfRevoked()
 }
 
 // isolateTerminateBeforeStart runs on g0 after execute has made gp current

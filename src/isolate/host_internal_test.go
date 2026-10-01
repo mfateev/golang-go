@@ -9,6 +9,7 @@ import (
 	"errors"
 	"internal/isolatebridge"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -183,6 +184,90 @@ func TestKillPendingOnSelectWait(t *testing.T) {
 	}
 	if err := i.Kill(context.Background()); err != nil {
 		t.Fatalf("Kill after exit = %v", err)
+	}
+}
+
+func TestKillPendingOnWaitGroupWait(t *testing.T) {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	entered := make(chan struct{})
+	var resumed atomic.Bool
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main: func() {
+			close(entered)
+			wg.Wait()
+			resumed.Store(true)
+		},
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	deadline := time.Now().Add(time.Second)
+	for i.boundary.RunningGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if i.boundary.RunningGoroutines() != 0 || i.boundary.LiveGoroutines() != 1 {
+		t.Fatal("main did not park in WaitGroup.Wait")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	var pending *KillPendingError
+	if err := i.Kill(ctx); !errors.As(err, &pending) || pending.LiveGoroutines == 0 {
+		t.Fatalf("Kill on WaitGroup.Wait = %v, want pending live goroutine", err)
+	}
+	wg.Done()
+	if err := i.Wait(); err != errMainRevoked {
+		t.Fatalf("Wait after revoked WaitGroup.Wait = %v, want %v", err, errMainRevoked)
+	}
+	if resumed.Load() {
+		t.Fatal("main resumed after revoked WaitGroup.Wait")
+	}
+	if err := i.Kill(context.Background()); err != nil {
+		t.Fatalf("Kill after WaitGroup.Wait exit = %v", err)
+	}
+}
+
+func TestRevokedWaitGroupReadyPath(t *testing.T) {
+	var wg sync.WaitGroup
+	var release atomic.Bool
+	entered := make(chan struct{})
+	var resumed atomic.Bool
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main: func() {
+			close(entered)
+			for !release.Load() {
+			}
+			wg.Wait() // The zero-count path must also observe revocation.
+			resumed.Store(true)
+		},
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	var pending *KillPendingError
+	if err := i.Kill(ctx); !errors.As(err, &pending) || pending.LiveGoroutines == 0 {
+		t.Fatalf("Kill before ready WaitGroup.Wait = %v, want pending", err)
+	}
+	release.Store(true)
+	if err := i.Wait(); err != errMainRevoked {
+		t.Fatalf("Wait after revoked ready WaitGroup.Wait = %v, want %v", err, errMainRevoked)
+	}
+	if resumed.Load() {
+		t.Fatal("main resumed after revoked ready WaitGroup.Wait")
 	}
 }
 

@@ -538,6 +538,14 @@ covered. A generic post-wakeup `Goexit` in `sync.Cond` is not safe: `Wait`
 reacquires its caller's lock only after the runtime wait returns, so a
 deferred unlock can fail if that reacquisition is skipped.
 
+`sync.WaitGroup.Wait` now checks revocation at entry and on both return
+paths. On the parked path it waits until `semacquire1` has released its
+`sudog`, then restores race-detector state and checks WaitGroup reuse before
+exiting. A host Kill remains pending until `Done` wakes the waiter; it does
+not remove the semaphore waiter early. Focused blocked-wait and zero-count
+tests passed 100 race-detector runs, and the `sync` package tests pass.
+Mutex and `sync.Cond` waiters still need lock-aware revocation handling.
+
 ## Process-owned Unicode regexp cache
 
 `regexp/syntax` lazily builds a Unicode alias map through `sync.Once`. A first

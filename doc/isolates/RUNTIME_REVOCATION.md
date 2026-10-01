@@ -45,7 +45,7 @@ the general scheduler execution fence required above.
 |---|---|---|
 | Channel send/receive | One `sudog` in `hchan.sendq` or `recvq`, also on `gp.waiting` | `chan.go` clears `gp.waiting`, `activeStackChans`, and `gp.param`, then releases the `sudog`. A post-cleanup revocation check now exits a woken G before user code. Kill does not yet remove or wake the queued waiter early. |
 | `select` | One `sudog` per case, linked through `gp.waiting` and several channel queues | `select.go` locks the cases, removes losing entries, updates channel timer wait counts, clears stack element pointers, and releases all records. A post-cleanup revocation check now exits a woken G before it returns to user code. Kill does not yet remove or wake its queued cases early. |
-| `sync.Mutex`, `WaitGroup`, and related semaphores | `sudog` in a hashed `semaRoot` queue | `sema.go` releases the record after wakeup; non-head queue removal must preserve other waiters. |
+| `sync.Mutex`, `WaitGroup`, and related semaphores | `sudog` in a hashed `semaRoot` queue | `sema.go` releases the record after wakeup; non-head queue removal must preserve other waiters. `WaitGroup.Wait` now checks revocation on entry and after semaphore cleanup, race-state restoration, and the reuse check. It still needs an ordinary `Done` to wake a parked waiter. Mutex and other semaphore users remain open. |
 | `sync.Cond` | Ticketed `sudog` in `notifyList`, also in `gp.waiting` | `sema.go` clears the G waiting pointer and releases the record. Removing an earlier ticket must preserve later `Signal` behavior. |
 | `time.Sleep` and timer channels | Per-G timer or channel timer linked into runtime timer machinery | `time.Sleep` now checks revocation after its normal wakeup and exits before user code; it is not woken early. Timer channels still need wait detachment and post-wakeup checks. |
 | Network poll | `pollDesc.rg` or `wg` and deadline timers | `poll_runtime_pollWait` now checks revocation before waiting and after `netpollblock` clears the G from the poll semaphore. A revoked G exits after normal I/O readiness or deadline wakeup, before retrying I/O. Kill does not yet wake or detach a parked poll waiter early; `poll_runtime_pollWaitCanceled` remains separate. |
@@ -57,7 +57,7 @@ switches, but revocation still needs an admission check there. GC assist may
 temporarily change G status while the same G continues on its M, so G status
 alone is not an execution fence.
 
-Semaphore and `sync.Cond` waiters need more than a generic post-wakeup
+Mutex and `sync.Cond` waiters need more than a generic post-wakeup
 `Goexit` check. A mutex semaphore may have already transferred lock ownership
 to the waking G. Conversely, `sync.Cond.Wait` releases the caller's lock
 before parking and reacquires it only after `notifyListWait` returns; exiting

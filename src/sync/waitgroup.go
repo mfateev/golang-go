@@ -158,6 +158,7 @@ func (wg *WaitGroup) Done() {
 
 // Wait blocks until the [WaitGroup] task counter is zero.
 func (wg *WaitGroup) Wait() {
+	runtime_isolateExitIfRevoked()
 	if race.Enabled {
 		race.Disable()
 	}
@@ -178,6 +179,7 @@ func (wg *WaitGroup) Wait() {
 					synctest.Disassociate(wg)
 				}
 			}
+			runtime_isolateExitIfRevoked()
 			return
 		}
 		// Increment waiters count.
@@ -212,6 +214,7 @@ func (wg *WaitGroup) Wait() {
 			if isReset {
 				panic("sync: WaitGroup is reused before previous Wait has returned")
 			}
+			runtime_isolateExitIfRevoked()
 			return
 		}
 	}

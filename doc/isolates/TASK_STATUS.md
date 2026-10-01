@@ -118,6 +118,10 @@ ordinary-Go execution remains unproved.**
       semaphore no longer holds the waiting G. A pending Kill can finish after
       normal I/O readiness without retrying user I/O; early poller detachment
       and canceled-I/O waits remain open
+- [x] `sync.WaitGroup.Wait` checks revocation at entry and after its semaphore
+      wait, race-detector restoration, and reuse check. A pending Kill can
+      finish after `Done` wakes it; early waiter detachment and other
+      semaphore users remain open
 - [x] Exported `runtime.Gosched` checks revocation before yielding and after
       resuming, so a goroutine that repeatedly yields can exit after Kill.
       Internal runtime yields remain separate; arbitrary preemption and
