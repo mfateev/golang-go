@@ -82,3 +82,49 @@ func TestKillPendingOnNetpollWait(t *testing.T) {
 		t.Fatalf("host read after revoked waiter = %d, %v, %q", n, err, buf[:n])
 	}
 }
+
+func TestRevokedReadyPollRead(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	defer writer.Close()
+	if _, err := writer.Write([]byte{'x'}); err != nil {
+		t.Fatal(err)
+	}
+
+	b := isolatebridge.New()
+	entered := make(chan struct{})
+	exited := make(chan struct{})
+	var release, resumed atomic.Bool
+	go func() {
+		defer close(exited)
+		b.Run(func() {
+			close(entered)
+			for !release.Load() {
+			}
+			var buf [1]byte
+			_, _ = reader.Read(buf[:])
+			resumed.Store(true)
+		})
+	}()
+	<-entered
+	b.Stop()
+	release.Store(true)
+	select {
+	case <-exited:
+	case <-time.After(5 * time.Second):
+		t.Fatal("ready poll read did not exit after revocation")
+	}
+	if resumed.Load() || b.LiveGoroutines() != 0 {
+		t.Fatalf("revoked read returned=%t, live=%d", resumed.Load(), b.LiveGoroutines())
+	}
+	if err := reader.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	var buf [1]byte
+	if n, err := reader.Read(buf[:]); n != 1 || err != nil || buf[0] != 'x' {
+		t.Fatalf("host read after revoked ready read = %d, %v, %q", n, err, buf[:n])
+	}
+}

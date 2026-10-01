@@ -532,9 +532,12 @@ semaphore. A revoked goroutine wakes on normal I/O readiness or a deadline,
 then exits before retrying I/O. A Linux pipe test verifies that host Kill
 remains pending while the read is parked, the waiter exits after the host
 writes, and the host can still read that byte through the released file lock.
-The focused test passed 100 race-detector runs. Kill does not yet wake or
-detach a parked poll waiter early, and the canceled-I/O wait path is not
-covered. A generic post-wakeup `Goexit` in `sync.Cond` is not safe: `Wait`
+`poll_runtime_pollReset` also checks revocation before preparing a descriptor
+for a ready read or write. A second Linux pipe test holds a running goroutine
+until revocation, then confirms that the ready read exits and leaves the byte
+for the host. Both focused tests passed 100 race-detector runs. Kill does not
+yet wake or detach a parked poll waiter early, and the canceled-I/O wait path
+is not covered. A generic post-wakeup `Goexit` in `sync.Cond` is not safe: `Wait`
 reacquires its caller's lock only after the runtime wait returns, so a
 deferred unlock can fail if that reacquisition is skipped.
 

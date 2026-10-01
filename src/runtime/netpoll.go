@@ -321,6 +321,7 @@ func (c *pollCache) free(pd *pollDesc) {
 //
 //go:linkname poll_runtime_pollReset internal/poll.runtime_pollReset
 func poll_runtime_pollReset(pd *pollDesc, mode int) int {
+	isolateExitIfRevoked()
 	errcode := netpollcheckerr(pd, int32(mode))
 	if errcode != pollNoError {
 		return errcode
