@@ -36,6 +36,16 @@ func byteSliceOrigin(b []byte) (uintptr, bool) {
 
 var ownerTestSequence atomic.Uint64
 
+type customAfterFuncParent struct {
+	context.Context
+	done chan struct{}
+}
+
+func (p *customAfterFuncParent) Done() <-chan struct{} { return p.done }
+func (p *customAfterFuncParent) AfterFunc(func()) func() bool {
+	return func() bool { return true }
+}
+
 func TestHostCallsFailClosed(t *testing.T) {
 	for _, tt := range []struct {
 		name string
@@ -219,6 +229,11 @@ func TestContextCallbacksRejectUnownedRegistration(t *testing.T) {
 		}},
 		{"WithTimeout", "context: future deadlines are unavailable inside an isolate", func() {
 			_, cancel := context.WithTimeout(context.Background(), time.Hour)
+			cancel()
+		}},
+		{"CustomAfterFuncParent", "context: custom AfterFunc parent is unavailable inside an isolate", func() {
+			parent := &customAfterFuncParent{Context: context.Background(), done: make(chan struct{})}
+			_, cancel := context.WithCancel(parent)
 			cancel()
 		}},
 	} {

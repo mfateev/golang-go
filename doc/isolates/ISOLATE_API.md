@@ -266,8 +266,9 @@ ordinary Go primitives; native deterministic scheduling is still pending.
 Its callback would otherwise start from the process timer goroutine without
 the registering isolate's ownership. `context.AfterFunc` and future
 `context.WithDeadline` and `context.WithTimeout` calls also reject registration
-inside an isolate. These are temporary restrictions until callbacks and timers
-are host-driven.
+inside an isolate. Deriving a cancelable context from a custom parent that
+implements `AfterFunc` is restricted for the same reason. These are temporary
+restrictions until callbacks and timers are host-driven.
 
 ---
 

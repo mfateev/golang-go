@@ -520,6 +520,11 @@ func (c *cancelCtx) propagateCancel(parent Context, child canceler) {
 
 	if a, ok := parent.(afterFuncer); ok {
 		// parent implements an AfterFunc method.
+		if runtime_isolateActive() {
+			// A custom parent may invoke the callback from outside this
+			// isolate after the child has been registered.
+			panic("context: custom AfterFunc parent is unavailable inside an isolate")
+		}
 		c.mu.Lock()
 		stop := a.AfterFunc(func() {
 			child.cancel(false, parent.Err(), Cause(parent))
