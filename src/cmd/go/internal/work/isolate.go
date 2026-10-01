@@ -60,7 +60,8 @@ type isolateReportPackage struct {
 // is not a complete ownership or effect audit of their dependency graph.
 // The JSON v2 initializer writes callback globals in internal and jsonopts;
 // its readers need the same per-instance routing. Reflect is selected with
-// JSON because its type caches can retain values created by an isolate.
+// JSON because its type caches can retain values created by an isolate. Time
+// has lazy mutable zone state, but its clock and timer effects remain shared.
 var isolateOwnedStandardPackages = map[string]bool{
 	"encoding/base32":                 true,
 	"encoding/base64":                 true,
@@ -70,6 +71,7 @@ var isolateOwnedStandardPackages = map[string]bool{
 	"encoding/json/jsontext":          true,
 	"encoding/json/v2":                true,
 	"reflect":                         true,
+	"time":                            true,
 }
 
 // runBuildIsolates is the first cmd/go integration slice for static isolate

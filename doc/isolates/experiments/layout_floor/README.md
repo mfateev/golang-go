@@ -11,39 +11,44 @@ From this directory, using this fork's built toolchain:
 
 ```bash
 layout_run_dir=$(mktemp -d)
-for variant in empty withreflect withjsontext withv2 withjson; do
+for variant in empty withtime withreflect withjsontext withv2 withjson; do
     ../../../../bin/go build -isolate-dir="./$variant" -o "$layout_run_dir/$variant" ./host
     "$layout_run_dir/$variant"
 done
 ../../../../bin/go build -isolate-dir=./withjson -o "$layout_run_dir/inspect" ./inspect
 "$layout_run_dir/inspect"
+../../../../bin/go build -isolate-dir=./withtime -o "$layout_run_dir/inspecttime" ./inspecttime
+"$layout_run_dir/inspecttime"
 ```
 
 The host forces a GC before and after creating the instances, keeps every
 instance reachable, and reports the `HeapAlloc`, `HeapObjects`, and
 `TotalAlloc` differences. Each variant runs in a fresh process. On Linux
 arm64, after the host boundary moved to a `Call`-only API, two runs on
-2026-10-01 agreed to within 1 byte per instance:
+2026-10-01 agreed to about 1 byte per instance:
 
 | Program import | Retained bytes/instance | Retained objects/instance | Allocated bytes/instance |
 |---|---:|---:|---:|
-| None | 394 | 9 | 466 |
-| `reflect` | 2,410 | 12 | 2,586 |
+| None | 394–395 | 9 | 466–467 |
+| `time` | 1,810 | 21 | 1,986 |
+| `reflect` | 2,410–2,411 | 12 | 2,586–2,587 |
 | `encoding/json/jsontext` | 3,106 | 43 | 3,506 |
-| `encoding/json/v2` | 8,946 | 87 | 9,810 |
-| `encoding/json` | 9,258 | 91 | 11,130 |
+| `encoding/json/v2` | 10,370 | 98 | 12,146 |
+| `encoding/json` | 10,650 | 102 | 12,586 |
 
 Removing the unused Inbox channel and its initial message reduced every
 variant by about 144 retained bytes and two objects per instance. The JSON
-program retains about 8.86 KB more per prepared instance than the
-empty program. The inspector reads the current compiler descriptor and
-runtime type ABI; it reports fixed layout sizes of 1,448 bytes for `reflect`,
+program retains about 10.26 KB more per prepared instance than the
+empty program. The inspectors read the current compiler descriptor and
+runtime type ABI; they report fixed layout sizes of 1,448 bytes for `reflect`,
 40 for `encoding/json`, 96 for `encoding/json/internal`, 288 for
 `encoding/json/internal/jsonopts`, 856 for `encoding/json/jsontext`, and 800
-for `encoding/json/v2` (3,528 bytes combined). The rest of the retained
+for `encoding/json/v2`, and 584 for `time` (4,112 bytes combined for the JSON
+program). The rest of the retained
 difference includes package tables, other metadata, and objects created by
 initializers. These import-graph comparisons do not attribute every byte to
-one package.
+one package. The JSON v2 and JSON variants also reach `time`, so selecting
+`time` raises their floors by about 1.42 KB per instance.
 
 This is a heap floor for the current eager POC, not an RSS or live-workflow
 measurement. It makes lazy or shared immutable package state a concrete

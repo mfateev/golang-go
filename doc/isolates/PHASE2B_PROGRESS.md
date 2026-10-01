@@ -370,9 +370,14 @@ in allocated context values, not a package-global registry. Selecting all of
 
 `time` has different state. `Local` and its zone caches initialize lazily from
 the process environment or zone files. `startNano` is initialized from the
-process monotonic clock. Those globals and the runtime timer heap are still
-process-scoped in the current probe. `time.AfterFunc` and the `context`
+process monotonic clock. The static build now selects `time` globals per
+instance; the focused script verifies fresh `Local` state in two instances
+while the host retains its own value. The runtime timer heap remains
+process-scoped. `time.AfterFunc` and the `context`
 callback paths now reject registration from an active isolate when the later
 callback could start with process ownership. `time.NewTimer`, `time.Sleep`,
 `time.Now`, and zone loading still need an isolate clock and effect policy;
-this audit does not classify either package as fully supported.
+this audit does not classify either package as fully supported. The 10,000
+prepared-instance harness measures `time` at about 1.81 KB total per instance,
+roughly 1.42 KB more than the empty program; its fixed global layout is 584
+bytes. The default JSON variants also reach `time`, raising their eager floors.

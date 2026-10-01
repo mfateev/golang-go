@@ -11,6 +11,7 @@ stdout '^host base64 after \+w==$'
 stdout '^host base32 before 7M======$'
 stdout '^host base32 after 7M======$'
 stdout '^json options isolated$'
+stdout '^time local isolated$'
 stderr -count=2 '^orders init$'
 stderr -count=1 '^billing init$'
 stderr -count=3 '^shared init$'
@@ -18,6 +19,7 @@ stderr -count=3 '^shared init$'
 [cgo] [race] go build -race -isolate-dir=./orders -isolate-dir=./billing -o worker_race$GOEXE ./host
 [cgo] [race] exec ./worker_race$GOEXE
 [cgo] [race] stdout '^json options isolated$'
+[cgo] [race] stdout '^time local isolated$'
 
 ! go build -isolate-dir=./orders -isolate-dir=./orders -o duplicate$GOEXE ./host
 stderr 'duplicate isolate directory'
@@ -97,6 +99,8 @@ func main() {
 	if !strconv.Standard || strconv.InstanceState || strconv.Classification != "unclassified-standard" { panic("bad strconv classification") }
 	json := packages["encoding/json"]
 	if !json.Standard || !json.InstanceState || json.Classification != "selected-standard-probe" { panic("bad json classification") }
+	timePackage := packages["time"]
+	if !timePackage.Standard || !timePackage.InstanceState || !timePackage.HostReachable || timePackage.Classification != "selected-standard-probe" { panic("bad time classification") }
 	for _, path := range []string{"encoding/json/internal", "encoding/json/internal/jsonopts", "encoding/json/jsontext", "encoding/json/v2", "reflect"} {
 		p := packages[path]
 		if !p.Standard || !p.InstanceState || p.Classification != "selected-standard-probe" { panic("bad selected JSON dependency: " + path) }
@@ -114,6 +118,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Retain completed instances so the allocator cannot reuse a layout address
@@ -167,8 +172,11 @@ func main() {
 	fmt.Println("host base32 before", base32.StdEncoding.EncodeToString([]byte{0xfb}))
 	fmt.Println("host base64 before", base64.StdEncoding.EncodeToString([]byte{0xfb}))
 	hostOptions := reflect.ValueOf(jsonv2.DefaultOptionsV2()).Pointer()
+	hostLocal := time.Local
 	firstOptions := run("orders")
 	secondOptions := run("orders")
+	if time.Local != hostLocal { panic("time.Local crossed instance boundary") }
+	fmt.Println("time local isolated")
 	if firstOptions == 0 || firstOptions == secondOptions || firstOptions == hostOptions || secondOptions == hostOptions {
 		panic("JSON options share state")
 	}
@@ -220,6 +228,7 @@ import (
 	"isolate"
 	"reflect"
 	"strconv"
+	"time"
 )
 
 var counter = 40 + shared.Next()
@@ -228,6 +237,9 @@ func init() { println("orders init") }
 
 func main() {
 	counter++
+	if time.Local == time.UTC { panic("time.Local did not start fresh") }
+	time.Local = time.UTC
+	if time.Now().Location() != time.UTC { panic("time.Now did not use instance Local") }
 	encoded, err := json.Marshal(struct{ Counter int `json:"counter"` }{counter})
 	if err != nil { panic(err) }
 	var decoded struct{ Counter int `json:"counter"` }

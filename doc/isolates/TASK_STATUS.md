@@ -134,6 +134,9 @@ ordinary-Go execution remains unproved.**
 - [x] Incoming work now uses an SDK `Call` operation whose host reply carries
       one request. Removed the source-level `Inbox`, `Config.Input`, and host
       `Send` path; the static two-program build and focused race tests pass
+- [x] The static package-state probe now selects `time` globals. The build
+      script checks `time.Local` starts fresh in two instances and leaves the
+      host value intact; runtime timers and clocks remain outside this result
 - [x] Direct-toolchain static probe linked two separately compiled configured
       `package main` directories into one host and ran both through the
       trusted `Call` boundary (the original probe also had `Inbox`)

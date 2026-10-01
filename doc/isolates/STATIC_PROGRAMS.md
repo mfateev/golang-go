@@ -105,7 +105,7 @@ This host loop is a temporary transport API. It does not yet implement the
 planned `Resume`/quiescence contract. The build automatically selects each
 configured `package main`, every reachable non-standard package, and selected
 standard packages `encoding/base32`, `encoding/base64`, the mutable
-`encoding/json` v2 family, and `reflect` for the tagged package-state probe.
+`encoding/json` v2 family, `reflect`, and `time` for the package-state probe.
 `isolate.New` allocates their global layouts and replays initializers in
 dependency order for each instance. A build test starts one program twice and
 another once, with both importing an initialized shared package; each run
@@ -113,9 +113,12 @@ observes fresh state. The test also checks separate host and instance copies
 of `encoding/base32.StdEncoding` and `encoding/base64.StdEncoding`. It also
 round-trips data through `encoding/json` and checks that two instances and the
 host see distinct v2 default-options objects. The JSON family and `reflect`
-are marked as selected in the report. Other standard-library packages remain
+are marked as selected in the report. The test also mutates `time.Local` in
+each isolate and checks that both start fresh while the host retains its value.
+The report marks `time` as selected. Other standard-library packages remain
 process-owned in this probe and initialize once at process startup. These
-checks do not establish complete JSON heap or effect ownership; see
+checks do not establish complete JSON heap or effect ownership, and `time`'s
+timer and clock effects are not yet isolated; see
 PACKAGE_STATE.md.
 An isolate-selected package cannot directly assign to an unselected imported
 global. The build script checks direct, indexed, and field writes from
