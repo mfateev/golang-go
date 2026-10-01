@@ -14,6 +14,7 @@ isolates. Driving use case is Temporal workflow isolation.
 - [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) — **the plan**: phases, gating experiments, decision point
 - [PACKAGE_STATE.md](./PACKAGE_STATE.md) — initial process/isolate package-state partition and dependency probe
 - [STATIC_PROGRAMS.md](./STATIC_PROGRAMS.md) — per-directory config and static multi-program build direction
+- [RUNTIME_REVOCATION.md](./RUNTIME_REVOCATION.md) — scheduler waiter ownership and `Kill` acceptance cases
 - [DYNAMIC_LOADING.md](./DYNAMIC_LOADING.md) — deferred feasibility of independently built programs loaded into one runtime
 - [ALTERNATIVES.md](./ALTERNATIVES.md) — rationale for the no-fork path
 

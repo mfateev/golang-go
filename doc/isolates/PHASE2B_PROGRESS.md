@@ -435,3 +435,5 @@ This remains a diagnostic, not a safe teardown condition. A zero count does
 not revoke runnable or parked goroutines, detach their waiters, account for
 timer callbacks, or prevent a new dispatch. Runtime work after `dropg` may
 also still reference instance records. `Kill(ctx)` therefore remains open.
+The waiter inventory and required detach order are in
+[RUNTIME_REVOCATION.md](./RUNTIME_REVOCATION.md).
