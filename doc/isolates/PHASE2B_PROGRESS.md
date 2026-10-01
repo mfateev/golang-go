@@ -411,3 +411,12 @@ panic, `Goexit`, or a returned error without exiting its host caller. The
 returned error is generic because an initializer's error object can contain
 isolate-owned data. This does not catch panics in native child goroutines,
 detach waiters, or reclaim instance memory.
+
+## Implicit standard-stream formatting
+
+`fmt.Print`, `Printf`, `Println`, `Scan`, `Scanf`, and `Scanln` now reject calls
+from an active isolate before using process standard streams. String formatting
+and scanning and explicit reader/writer variants remain available. A focused
+race test covers each guarded entry point and the useful local variants.
+This is an effect guard, not a proof that an explicit reader or writer is
+isolate-owned.

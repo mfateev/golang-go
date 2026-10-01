@@ -5,8 +5,10 @@
 package isolate_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"internal/isolatebridge"
 	"isolate"
 	"net/netip"
@@ -54,6 +56,40 @@ func TestHostCallsFailClosed(t *testing.T) {
 		}
 	}()
 	_, _ = isolate.Call(1, []byte("input"))
+}
+
+func TestFmtStandardStreamsRejectIsolate(t *testing.T) {
+	b := isolatebridge.New()
+	b.Run(func() {
+		if got := fmt.Sprintf("value=%d", 7); got != "value=7" {
+			t.Errorf("Sprintf = %q", got)
+		}
+		var output bytes.Buffer
+		if _, err := fmt.Fprintln(&output, "value", 7); err != nil || output.String() != "value 7\n" {
+			t.Errorf("Fprintln = %q, %v", output.String(), err)
+		}
+		var scanned int
+		if _, err := fmt.Sscan("7", &scanned); err != nil || scanned != 7 {
+			t.Errorf("Sscan = %d, %v", scanned, err)
+		}
+		for _, call := range []func(){
+			func() { _, _ = fmt.Print("value") },
+			func() { _, _ = fmt.Printf("%d", 7) },
+			func() { _, _ = fmt.Println("value") },
+			func() { _, _ = fmt.Scan(&scanned) },
+			func() { _, _ = fmt.Scanf("%d", &scanned) },
+			func() { _, _ = fmt.Scanln(&scanned) },
+		} {
+			func() {
+				defer func() {
+					if got := recover(); got != "fmt: standard input and output are unavailable inside an isolate" {
+						t.Errorf("standard stream call panic = %v", got)
+					}
+				}()
+				call()
+			}()
+		}
+	})
 }
 
 func TestCallReceivesHostRequests(t *testing.T) {

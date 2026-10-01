@@ -61,12 +61,14 @@ type Scanner interface {
 // as space. It returns the number of items successfully scanned.
 // If that is less than the number of arguments, err will report why.
 func Scan(a ...any) (n int, err error) {
+	rejectIsolateStandardIO()
 	return Fscan(os.Stdin, a...)
 }
 
 // Scanln is similar to [Scan], but stops scanning at a newline and
 // after the final item there must be a newline or EOF.
 func Scanln(a ...any) (n int, err error) {
+	rejectIsolateStandardIO()
 	return Fscanln(os.Stdin, a...)
 }
 
@@ -78,6 +80,7 @@ func Scanln(a ...any) (n int, err error) {
 // The one exception: the verb %c always scans the next rune in the
 // input, even if it is a space (or tab etc.) or newline.
 func Scanf(format string, a ...any) (n int, err error) {
+	rejectIsolateStandardIO()
 	return Fscanf(os.Stdin, format, a...)
 }
 

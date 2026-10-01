@@ -233,14 +233,16 @@ per-instance layouts, but their allocation paths and calls into unselected
 packages still need an ownership and determinism audit. Other standard
 packages may retain process-wide caches.
 
-`fmt` is a useful next process-owned-package case. Its two printer caches are
-`sync.Pool` globals, so the isolate pool bypass gives an isolate call a fresh
-printer and discards it afterward. Its remaining package globals are a scan
-table and error values. This supports a narrow memory argument for formatting,
-but `fmt.Print`, `Printf`, and `Println` write to process `os.Stdout`, and
-formatting can invoke user `Stringer` or `Formatter` methods. The build report
-therefore still marks `fmt` unclassified until effects and indirect retention
-are checked.
+`fmt` is a process-owned-package case. Its two printer caches are `sync.Pool`
+globals, so the isolate pool bypass gives an isolate call a fresh printer and
+discards it afterward. Its remaining package globals are a scan table and
+error values. The implicit standard-stream functions (`Print`, `Printf`,
+`Println`, `Scan`, `Scanf`, and `Scanln`) now fail before touching process
+`os.Stdout` or `os.Stdin` in an isolate. `Sprintf`, `Sscan`, and calls with an
+explicit writer or reader still work. An explicit writer or reader can itself
+reference a process resource, and formatting can invoke user `Stringer` or
+`Formatter` methods. The build report therefore still marks `fmt`
+unclassified until effects and indirect retention are checked.
 
 ## Indirect runtime ownership example: `unique`
 

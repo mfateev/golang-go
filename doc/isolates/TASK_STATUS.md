@@ -223,6 +223,9 @@ ordinary-Go execution remains unproved.**
       boundary or selected package-state table is active, preventing a
       process-wide per-P pool from retaining isolate objects or passing them
       between instances. Focused entry, child, and initializer tests pass
+- [x] `fmt` rejects its six implicit process stdin/stdout functions inside an
+      isolate; string formatting and explicit reader/writer calls still work.
+      Explicit stream effects remain unclassified
 - [x] Tagged `encoding/base64` probe reruns four initialized encoding
       pointers per instance; a directly importing caller selects the instance
       globals with a build-wide compiler flag; two importing packages and
