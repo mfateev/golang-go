@@ -34,6 +34,11 @@ must also own or enumerate every registration created on its behalf. A scan of
 G status alone cannot find the queue node, lock, or timer that must be
 unlinked.
 
+The exported `runtime.Gosched` path checks revocation before and after its
+yield, allowing a yielding loop to exit. Runtime-internal yields use an
+unchecked helper in paths that cannot run `Goexit`; this does not constitute
+the general scheduler execution fence required above.
+
 ## Wait records to handle
 
 | Wait | Runtime record | Cleanup currently done by the resumed G |

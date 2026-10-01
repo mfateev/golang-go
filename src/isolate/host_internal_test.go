@@ -187,6 +187,35 @@ func TestKillPendingOnSelectWait(t *testing.T) {
 	}
 }
 
+func TestKillStopsGoschedLoop(t *testing.T) {
+	started := make(chan struct{})
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main: func() {
+			close(started)
+			for {
+				runtime.Gosched()
+			}
+		},
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := i.Kill(ctx); err != nil {
+		t.Fatalf("Kill on Gosched loop = %v", err)
+	}
+	if err := i.Wait(); err != errMainRevoked {
+		t.Fatalf("Wait after revoked Gosched loop = %v, want %v", err, errMainRevoked)
+	}
+}
+
 func TestKillPendingSleepStopsAtTimer(t *testing.T) {
 	entered := make(chan struct{})
 	var resumed atomic.Bool

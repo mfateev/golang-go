@@ -518,7 +518,8 @@ stops `Call` waiters and unstarted children, then waits for the runtime group's
 live count. Direct channel and `time.Sleep` waits exit after their ordinary
 wakeup cleanup. Multi-case `select` also exits after it removes its channel
 wait records on normal wakeup. A goroutine parked in another unsupported wait
-can still resume while Kill is pending. Its pending error reports counts but
+can still resume while Kill is pending. A loop that calls `runtime.Gosched`
+can stop at that explicit yield point. Its pending error reports counts but
 has no stack or thread sample. The complete revocation contract above remains
 unimplemented.
 

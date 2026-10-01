@@ -502,6 +502,18 @@ complete Linux arm64 `src/all.bash` suite passed. The check does not detach a
 parked select early, and it cannot prevent code already executing between
 runtime calls from running after revocation.
 
+Exported `runtime.Gosched` now checks revocation before yielding and when it
+resumes. Runtime-internal callers use an unchecked yield helper because some
+run in write-barrier-prohibited paths where `Goexit` cannot run. A looping
+program that calls `runtime.Gosched` can therefore finish a pending host
+Kill. The direct boundary and host Kill tests passed 100 race-detector runs.
+This is cooperative progress at one explicit yield point, not preemption of
+uninterrupted computation or a general scheduler dispatch fence.
+The full `src/all.bash` run for this slice was interrupted by a session
+change before its result was captured. In the replacement environment,
+`TestNetpollWaiters` fails because opening a local TCP socket returns
+`operation not permitted`; the full-suite gate remains unverified.
+
 ## Process-owned Unicode regexp cache
 
 `regexp/syntax` lazily builds a Unicode alias map through `sync.Once`. A first

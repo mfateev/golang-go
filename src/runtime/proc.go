@@ -325,7 +325,7 @@ func main() {
 			if runningPanicDefers.Load() == 0 {
 				break
 			}
-			Gosched()
+			gosched()
 		}
 	}
 	if panicking.Load() != 0 {
@@ -399,6 +399,15 @@ func forcegchelper() {
 //
 //go:nosplit
 func Gosched() {
+	isolateExitIfRevoked()
+	gosched()
+	isolateExitIfRevoked()
+}
+
+// gosched is also used by runtime paths that cannot run user defers.
+//
+//go:nosplit
+func gosched() {
 	checkTimeouts()
 	mcall(gosched_m)
 }
@@ -5071,7 +5080,7 @@ func exitsyscall() {
 
 		if sched.disable.user && !schedEnabled(gp) {
 			// Scheduling of this goroutine is disabled.
-			Gosched()
+			gosched()
 		}
 		return
 	}

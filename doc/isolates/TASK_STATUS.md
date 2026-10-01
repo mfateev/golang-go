@@ -114,6 +114,10 @@ ordinary-Go execution remains unproved.**
 - [x] Multi-case `select` checks revocation at entry and after removing all
       channel wait records on normal wakeup. A pending Kill can finish after
       a selected channel wakes; early waiter detachment remains open
+- [x] Exported `runtime.Gosched` checks revocation before yielding and after
+      resuming, so a goroutine that repeatedly yields can exit after Kill.
+      Internal runtime yields remain separate; arbitrary preemption and
+      uninterrupted CPU loops still need a runtime execution fence
 - [x] Opt-in compiler mode keeps static package assignments executable so a
       fresh E4 toy base can replay variable initialization before user `init`
 - [x] Opt-in compiler-generated package layout and runtime GC type separate

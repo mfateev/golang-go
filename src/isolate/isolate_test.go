@@ -534,6 +534,26 @@ func TestRevokedSelectWaitDoesNotResumeUserCode(t *testing.T) {
 	}
 }
 
+func TestRevokedGoschedLoopExits(t *testing.T) {
+	b := isolatebridge.New()
+	started := make(chan struct{})
+	exited := make(chan struct{})
+	go b.Run(func() {
+		defer close(exited)
+		close(started)
+		for {
+			runtime.Gosched()
+		}
+	})
+	<-started
+	b.Stop()
+	select {
+	case <-exited:
+	case <-time.After(5 * time.Second):
+		t.Fatal("revoked Gosched loop did not exit")
+	}
+}
+
 func TestBoundaryCountsCoroutineSwitches(t *testing.T) {
 	b := isolatebridge.New()
 	b.Run(func() {
