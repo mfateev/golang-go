@@ -227,7 +227,8 @@ ordinary-Go execution remains unproved.**
       structures still need cross-owner write checks
 - [x] Foreign isolate map lookups and iteration reject across owners,
       including reflection and iterator advancement. Process-owned maps stay
-      readable; `len(map)` still exposes a count through direct header access
+      readable. Isolate builds route `len(map)` through the same owner check;
+      ordinary builds keep the original direct header access
 - [x] The trusted `Call` bridge allocates the host command and request copy in
       process context, then copies the reply under the isolate ID. A 100-run
       race test checks large request, host copy, and reply origins

@@ -163,6 +163,7 @@ func mapdelete_fast64(mapType *byte, hmap map[any]any, key uint64)
 func mapdelete_faststr(mapType *byte, hmap map[any]any, key string)
 func mapIterNext(hiter *any)
 func mapclear(mapType *byte, hmap map[any]any)
+func isolateMapLen(hmap map[any]any) int
 
 // *byte is really *runtime.Type
 func makechan64(chanType *byte, size int64) (hchan chan any)

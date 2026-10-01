@@ -474,9 +474,14 @@ and allocation ownership remain separate work.
 
 The next read-side check rejects lookups and iteration of another isolate's
 map, including reflected access and iterator advancement after an owner
-change. Process maps remain readable for immutable standard tables. Map
-length still exposes an entry count because the compiler reads the header
-directly, so the host boundary must not pass map aliases between owners.
+change. Process maps remain readable for immutable standard tables. The
+compiler still reads `len(map)` directly in ordinary builds; isolate builds
+now call `runtime.isolateMapLen`, which checks the owner and handles nil maps.
+The host boundary must still not pass map aliases between owners because
+their entries can contain mutable foreign pointers. A tagged 100-run race
+test covers map length from the owner, host, and another isolate. The static
+two-program script, compiler builtin test, and 32-bit isolate build pass after
+the compiler change. The complete `src/all.bash` suite also passes.
 `src/all.bash` passed with the read guard. After removing a redundant check
 from map lookups, the 100-run race test, static two-program script, and
 focused map/runtime tests passed again.

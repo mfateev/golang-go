@@ -6114,6 +6114,9 @@ func (s *state) referenceTypeBuiltin(n *ir.UnaryExpr, x *ssa.Value) *ssa.Value {
 	if n.X.Type().IsMap() && n.Op() == ir.OCAP {
 		s.Fatalf("cannot inline cap(map)") // cap(map) does not exist
 	}
+	if n.X.Type().IsMap() && base.Debug.IsolatePackages != "" {
+		return s.rtcall(typecheck.LookupRuntimeFunc("isolateMapLen"), true, []*types.Type{n.Type()}, x)[0]
+	}
 	// if n == nil {
 	//   return 0
 	// } else {

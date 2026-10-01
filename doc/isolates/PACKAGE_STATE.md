@@ -67,9 +67,12 @@ Map lookups and iteration now reject a map owned by another isolate, while
 process-owned maps remain readable. An iterator checks again as it advances
 or exposes a key or element, so passing an initialized iterator across owners
 does not bypass the lookup guard. Reflection's map length uses the guarded
-`Map.Used` path. The compiler's direct `len(map)` still reads the header and
-exposes an entry count across owners. Map aliases themselves must therefore
-stay behind the boundary.
+`Map.Used` path. In builds with `-d=isolatepackages`, the compiler routes
+`len(map)` through the same owner check, including nil maps. Ordinary builds
+retain the direct header load. A tagged 100-run race test exercises the
+isolate-build path; the static multi-program build also passes. Map aliases
+must still stay behind the host boundary because values can hold mutable
+foreign pointers.
 These guards are not general pointer ownership: a map value can
 contain a mutable pointer, slice, or interface that still needs a cross-owner
 write check. It also does not make a map's iteration order deterministic.

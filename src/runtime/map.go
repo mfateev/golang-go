@@ -282,6 +282,16 @@ func reflect_maplen(m *maps.Map) int {
 	return int(m.Used())
 }
 
+// isolateMapLen is used by builds that select isolate package state. The
+// ordinary compiler path reads the map header directly; this path checks the
+// owner before exposing the length to an isolate or the process.
+func isolateMapLen(m *maps.Map) int {
+	if m == nil {
+		return 0
+	}
+	return int(m.Used())
+}
+
 //go:linkname reflect_mapclear reflect.mapclear
 func reflect_mapclear(t *abi.MapType, m *maps.Map) {
 	mapclear(t, m)
