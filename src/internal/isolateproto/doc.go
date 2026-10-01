@@ -5,6 +5,11 @@
 // Package isolateproto is the Phase 1, trusted-code reference model for Go
 // isolates. It does not modify the Go runtime or isolate package globals.
 //
+// The Task scheduler, Channel, and RangeMap are prototype APIs; the current
+// -isolate-dir MVP does not use them. Isolate programs use ordinary Go
+// goroutines, channels, and maps. The MVP does use NewPackageInstance from
+// this package to construct per-isolate package state.
+//
 // A Task owns an execution baton. Only one registered task runs at a time.
 // Go, Call, Inbox, Yield, Channel operations, and SelectReceive hand the baton
 // to the coordinator. FIFO task order and monotonically increasing call IDs
