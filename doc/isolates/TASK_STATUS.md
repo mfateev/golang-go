@@ -56,6 +56,10 @@ ordinary-Go execution remains unproved.**
 - [ ] **Build the runtime quiescence hook** — deadlock detection, clock advance,
       and the host suspend point are all the same mechanism
 - [ ] Floor measurement + nursery prototype
+- [x] A reproducible 10,000-instance prepared-state floor measured about
+      9.40 KB retained per JSON-importing instance versus 0.54 KB for an
+      empty program; see experiments/layout_floor/README.md. Running-stack,
+      heap ownership, and nursery measurements remain open
 - [x] Initial E3 proxy measurement at 10k parked instances; see PHASE0_RESULTS.md
 - [x] E3 proxy GC scan/mark/assist/STW and allocation-throughput profiles
 - [x] E3 90/10 Inbox/fan-out mixed proxy at 10k instances: 7.54–7.56 KB

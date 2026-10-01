@@ -92,9 +92,10 @@ ownership. The build must reject reachable code whose ownership or effects
 have not been classified; silently sharing its globals is not a valid
 default.
 
-The current static POC selects reachable application packages and
-`encoding/base64`; its standard-library list is a proof of the compiler path,
-not the intended package-by-package ownership policy. Heap allocation
+The current static POC selects reachable application packages plus
+`encoding/base32`, `encoding/base64`, the mutable `encoding/json` v2 family,
+and `reflect`. This list probes the compiler path; it is not the intended
+default ownership rule or a complete standard-library audit. Heap allocation
 ownership and cross-owner pointer enforcement are not implemented yet.
 
 ### Statically linked programs

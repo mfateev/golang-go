@@ -117,6 +117,12 @@ and the host see distinct `jsonopts.DefaultOptionsV2` objects through the
 public v2 API. This establishes one selected-global path, not general JSON
 heap or effect safety. Under the default v2 path, `encoding/json` has an
 `init` function that assigns callback globals in `encoding/json/internal`.
+An [eager-state floor experiment](./experiments/layout_floor/README.md) found
+about 9.40 KB retained per prepared JSON instance versus 0.54 KB for an
+empty program at 10,000 instances. The six selected JSON/reflection layouts
+contain 3,528 fixed bytes; initializer-created graphs and package-table
+overhead account for the rest. Lazy or shared immutable state remains needed
+for the intended density.
 Selecting `encoding/json` alone would replay those writes into the process
 copy of its dependency. Selecting that dependency requires checking every
 reader, including `encoding/json/v2`, for the same per-instance routing.
