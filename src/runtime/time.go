@@ -333,6 +333,7 @@ const verifyTimers = false
 //
 //go:linkname timeSleep time.Sleep
 func timeSleep(ns int64) {
+	isolateExitIfRevoked()
 	if ns <= 0 {
 		return
 	}
@@ -367,6 +368,7 @@ func timeSleep(ns int64) {
 	} else {
 		gopark(resetForSleep, nil, waitReasonSleep, traceBlockSleep, 1)
 	}
+	isolateExitIfRevoked()
 }
 
 // resetForSleep is called after the goroutine is parked for timeSleep.

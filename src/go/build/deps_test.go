@@ -877,7 +877,7 @@ var depsRules = `
 	bytes, errors, runtime, strings, sync, sync/atomic, unsafe
 	< internal/isolatebridge;
 
-	errors, internal/isolatebridge, sync/atomic
+	context, errors, internal/isolatebridge, strconv, sync, sync/atomic, time
 	< isolate;
 
 	# Test-only packages can have anything they want

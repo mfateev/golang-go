@@ -39,6 +39,15 @@ func (group *isolateRevocationGroup) revoke() {
 	}
 }
 
+// isolateExitIfRevoked is a provisional post-wait fence. It runs after a
+// waiter's ordinary cleanup, while the G is again executing Go code.
+func isolateExitIfRevoked() {
+	group := getg().isolateGroup
+	if group != nil && group.admission.Load()&isolateRevokedBit != 0 {
+		Goexit()
+	}
+}
+
 // isolateTerminateBeforeStart runs on g0 after execute has made gp current
 // and marked it running. No user instruction or defer has executed. This
 // narrow path has no channel or timer waiter to detach.

@@ -398,6 +398,36 @@ func TestBoundaryStopWakesCallWaiters(t *testing.T) {
 	}
 }
 
+func TestRevokedSleepDoesNotResumeUserCode(t *testing.T) {
+	b := isolatebridge.New()
+	entered := make(chan struct{})
+	exited := make(chan struct{})
+	var resumed atomic.Bool
+	go b.Run(func() {
+		defer close(exited)
+		close(entered)
+		time.Sleep(200 * time.Millisecond)
+		resumed.Store(true)
+	})
+	<-entered
+	deadline := time.Now().Add(time.Second)
+	for b.RunningGoroutines() != 0 && b.LiveGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if b.LiveGoroutines() != 1 || b.RunningGoroutines() != 0 {
+		t.Fatalf("sleep did not park: live=%d running=%d", b.LiveGoroutines(), b.RunningGoroutines())
+	}
+	b.Stop()
+	select {
+	case <-exited:
+	case <-time.After(5 * time.Second):
+		t.Fatal("sleeping goroutine did not exit after timer fired")
+	}
+	if resumed.Load() {
+		t.Fatal("sleep returned to user code after revocation")
+	}
+}
+
 func TestBoundaryCountsCoroutineSwitches(t *testing.T) {
 	b := isolatebridge.New()
 	b.Run(func() {

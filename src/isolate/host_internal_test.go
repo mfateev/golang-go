@@ -116,6 +116,49 @@ func TestKillPendingOnOtherWait(t *testing.T) {
 	}
 }
 
+func TestKillPendingSleepStopsAtTimer(t *testing.T) {
+	entered := make(chan struct{})
+	var resumed atomic.Bool
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main: func() {
+			close(entered)
+			time.Sleep(200 * time.Millisecond)
+			resumed.Store(true)
+		},
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	deadline := time.Now().Add(time.Second)
+	for i.boundary.RunningGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if i.boundary.RunningGoroutines() != 0 || i.boundary.LiveGoroutines() != 1 {
+		t.Fatal("main did not park in Sleep")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	var pending *KillPendingError
+	if err := i.Kill(ctx); !errors.As(err, &pending) {
+		t.Fatalf("Kill during Sleep = %v, want pending", err)
+	}
+	if err := i.Wait(); err != errMainRevoked {
+		t.Fatalf("Wait after revoked Sleep = %v, want %v", err, errMainRevoked)
+	}
+	if resumed.Load() {
+		t.Fatal("main resumed after revoked Sleep")
+	}
+	if err := i.Kill(context.Background()); err != nil {
+		t.Fatalf("Kill after Sleep stopped = %v", err)
+	}
+}
+
 func TestKillPreventsLateMainEntry(t *testing.T) {
 	runnerEntered := make(chan struct{})
 	releaseRunner := make(chan struct{})

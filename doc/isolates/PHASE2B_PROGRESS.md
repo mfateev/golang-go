@@ -473,6 +473,15 @@ and confirms that `Boundary.Run` skips entry after Kill. A goroutine parked
 on another runtime wait can resume and run user
 code while Kill is pending. The live count also is not safe heap teardown.
 
+The runtime now checks group revocation on both sides of `time.Sleep`. A
+goroutine already parked there completes the ordinary timer wakeup, then
+exits with `Goexit` before returning to user code. Kill remains pending until
+that timer fires; it does not yet wake or detach the timer. Ten race runs of
+both a direct bridge stop and a host Kill cover this path. Other wait types
+still need their own cleanup and post-wait fence. The complete `src/all.bash`
+suite passes after updating `go/build`'s declared dependencies for the
+provisional host `Kill` API.
+
 ## Process-owned Unicode regexp cache
 
 `regexp/syntax` lazily builds a Unicode alias map through `sync.Once`. A first
