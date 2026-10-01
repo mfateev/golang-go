@@ -330,75 +330,82 @@ const verifyTimers = false
 // time.now is implemented in assembly.
 
 const (
-	isolateSleepNone uint8 = iota
+	isolateParkNone uint8 = iota
 	isolateSleepRegistered
 	isolateSleepArmed
 	isolateSleepTimerReady
 	isolateSleepRevocationReady
 	isolateSleepRevocationPendingTimer
+	isolateForeverRegistered
+	isolateForeverParked
+	isolateForeverReady
 )
 
-func (group *isolateRevocationGroup) registerSleep(gp *g) bool {
-	lockWithRank(&group.sleepLock, lockRankIsolateSleep)
+func (group *isolateRevocationGroup) registerPark(gp *g, state uint8) bool {
+	lockWithRank(&group.parkLock, lockRankIsolatePark)
 	if group.admission.Load()&isolateRevokedBit != 0 {
-		unlock(&group.sleepLock)
+		unlock(&group.parkLock)
 		return false
 	}
-	if gp.isolateSleepState != isolateSleepNone {
-		throw("isolate: goroutine registered two sleeps")
+	if gp.isolateParkState != isolateParkNone {
+		throw("isolate: goroutine registered two parks")
 	}
-	gp.isolateSleepState = isolateSleepRegistered
-	gp.isolateSleepNext = group.sleepWaits
-	if gp.isolateSleepNext != nil {
-		gp.isolateSleepNext.isolateSleepPrev = gp
+	gp.isolateParkState = state
+	gp.isolateParkNext = group.parkWaits
+	if gp.isolateParkNext != nil {
+		gp.isolateParkNext.isolateParkPrev = gp
 	}
-	group.sleepWaits = gp
-	unlock(&group.sleepLock)
+	group.parkWaits = gp
+	unlock(&group.parkLock)
 	return true
 }
 
-// removeSleep requires group.sleepLock. The caller has resumed the G after
-// the chosen wake, or canceled its park before arming the timer.
-func (group *isolateRevocationGroup) removeSleep(gp *g) {
-	assertLockHeld(&group.sleepLock)
-	if gp.isolateSleepState == isolateSleepNone {
-		throw("isolate: goroutine missing registered sleep")
+// removePark requires group.parkLock. The caller has resumed the G after
+// the chosen wake, or canceled its park before committing it.
+func (group *isolateRevocationGroup) removePark(gp *g) {
+	assertLockHeld(&group.parkLock)
+	if gp.isolateParkState == isolateParkNone {
+		throw("isolate: goroutine missing registered park")
 	}
-	if gp.isolateSleepPrev == nil {
-		group.sleepWaits = gp.isolateSleepNext
+	if gp.isolateParkPrev == nil {
+		group.parkWaits = gp.isolateParkNext
 	} else {
-		gp.isolateSleepPrev.isolateSleepNext = gp.isolateSleepNext
+		gp.isolateParkPrev.isolateParkNext = gp.isolateParkNext
 	}
-	if gp.isolateSleepNext != nil {
-		gp.isolateSleepNext.isolateSleepPrev = gp.isolateSleepPrev
+	if gp.isolateParkNext != nil {
+		gp.isolateParkNext.isolateParkPrev = gp.isolateParkPrev
 	}
-	gp.isolateSleepPrev, gp.isolateSleepNext = nil, nil
-	gp.isolateSleepState = isolateSleepNone
+	gp.isolateParkPrev, gp.isolateParkNext = nil, nil
+	gp.isolateParkState = isolateParkNone
 }
 
-func (group *isolateRevocationGroup) unregisterSleep(gp *g) {
-	lockWithRank(&group.sleepLock, lockRankIsolateSleep)
-	group.removeSleep(gp)
-	unlock(&group.sleepLock)
+func (group *isolateRevocationGroup) unregisterPark(gp *g) {
+	lockWithRank(&group.parkLock, lockRankIsolatePark)
+	group.removePark(gp)
+	unlock(&group.parkLock)
 }
 
-// isolateRevokeSleepWaiters claims armed sleepers before their timers fire.
-// If a timer callback has already started, it performs the wake instead.
-func isolateRevokeSleepWaiters(group *isolateRevocationGroup) {
+// isolateRevokeParkWaiters claims armed sleepers before their timers fire
+// and wakes permanent parks. If a timer callback has already started, it
+// performs the sleep wake instead.
+func isolateRevokeParkWaiters(group *isolateRevocationGroup) {
 	var ready gList
-	lockWithRank(&group.sleepLock, lockRankIsolateSleep)
-	for gp := group.sleepWaits; gp != nil; gp = gp.isolateSleepNext {
-		if gp.isolateSleepState != isolateSleepArmed {
-			continue
-		}
-		if gp.timer.stop() {
-			gp.isolateSleepState = isolateSleepRevocationReady
+	lockWithRank(&group.parkLock, lockRankIsolatePark)
+	for gp := group.parkWaits; gp != nil; gp = gp.isolateParkNext {
+		switch gp.isolateParkState {
+		case isolateSleepArmed:
+			if gp.timer.stop() {
+				gp.isolateParkState = isolateSleepRevocationReady
+				ready.push(gp)
+			} else {
+				gp.isolateParkState = isolateSleepRevocationPendingTimer
+			}
+		case isolateForeverParked:
+			gp.isolateParkState = isolateForeverReady
 			ready.push(gp)
-		} else {
-			gp.isolateSleepState = isolateSleepRevocationPendingTimer
 		}
 	}
-	unlock(&group.sleepLock)
+	unlock(&group.parkLock)
 	for gp := ready.pop(); gp != nil; gp = ready.pop() {
 		goready(gp, 0)
 	}
@@ -441,13 +448,13 @@ func timeSleep(ns int64) {
 		resetForSleep(gp, nil)
 		gopark(nil, nil, waitReasonSleep, traceBlockSleep, 1)
 	} else {
-		if group := gp.isolateGroup; group != nil && !group.registerSleep(gp) {
+		if group := gp.isolateGroup; group != nil && !group.registerPark(gp, isolateSleepRegistered) {
 			isolateExitIfRevoked()
 			throw("isolate: rejected sleep without revocation")
 		}
 		gopark(resetForSleep, nil, waitReasonSleep, traceBlockSleep, 1)
-		if group := gp.isolateGroup; group != nil && gp.isolateSleepState != isolateSleepNone {
-			group.unregisterSleep(gp)
+		if group := gp.isolateGroup; group != nil && gp.isolateParkState != isolateParkNone {
+			group.unregisterPark(gp)
 		}
 	}
 	isolateExitIfRevoked()
@@ -458,19 +465,19 @@ func timeSleep(ns int64) {
 // sleep and there are many goroutines then the P can wind up running the
 // timer function, goroutineReady, before the goroutine has been parked.
 func resetForSleep(gp *g, _ unsafe.Pointer) bool {
-	if group := gp.isolateGroup; group != nil && gp.isolateSleepState != isolateSleepNone {
-		lockWithRank(&group.sleepLock, lockRankIsolateSleep)
+	if group := gp.isolateGroup; group != nil && gp.isolateParkState != isolateParkNone {
+		lockWithRank(&group.parkLock, lockRankIsolatePark)
 		if group.admission.Load()&isolateRevokedBit != 0 {
-			group.removeSleep(gp)
-			unlock(&group.sleepLock)
+			group.removePark(gp)
+			unlock(&group.parkLock)
 			return false
 		}
-		if gp.isolateSleepState != isolateSleepRegistered {
+		if gp.isolateParkState != isolateSleepRegistered {
 			throw("isolate: sleep timer armed in wrong state")
 		}
 		gp.timer.reset(gp.sleepWhen, 0)
-		gp.isolateSleepState = isolateSleepArmed
-		unlock(&group.sleepLock)
+		gp.isolateParkState = isolateSleepArmed
+		unlock(&group.parkLock)
 		return true
 	}
 	gp.timer.reset(gp.sleepWhen, 0)
@@ -545,20 +552,20 @@ func resetTimer(t *timeTimer, when, period int64) bool {
 func goroutineReady(arg any, _ uintptr, _ int64) {
 	gp := arg.(*g)
 	if group := gp.isolateGroup; group != nil {
-		lockWithRank(&group.sleepLock, lockRankIsolateSleep)
-		switch gp.isolateSleepState {
+		lockWithRank(&group.parkLock, lockRankIsolatePark)
+		switch gp.isolateParkState {
 		case isolateSleepArmed, isolateSleepRevocationPendingTimer:
-			gp.isolateSleepState = isolateSleepTimerReady
-			unlock(&group.sleepLock)
+			gp.isolateParkState = isolateSleepTimerReady
+			unlock(&group.parkLock)
 			goready(gp, 0)
 			return
 		case isolateSleepRevocationReady:
-			unlock(&group.sleepLock)
+			unlock(&group.parkLock)
 			return
 		case isolateSleepRegistered:
 			throw("isolate: timer fired before sleep was armed")
 		}
-		unlock(&group.sleepLock)
+		unlock(&group.parkLock)
 	}
 	goready(gp, 0)
 }

@@ -4554,8 +4554,8 @@ func gdestroy(gp *g) {
 	if gp.isolatePollDesc != nil || gp.isolatePollPrev != nil || gp.isolatePollNext != nil {
 		throw("isolate: exiting goroutine still registered in poll wait list")
 	}
-	if gp.isolateSleepState != isolateSleepNone || gp.isolateSleepPrev != nil || gp.isolateSleepNext != nil {
-		throw("isolate: exiting goroutine still registered in sleep wait list")
+	if gp.isolateParkState != isolateParkNone || gp.isolateParkPrev != nil || gp.isolateParkNext != nil {
+		throw("isolate: exiting goroutine still registered in park wait list")
 	}
 
 	casgstatus(gp, _Grunning, _Gdead)

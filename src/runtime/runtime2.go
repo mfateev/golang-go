@@ -18,9 +18,9 @@ import (
 // The high bit of admission records revocation; the low bits count goroutines
 // admitted at first dispatch and not yet destroyed. A complete isolate also
 // needs ownership of every parked waiter and a dispatch fence before Kill can
-// report that no goroutine can resume execution. pollWaits and sleepWaits
-// cover network poll and time.Sleep waits; their cleanup still runs on the
-// resumed goroutine.
+// report that no goroutine can resume execution. pollWaits and parkWaits
+// cover network poll, time.Sleep, and permanent channel/select parks; their
+// cleanup still runs on the resumed goroutine.
 type isolateRevocationGroup struct {
 	admission atomic.Uint64
 	live      atomic.Int32
@@ -28,8 +28,8 @@ type isolateRevocationGroup struct {
 	runnable  atomic.Int32 // Conservative count of group Gs in or entering _Grunnable.
 	pollLock  mutex
 	pollWaits *g
-	sleepLock mutex
-	sleepWaits *g
+	parkLock  mutex
+	parkWaits *g
 }
 
 // defined constants
@@ -554,49 +554,49 @@ type g struct {
 	inMarkAssist bool
 	coroexit     bool // argument to coroswitch_m
 
-	raceignore      int8  // ignore race detection events
-	nocgocallback   bool  // whether disable callback from C
-	tracking        bool  // whether we're tracking this G for sched latency statistics
-	trackingSeq     uint8 // used to decide whether to track this G
-	trackingStamp   int64 // timestamp of when the G last started being tracked
-	runnableTime    int64 // the amount of time spent runnable, cleared when running, only used when tracking
-	lockedm         muintptr
-	fipsIndicator   uint8
-	fipsOnlyBypass  bool
-	ditWanted       bool // set if g wants to be executed with DIT enabled
-	syncSafePoint   bool // set if g is stopped at a synchronous safe point.
-	runningCleanups atomic.Bool
-	sig             uint32
-	secret          int32 // current nesting of runtime/secret.Do calls.
-	writebuf        []byte
-	sigcode0        uintptr
-	sigcode1        uintptr
-	sigpc           uintptr
-	parentGoid      uint64          // goid of goroutine that created this goroutine
-	gopc            uintptr         // pc of go statement that created this goroutine
-	ancestors       *[]ancestorInfo // ancestor information goroutine(s) that created this goroutine (only used if debug.tracebackancestors)
-	startpc         uintptr         // pc of goroutine function
-	racectx         uintptr
-	waiting         *sudog                  // sudog structures this g is waiting on (that have a valid elem ptr); in lock order
-	cgoCtxt         []uintptr               // cgo traceback context
-	labels          unsafe.Pointer          // profiler labels
-	isolateE4Base   unsafe.Pointer          // tagged Phase 0 global-base experiment
-	isolateE4Bases  unsafe.Pointer          // tagged Phase 2B package-state table probe
-	isolateOwner    uintptr                 // monotonic trusted instance ID for future heap ownership
-	isolateBoundary unsafe.Pointer          // provisional host transport for Call
-	isolateGroup    *isolateRevocationGroup // Phase 2B live count and first-dispatch experiment
-	isolatePollPrev *g
-	isolatePollNext *g
-	isolatePollDesc unsafe.Pointer // runtime-owned pollDesc while registered; FD reference keeps it alive
-	isolatePollMode int32
-	isolateSleepPrev *g
-	isolateSleepNext *g
-	isolateSleepState uint8
-	isolateStarted  bool
-	isolateAdmitted bool
-	timer           *timer        // cached timer for time.Sleep
-	sleepWhen       int64         // when to sleep until
-	selectDone      atomic.Uint32 // are we participating in a select and did someone win the race?
+	raceignore       int8  // ignore race detection events
+	nocgocallback    bool  // whether disable callback from C
+	tracking         bool  // whether we're tracking this G for sched latency statistics
+	trackingSeq      uint8 // used to decide whether to track this G
+	trackingStamp    int64 // timestamp of when the G last started being tracked
+	runnableTime     int64 // the amount of time spent runnable, cleared when running, only used when tracking
+	lockedm          muintptr
+	fipsIndicator    uint8
+	fipsOnlyBypass   bool
+	ditWanted        bool // set if g wants to be executed with DIT enabled
+	syncSafePoint    bool // set if g is stopped at a synchronous safe point.
+	runningCleanups  atomic.Bool
+	sig              uint32
+	secret           int32 // current nesting of runtime/secret.Do calls.
+	writebuf         []byte
+	sigcode0         uintptr
+	sigcode1         uintptr
+	sigpc            uintptr
+	parentGoid       uint64          // goid of goroutine that created this goroutine
+	gopc             uintptr         // pc of go statement that created this goroutine
+	ancestors        *[]ancestorInfo // ancestor information goroutine(s) that created this goroutine (only used if debug.tracebackancestors)
+	startpc          uintptr         // pc of goroutine function
+	racectx          uintptr
+	waiting          *sudog                  // sudog structures this g is waiting on (that have a valid elem ptr); in lock order
+	cgoCtxt          []uintptr               // cgo traceback context
+	labels           unsafe.Pointer          // profiler labels
+	isolateE4Base    unsafe.Pointer          // tagged Phase 0 global-base experiment
+	isolateE4Bases   unsafe.Pointer          // tagged Phase 2B package-state table probe
+	isolateOwner     uintptr                 // monotonic trusted instance ID for future heap ownership
+	isolateBoundary  unsafe.Pointer          // provisional host transport for Call
+	isolateGroup     *isolateRevocationGroup // Phase 2B live count and first-dispatch experiment
+	isolatePollPrev  *g
+	isolatePollNext  *g
+	isolatePollDesc  unsafe.Pointer // runtime-owned pollDesc while registered; FD reference keeps it alive
+	isolatePollMode  int32
+	isolateParkPrev  *g
+	isolateParkNext  *g
+	isolateParkState uint8
+	isolateStarted   bool
+	isolateAdmitted  bool
+	timer            *timer        // cached timer for time.Sleep
+	sleepWhen        int64         // when to sleep until
+	selectDone       atomic.Uint32 // are we participating in a select and did someone win the race?
 
 	// goroutineProfiled indicates the status of this goroutine's stack for the
 	// current in-progress goroutine profile

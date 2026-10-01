@@ -618,3 +618,16 @@ wakeup path. Timer-channel waits and arbitrary timer callbacks are separate.
 Focused tests cover host Kill of one and two hour-long sleepers, direct
 bridge Stop, and short timer expiry racing revocation. The race tests passed
 100 runs with `GOGC=1`; static lock ranking and the 32-bit G layout passed.
+
+## Permanent channel and select parks
+
+Nil channel send and receive, an empty `select`, and a blocking `select` with
+only nil channels have no channel queue record to detach. They now register
+the G in the same group park list used by `time.Sleep`. Revocation cancels a
+park that has not committed or wakes a committed one. The resumed G removes
+its registration and exits before user code. Ordinary channel and multi-case
+select queue detachment remains separate work. The host Kill cases cover nil
+send and receive, an empty select, an all-nil select, and an empty reflected
+select. A direct Stop race covers revocation before or during park registration.
+The focused tests passed 100 race-detector runs with static lock ranking; the
+full isolate race suite passed 10 runs, and the Plan 9 runtime build passes.

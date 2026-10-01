@@ -109,6 +109,9 @@ ordinary-Go execution remains unproved.**
       progress wakes its own G. Each G unregisters before exiting without
       returning to user code. Fake synctest timers retain ordinary wakeup;
       timer-channel waits remain open
+- [x] Nil channel send/receive and empty or all-nil `select` register a
+      permanent park with the runtime group. Kill wakes parked Gs or cancels
+      parks in progress; they unregister and exit before user code resumes
 - [x] Ordinary channel send and receive check revocation at entry and after
       their normal parked-wait cleanup. A pending Kill can finish after a
       channel wakeup without returning to user code; early waiter detachment

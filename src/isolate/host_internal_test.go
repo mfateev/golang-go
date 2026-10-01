@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"internal/isolatebridge"
+	"reflect"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -383,6 +384,64 @@ func TestKillWakesMultipleSleepers(t *testing.T) {
 	}
 	if resumed.Load() || i.boundary.LiveGoroutines() != 0 {
 		t.Fatalf("sleep returned=%t, live=%d", resumed.Load(), i.boundary.LiveGoroutines())
+	}
+}
+
+func TestKillWakesPermanentParks(t *testing.T) {
+	var nilChannel chan int
+	for _, tc := range []struct {
+		name string
+		wait func()
+	}{
+		{"nil receive", func() { <-nilChannel }},
+		{"nil send", func() { nilChannel <- 1 }},
+		{"empty select", func() { select {} }},
+		{"empty reflected select", func() { reflect.Select(nil) }},
+		{"all-nil select", func() {
+			select {
+			case <-nilChannel:
+			case nilChannel <- 1:
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			entered := make(chan struct{})
+			var resumed atomic.Bool
+			program := Program{entry: isolatebridge.ProgramEntry{
+				NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+				Main: func() {
+					close(entered)
+					tc.wait()
+					resumed.Store(true)
+				},
+			}}
+			i, err := New(Config{Program: program})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := i.Start(); err != nil {
+				t.Fatal(err)
+			}
+			<-entered
+			deadline := time.Now().Add(time.Second)
+			for i.boundary.RunningGoroutines() != 0 && time.Now().Before(deadline) {
+				runtime.Gosched()
+			}
+			if i.boundary.RunningGoroutines() != 0 || i.boundary.LiveGoroutines() != 1 {
+				t.Fatal("main did not park")
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := i.Kill(ctx); err != nil {
+				t.Fatalf("Kill during permanent park = %v", err)
+			}
+			if err := i.Wait(); err != errMainRevoked {
+				t.Fatalf("Wait after permanent park = %v, want %v", err, errMainRevoked)
+			}
+			if resumed.Load() {
+				t.Fatal("permanent park returned to user code")
+			}
+		})
 	}
 }
 

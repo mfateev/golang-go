@@ -102,7 +102,7 @@ func selparkcommit(gp *g, _ unsafe.Pointer) bool {
 
 func block() {
 	isolateExitIfRevoked()
-	gopark(nil, nil, waitReasonSelectNoCases, traceBlockForever, 1) // forever
+	isolateParkForever(waitReasonSelectNoCases, traceBlockForever, 1)
 }
 
 // selectgo implements the select statement.
@@ -203,6 +203,9 @@ func selectgo(cas0 *scase, order0 *uint16, pc0 *uintptr, nsends, nrecvs int, blo
 		// Every channel selected on is in a synctest bubble,
 		// so this goroutine will count as idle while selecting.
 		waitReason = waitReasonSynctestSelect
+	}
+	if norder == 0 && block {
+		isolateParkForever(waitReason, traceBlockSelect, 1)
 	}
 
 	// sort the cases by Hchan address to get the locking order.

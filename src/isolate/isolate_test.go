@@ -504,6 +504,33 @@ func TestSleepRevocationTimerRace(t *testing.T) {
 	}
 }
 
+func TestPermanentParkRevocationRace(t *testing.T) {
+	for n := 0; n < 200; n++ {
+		b := isolatebridge.New()
+		entered := make(chan struct{})
+		exited := make(chan struct{})
+		go func() {
+			defer close(exited)
+			b.Run(func() {
+				close(entered)
+				if n%2 == 0 {
+					var ch chan int
+					<-ch
+				} else {
+					select {}
+				}
+			})
+		}()
+		<-entered
+		b.Stop()
+		select {
+		case <-exited:
+		case <-time.After(5 * time.Second):
+			t.Fatal("permanent park did not exit after revocation")
+		}
+	}
+}
+
 func TestRevokedChannelWaitDoesNotResumeUserCode(t *testing.T) {
 	for _, name := range []string{"receive", "send"} {
 		t.Run(name, func(t *testing.T) {

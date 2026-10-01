@@ -40,7 +40,7 @@ func (group *isolateRevocationGroup) revoke() {
 		}
 		if group.admission.CompareAndSwap(state, state|isolateRevokedBit) {
 			isolateRevokePollWaiters(group)
-			isolateRevokeSleepWaiters(group)
+			isolateRevokeParkWaiters(group)
 			return
 		}
 	}
