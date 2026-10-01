@@ -33,6 +33,12 @@ stderr 'isolate: code writes unselected imported global os.Stdin'
 ! go build -gcflags=all=-d=isolatepackages=encoding/json encoding/json
 stderr 'isolate: code writes unselected imported global encoding/json/internal.TransformMarshalError'
 
+# Ordinary go build compiles the command with compiler package path "main".
+! go build -gcflags=all=-d=isolatepackages=main -o rejectmutation$GOEXE ./badmutation
+stderr -count=2 'isolate: code writes unselected imported global example.org/isolatebuildtest/processstate.Map'
+stderr -count=2 'isolate: code writes unselected imported global example.org/isolatebuildtest/processstate.Channel'
+stderr -count=2 'isolate: code writes unselected imported global example.org/isolatebuildtest/processstate.Slice'
+
 go build -isolate-dir=./orders -o overlap$GOEXE ./host_overlap
 exec ./overlap$GOEXE
 stdout '^host before 101$'
@@ -212,6 +218,25 @@ func main() {
 }
 -- billing/isolate.json --
 {"name":"billing"}
+-- badmutation/main.go --
+package main
+
+import "example.org/isolatebuildtest/processstate"
+
+func main() {
+	delete(processstate.Map, "x")
+	clear(processstate.Map)
+	processstate.Channel <- 1
+	close(processstate.Channel)
+	_ = append(processstate.Slice, 1)
+	copy(processstate.Slice, []int{1})
+}
+-- processstate/processstate.go --
+package processstate
+
+var Map = map[string]int{}
+var Channel = make(chan int, 1)
+var Slice = make([]int, 1, 2)
 -- badglobal/isolate.json --
 {"name":"badglobal"}
 -- badglobal/main.go --

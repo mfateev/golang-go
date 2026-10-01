@@ -167,8 +167,10 @@ ordinary-Go execution remains unproved.**
       unselected imported globals, including writes in initializers, ordinary
       functions, closures, and indexed assignments. A build script checks
       `os` globals and the `encoding/json/internal` callback assignments.
-      Writes through aliases, calls, and unsafe pointers remain outside this
-      gate
+      It also rejects direct `copy`, `clear`, `delete`, `append`, channel send,
+      and channel close targeting an unselected imported global. Writes
+      through aliases, ordinary calls, and unsafe pointers remain outside
+      this gate
 - [ ] Classify ownership and effects across the broad standard library;
       implement required library and runtime hooks and reject unclassified
       paths before claiming general standard-library support

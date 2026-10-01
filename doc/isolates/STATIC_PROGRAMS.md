@@ -105,6 +105,8 @@ An isolate-selected package cannot directly assign to an unselected imported
 global. The build script checks direct, indexed, and field writes from
 initializers, `main`, and a closure. Selecting `encoding/json` alone rejects
 its v2 callback assignments into `encoding/json/internal`.
+A second negative build checks direct mutation through `copy`, `clear`,
+`delete`, `append`, channel send, and channel close.
 The generated top-level entry retains selected application packages but omits
 startup init tasks for packages unused by the host. Selected initializers run
 when `isolate.New` creates each instance. Those initializers should be pure:

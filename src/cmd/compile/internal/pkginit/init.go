@@ -263,6 +263,20 @@ func checkIsolateGlobalWrites(fn *ir.Func) {
 			}
 		case *ir.AssignOpStmt:
 			check(n.X, n)
+		case *ir.BinaryExpr:
+			if n.Op() == ir.OCOPY {
+				check(n.X, n)
+			}
+		case *ir.UnaryExpr:
+			if n.Op() == ir.OCLEAR || n.Op() == ir.OCLOSE {
+				check(n.X, n)
+			}
+		case *ir.CallExpr:
+			if (n.Op() == ir.ODELETE || n.Op() == ir.OAPPEND) && len(n.Args) != 0 {
+				check(n.Args[0], n)
+			}
+		case *ir.SendStmt:
+			check(n.Chan, n)
 		}
 	})
 }

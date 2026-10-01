@@ -119,9 +119,12 @@ reader, including `encoding/json/v2`, for the same per-instance routing.
 The compiler now rejects direct assignments from selected package code to
 globals of unselected imported packages, including writes through an index or
 field in initializers, ordinary functions, and closures.
+The same gate catches direct `copy`, `clear`, `delete`, and `append` mutation
+of an imported global, plus send and close on an imported global channel.
 Selecting `encoding/json` alone produces diagnostics for its five callback
 assignments. This check covers syntax rooted in an imported global; writes
-through aliases, calls, and unsafe pointers still need separate effect checks.
+through aliases, ordinary calls, and unsafe pointers still need separate
+effect checks.
 
 ## Build-wide selected-package probe
 
