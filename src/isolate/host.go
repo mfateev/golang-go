@@ -51,6 +51,7 @@ var errMainPanicked = errors.New("isolate: main panicked")
 var errMainExited = errors.New("isolate: main goroutine exited without returning")
 var errInitializerPanicked = errors.New("isolate: package initializer panicked")
 var errInitializerExited = errors.New("isolate: package initializer goroutine exited without returning")
+var errInitializerFailed = errors.New("isolate: package initialization failed")
 
 // New prepares an instance. Its program can request initial input with Call.
 func New(cfg Config) (*Isolate, error) {
@@ -75,6 +76,11 @@ func New(cfg Config) (*Isolate, error) {
 				}
 			}()
 			runState, err = cfg.Program.entry.NewState()
+			if err != nil {
+				// A state factory can return an error whose object or fields
+				// belong to the isolate. Keep it behind the boundary.
+				err = errInitializerFailed
+			}
 			returned = true
 		})
 	}()

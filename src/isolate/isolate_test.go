@@ -421,7 +421,7 @@ func TestMainFailureReportedToHost(t *testing.T) {
 	}
 }
 
-func TestInitializerPanicReportedToHost(t *testing.T) {
+func TestInitializerFailureReportedToHost(t *testing.T) {
 	for _, tt := range []struct {
 		name string
 		init func() (func(func()), error)
@@ -429,6 +429,7 @@ func TestInitializerPanicReportedToHost(t *testing.T) {
 	}{
 		{"panic", func() (func(func()), error) { panic("boom") }, "isolate: package initializer panicked"},
 		{"Goexit", func() (func(func()), error) { runtime.Goexit(); return nil, nil }, "isolate: package initializer goroutine exited without returning"},
+		{"error", func() (func(func()), error) { return nil, errors.New("isolate-owned error") }, "isolate: package initialization failed"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			name := "test-initializer-failure-" + strconv.FormatUint(ownerTestSequence.Add(1), 10)

@@ -407,5 +407,7 @@ process-owned error when the program's main goroutine panics or calls
 pointer or a user-defined formatter cannot escape through it. A focused test
 checks normal return, panic, and `Goexit`. `New` runs selected package
 initialization on a dedicated goroutine, returning a process-owned error for
-panic or `Goexit` without exiting its host caller. This does not catch panics
-in native child goroutines, detach waiters, or reclaim instance memory.
+panic, `Goexit`, or a returned error without exiting its host caller. The
+returned error is generic because an initializer's error object can contain
+isolate-owned data. This does not catch panics in native child goroutines,
+detach waiters, or reclaim instance memory.
