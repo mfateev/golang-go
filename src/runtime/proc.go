@@ -400,7 +400,8 @@ func forcegchelper() {
 //go:nosplit
 func Gosched() {
 	isolateExitIfRevoked()
-	gosched()
+	checkTimeouts()
+	mcall(gosched_m)
 	isolateExitIfRevoked()
 }
 

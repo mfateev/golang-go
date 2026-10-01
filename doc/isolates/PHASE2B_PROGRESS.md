@@ -509,10 +509,12 @@ program that calls `runtime.Gosched` can therefore finish a pending host
 Kill. The direct boundary and host Kill tests passed 100 race-detector runs.
 This is cooperative progress at one explicit yield point, not preemption of
 uninterrupted computation or a general scheduler dispatch fence.
-The full `src/all.bash` run for this slice was interrupted by a session
-change before its result was captured. In the replacement environment,
-`TestNetpollWaiters` fails because opening a local TCP socket returns
-`operation not permitted`; the full-suite gate remains unverified.
+An initial full run exposed a changed trace stack frame and three older
+first-dispatch tests that used `Gosched` after revocation. Keeping the yield
+directly in exported `Gosched` preserves the trace frame; those tests now
+spin on an atomic flag to exercise first dispatch without hitting the yield
+fence. The focused trace test, 100 race-detector runs of the affected isolate
+tests, and the complete Linux arm64 `src/all.bash` suite pass.
 
 ## Process-owned Unicode regexp cache
 

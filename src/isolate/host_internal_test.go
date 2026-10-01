@@ -27,7 +27,6 @@ func TestMainExitRevokesUnstartedChildren(t *testing.T) {
 				defer close(childExited)
 				close(ready)
 				for !release.Load() {
-					runtime.Gosched()
 				}
 				grandchildCreated.Store(true)
 				go func() { grandchildRan.Store(true) }()
@@ -268,7 +267,6 @@ func TestKillPreventsLateMainEntry(t *testing.T) {
 			return func(fn func()) {
 				close(runnerEntered)
 				for !releaseRunner.Load() {
-					runtime.Gosched()
 				}
 				fn()
 			}, nil

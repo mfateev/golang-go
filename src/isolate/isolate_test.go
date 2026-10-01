@@ -335,7 +335,6 @@ func TestBoundaryRevokesUnstartedChildren(t *testing.T) {
 			defer close(childExited)
 			close(ready)
 			for !release.Load() {
-				runtime.Gosched()
 			}
 			grandchildCreated.Store(true)
 			go func() { grandchildRan.Store(true) }()
