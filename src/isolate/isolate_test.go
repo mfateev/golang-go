@@ -155,9 +155,66 @@ func TestMapWritesStayWithOwner(t *testing.T) {
 	}
 	second.Run(func() { wantCloneReject("other isolate", func() { _ = maps.Clone(owned) }) })
 	wantCloneReject("host", func() { _ = maps.Clone(owned) })
-	if owned["x"] != 2 {
-		t.Fatal("cross-owner write changed isolate-owned map")
+	b.Run(func() {
+		if owned["x"] != 2 {
+			t.Error("cross-owner write changed isolate-owned map")
+		}
+	})
+}
+
+func TestMapReadsStayWithOwner(t *testing.T) {
+	process := map[string]int{"x": 1}
+	b := isolatebridge.New()
+	var ownedString map[string]int
+	var owned32 map[uint32]int
+	var owned64 map[uint64]int
+	var ownedStruct map[struct{ A, B string }]int
+	var iter *reflect.MapIter
+	b.Run(func() {
+		ownedString = map[string]int{"x": 2}
+		owned32 = map[uint32]int{1: 2}
+		owned64 = map[uint64]int{1: 2}
+		ownedStruct = map[struct{ A, B string }]int{{"a", "b"}: 2}
+		iter = reflect.ValueOf(ownedString).MapRange()
+		if !iter.Next() {
+			t.Error("owner iterator was empty")
+		}
+		if process["x"] != 1 {
+			t.Error("process map read failed")
+		}
+	})
+	wantReject := func(name string, call func()) {
+		defer func() {
+			if got := recover(); got != "isolate: map read crosses owner boundary" {
+				t.Errorf("%s panic = %v", name, got)
+			}
+		}()
+		call()
 	}
+	check := func() {
+		wantReject("string", func() { _ = ownedString["x"] })
+		wantReject("uint32", func() { _ = owned32[1] })
+		wantReject("uint64", func() { _ = owned64[1] })
+		wantReject("struct", func() { _ = ownedStruct[struct{ A, B string }{"a", "b"}] })
+		wantReject("range", func() {
+			for range ownedString {
+			}
+		})
+		wantReject("reflect lookup", func() { _ = reflect.ValueOf(ownedString).MapIndex(reflect.ValueOf("x")) })
+		wantReject("reflect range", func() { reflect.ValueOf(ownedString).MapRange().Next() })
+		wantReject("reflect length", func() { _ = reflect.ValueOf(ownedString).Len() })
+		wantReject("iterator key", func() { _ = iter.Key() })
+		wantReject("iterator value", func() { _ = iter.Value() })
+		wantReject("iterator next", func() { _ = iter.Next() })
+	}
+	check()
+	other := isolatebridge.New()
+	other.Run(check)
+	b.Run(func() {
+		if ownedString["x"] != 2 || owned32[1] != 2 || owned64[1] != 2 || ownedStruct[struct{ A, B string }{"a", "b"}] != 2 {
+			t.Error("owner map read failed")
+		}
+	})
 }
 
 func TestCallReceivesHostRequests(t *testing.T) {

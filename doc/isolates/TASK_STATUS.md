@@ -225,6 +225,9 @@ ordinary-Go execution remains unproved.**
       stack maps. Assignment, deletion, and clearing across owners fail closed
       even through aliases or reflection; map value pointers and other data
       structures still need cross-owner write checks
+- [x] Foreign isolate map lookups and iteration reject across owners,
+      including reflection and iterator advancement. Process-owned maps stay
+      readable; `len(map)` still exposes a count through direct header access
 - [x] The trusted `Call` bridge allocates the host command and request copy in
       process context, then copies the reply under the isolate ID. A 100-run
       race test checks large request, host copy, and reply origins

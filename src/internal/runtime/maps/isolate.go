@@ -14,3 +14,9 @@ func (m *Map) checkIsolateWrite() {
 		panic("isolate: map write crosses owner boundary")
 	}
 }
+
+func (m *Map) checkIsolateRead() {
+	if m.owner != 0 && m.owner != isolateMapOwner() {
+		panic("isolate: map read crosses owner boundary")
+	}
+}

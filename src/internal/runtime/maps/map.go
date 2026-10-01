@@ -420,6 +420,7 @@ func (m *Map) installTableSplit(old, left, right *table) {
 }
 
 func (m *Map) Used() uint64 {
+	m.checkIsolateRead()
 	return m.used
 }
 

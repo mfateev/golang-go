@@ -471,3 +471,12 @@ and the final test directory.
 The check does not follow pointers in map values, protect process-owned
 slices, or supply deterministic map iteration. Cross-owner pointer storage
 and allocation ownership remain separate work.
+
+The next read-side check rejects lookups and iteration of another isolate's
+map, including reflected access and iterator advancement after an owner
+change. Process maps remain readable for immutable standard tables. Map
+length still exposes an entry count because the compiler reads the header
+directly, so the host boundary must not pass map aliases between owners.
+`src/all.bash` passed with the read guard. After removing a redundant check
+from map lookups, the 100-run race test, static two-program script, and
+focused map/runtime tests passed again.

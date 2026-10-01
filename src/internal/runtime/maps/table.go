@@ -740,6 +740,9 @@ type Iter struct {
 // Init initializes Iter for iteration.
 func (it *Iter) Init(typ *abi.MapType, m *Map) {
 	it.typ = typ
+	if m != nil {
+		m.checkIsolateRead()
+	}
 
 	if m == nil || m.used == 0 {
 		return
@@ -775,6 +778,9 @@ func (it *Iter) Map() *Map {
 //
 // Must not be called prior to Next.
 func (it *Iter) Key() unsafe.Pointer {
+	if it.m != nil {
+		it.m.checkIsolateRead()
+	}
 	return it.key
 }
 
@@ -783,6 +789,9 @@ func (it *Iter) Key() unsafe.Pointer {
 //
 // Must not be called prior to Next.
 func (it *Iter) Elem() unsafe.Pointer {
+	if it.m != nil {
+		it.m.checkIsolateRead()
+	}
 	return it.elem
 }
 
@@ -877,6 +886,7 @@ func (it *Iter) Next() {
 		it.elem = nil
 		return
 	}
+	it.m.checkIsolateRead()
 
 	if it.m.writing != 0 {
 		fatal("concurrent map iteration and map write")

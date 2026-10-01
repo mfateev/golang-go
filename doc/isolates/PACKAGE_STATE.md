@@ -63,7 +63,14 @@ map made by another isolate. The map header grows by one pointer-sized field.
 `maps.Clone` reads a process map and tags the new header with the caller's
 owner, so the isolate can modify its clone. It rejects cloning a map owned by
 another isolate.
-This is a mutation guard, not general pointer ownership: a map value can
+Map lookups and iteration now reject a map owned by another isolate, while
+process-owned maps remain readable. An iterator checks again as it advances
+or exposes a key or element, so passing an initialized iterator across owners
+does not bypass the lookup guard. Reflection's map length uses the guarded
+`Map.Used` path. The compiler's direct `len(map)` still reads the header and
+exposes an entry count across owners. Map aliases themselves must therefore
+stay behind the boundary.
+These guards are not general pointer ownership: a map value can
 contain a mutable pointer, slice, or interface that still needs a cross-owner
 write check. It also does not make a map's iteration order deterministic.
 
