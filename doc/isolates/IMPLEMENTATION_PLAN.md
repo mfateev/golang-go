@@ -215,6 +215,10 @@ to users. It is not an isolate implementation for hostile code. In Phase 1,
 continues running; the instance remains resumable, but the loop has not
 stopped. Phase 1 can stop isolate execution only at its scheduling points.
 
+The Phase 1 reference model retains its original `Inbox` experiment. The
+current source-level isolate API uses only `Call`; an SDK `NextRequest` call
+receives each inbound message as a host reply.
+
 ### Components and acceptance
 
 1. An instrumented baton scheduler owns every workflow goroutine it creates.
@@ -225,6 +229,7 @@ stopped. Phase 1 can stop isolate execution only at its scheduling points.
    follows E2; do not assume universal sorted-key iteration.
 3. `Call` copies bytes across the boundary, parks one owned goroutine, and
    emits a stable numeric correlation ID. `Inbox` receives copied events.
+
 4. `Resume` returns `Quiescent`, `Deadlocked`, or `Completed` for workloads fully
    registered with the scheduler. A native blocked goroutine is a contract
    violation, not evidence that quiescence was detected.
@@ -325,7 +330,7 @@ separately, then implement in this order:
    in E2. Cover reflected iteration and the agreed architecture set. Separate
    real runtime time from isolate-visible injected wall and monotonic time;
    route timers through the host policy.
-4. **Boundary and failure behavior.** Implement `Call`, `Inbox`, copied
+4. **Boundary and failure behavior.** Implement `Call`, copied
    payloads, stable correlation IDs, and per-isolate failure reporting. Keep
    runtime errors that still abort the process on an explicit audit list for
    Phase 6; they cannot be described as isolate-fatal yet.

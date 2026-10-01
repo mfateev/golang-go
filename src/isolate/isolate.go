@@ -16,14 +16,8 @@ import "internal/isolatebridge"
 // Call sends one operation to the host and blocks until the host replies.
 // The boundary copies payload before handing it to the host and copies the
 // response before returning it. The operation number belongs to the
-// isolate's SDK; the runtime does not interpret it.
+// isolate's SDK; the runtime does not interpret it. An SDK can use an
+// operation such as NextRequest to wait for incoming host work.
 func Call(op uint32, payload []byte) ([]byte, error) {
 	return isolatebridge.Current().Call(op, payload)
-}
-
-// Inbox receives messages pushed by the host, including the initial input.
-// The provisional boundary copies messages before delivery. Isolate-owned
-// memory is pending the native heap implementation.
-func Inbox() <-chan []byte {
-	return isolatebridge.Current().Inbox()
 }

@@ -47,30 +47,17 @@ func (p *customAfterFuncParent) AfterFunc(func()) func() bool {
 }
 
 func TestHostCallsFailClosed(t *testing.T) {
-	for _, tt := range []struct {
-		name string
-		call func()
-	}{
-		{"Call", func() { _, _ = isolate.Call(1, []byte("input")) }},
-		{"Inbox", func() { _ = isolate.Inbox() }},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				got := recover()
-				if got == nil || !strings.Contains(got.(string), "outside an active isolate") {
-					t.Errorf("panic = %v, want outside-an-isolate failure", got)
-				}
-			}()
-			tt.call()
-		})
-	}
+	defer func() {
+		got := recover()
+		if got == nil || !strings.Contains(got.(string), "outside an active isolate") {
+			t.Errorf("panic = %v, want outside-an-isolate failure", got)
+		}
+	}()
+	_, _ = isolate.Call(1, []byte("input"))
 }
 
-func TestCallAndInbox(t *testing.T) {
-	initial := []byte("initial")
-	b := isolatebridge.New(initial)
-	initial[0] = 'X'
-
+func TestCallReceivesHostRequests(t *testing.T) {
+	b := isolatebridge.New()
 	type result struct {
 		initial string
 		second  string
@@ -79,22 +66,42 @@ func TestCallAndInbox(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go b.Run(func() {
-		first := <-isolate.Inbox()
+		first, err := isolate.Call(2, nil)
+		if err != nil {
+			done <- result{err: err}
+			return
+		}
 		ready := make(chan string, 1)
 		go func() {
 			// This native child must inherit the same boundary.
-			ready <- string(<-isolate.Inbox())
+			request, err := isolate.Call(2, nil)
+			if err != nil {
+				ready <- err.Error()
+				return
+			}
+			ready <- string(request)
 		}()
 		second := <-ready
 		reply, err := isolate.Call(7, []byte("request"))
 		done <- result{string(first), second, string(reply), err}
 	})
 
+	firstCommand := <-b.Commands()
+	if firstCommand.Op != 2 || len(firstCommand.Payload) != 0 {
+		t.Fatalf("first command = %+v", firstCommand)
+	}
+	initial := []byte("initial")
+	firstCommand.Reply(initial, nil)
+	initial[0] = 'X'
+	secondCommand := <-b.Commands()
+	if secondCommand.Op != 2 || len(secondCommand.Payload) != 0 {
+		t.Fatalf("second command = %+v", secondCommand)
+	}
 	second := []byte("second")
-	b.Send(second)
+	secondCommand.Reply(second, nil)
 	second[0] = 'X'
 	cmd := <-b.Commands()
-	if cmd.ID != 1 || cmd.Op != 7 || string(cmd.Payload) != "request" {
+	if cmd.ID != 3 || cmd.Op != 7 || string(cmd.Payload) != "request" {
 		t.Fatalf("command = %+v", cmd)
 	}
 	reply := []byte("reply")
@@ -107,7 +114,7 @@ func TestCallAndInbox(t *testing.T) {
 }
 
 func TestConcurrentCallsKeepTheirReplies(t *testing.T) {
-	b := isolatebridge.New(nil)
+	b := isolatebridge.New()
 	done := make(chan string, 2)
 	b.Run(func() {
 		for i := range 2 {
@@ -143,7 +150,7 @@ func TestPoolValuesDoNotCrossBoundary(t *testing.T) {
 	hostValue := new(int)
 	pool.Put(hostValue)
 
-	b := isolatebridge.New(nil)
+	b := isolatebridge.New()
 	var first, second, childValue any
 	b.Run(func() {
 		first = pool.Get()
@@ -180,7 +187,7 @@ func TestProcessCleanupPathsRejectIsolate(t *testing.T) {
 		}()
 		fn()
 	}
-	b := isolatebridge.New(nil)
+	b := isolatebridge.New()
 	b.Run(func() {
 		checkPanic("AddCleanup", "runtime.AddCleanup is unavailable", func() {
 			runtime.AddCleanup(new(int), func(int) {}, 0)
@@ -206,7 +213,7 @@ func TestProcessCleanupPathsRejectIsolate(t *testing.T) {
 }
 
 func TestAfterFuncRejectsUnownedCallback(t *testing.T) {
-	b := isolatebridge.New(nil)
+	b := isolatebridge.New()
 	b.Run(func() {
 		defer func() {
 			got, ok := recover().(string)
@@ -238,7 +245,7 @@ func TestContextCallbacksRejectUnownedRegistration(t *testing.T) {
 		}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			b := isolatebridge.New(nil)
+			b := isolatebridge.New()
 			b.Run(func() {
 				defer func() {
 					got, ok := recover().(string)
@@ -268,10 +275,10 @@ func TestInstanceOwnerSpansInitializationAndChildren(t *testing.T) {
 			func() {
 				defer func() {
 					if recover() == nil {
-						t.Error("Inbox was available during package initialization")
+						t.Error("Call was available during package initialization")
 					}
 				}()
-				isolate.Inbox()
+				_, _ = isolate.Call(2, nil)
 			}()
 			func() {
 				defer func() {

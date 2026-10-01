@@ -33,7 +33,7 @@ program directories, rather than silently including every directory it can
 find.
 
 Each program's `main` keeps the ordinary Go signature. It imports the new
-[`isolate` package](../../src/isolate/isolate.go) for host input and calls:
+[`isolate` package](../../src/isolate/isolate.go) for host communication:
 
 ```go
 package main
@@ -41,13 +41,15 @@ package main
 import "isolate"
 
 func main() {
-    input := <-isolate.Inbox()
+    input, err := isolate.Call(2, nil) // SDK-owned NextRequest operation
+    if err != nil { panic(err) }
     // Decode input, run the workflow, and use isolate.Call for host work.
     _ = input
 }
 ```
 
-`Call` and `Inbox` work through a trusted boundary. The static build registers
+`Call` works through a trusted boundary. The host may hold a `NextRequest`
+command until the next input is ready. The static build registers
 each entry by its configured name, and `isolate.New` plus `Start` bind a new
 transport to one invocation. The bridge has no separate isolate heap or
 deterministic scheduler.
@@ -72,16 +74,29 @@ The host can look up a program, start it, and answer its calls:
 ```go
 program, ok := isolate.LookupProgram("orders")
 if !ok { panic("missing orders program") }
-instance, err := isolate.New(isolate.Config{Program: program, Input: request})
+instance, err := isolate.New(isolate.Config{Program: program})
 if err != nil { panic(err) }
 if err := instance.Start(); err != nil { panic(err) }
+requests := incomingRequestStream() // host-provided stream of []byte
+var pending []*isolate.Command
+var queued [][]byte
 for {
     select {
     case command := <-instance.Commands():
-        result, err := handle(command.Op, command.Payload)
-        command.Reply(result, err)
+        if command.Op == 2 { // SDK-owned NextRequest operation
+            pending = append(pending, command)
+        } else {
+            result, err := handle(command.Op, command.Payload)
+            command.Reply(result, err)
+        }
+    case request := <-requests:
+        queued = append(queued, request)
     case <-instance.Done():
         return
+    }
+    for len(pending) > 0 && len(queued) > 0 {
+        pending[0].Reply(queued[0], nil)
+        pending, queued = pending[1:], queued[1:]
     }
 }
 ```
@@ -111,7 +126,7 @@ A second negative build checks direct mutation through `copy`, `clear`,
 The generated top-level entry retains selected application packages but omits
 startup init tasks for packages unused by the host. Selected initializers run
 when `isolate.New` creates each instance. Those initializers should be pure:
-the trusted probe does not enforce determinism, and `Call`/`Inbox` are
+the trusted probe does not enforce determinism, and `Call` is
 unavailable until `Start`. The runtime nevertheless binds the instance's
 stable owner token during initializer replay and throughout the state runner,
 `main`, and its child goroutines. Heap allocation still uses the ordinary
@@ -188,10 +203,10 @@ build must generate and validate them.
 
 After the `isolate` boundary probe was implemented, a third direct-toolchain
 probe compiled `orders` and `billing` directories, each with a normal
-`package main`, an `isolate.json`, and calls to `isolate.Inbox` and
-`isolate.Call`. The host linked both mains under unique internal package
-paths, bound a separate trusted boundary to each invocation, and answered
-their commands. It printed:
+`package main`, an `isolate.json`, and calls to the then-current
+`isolate.Inbox` and `isolate.Call` API. The host linked both mains under unique
+internal package paths, bound a separate trusted boundary to each invocation,
+and answered their commands. It printed:
 
 ```text
 orders orders:orders

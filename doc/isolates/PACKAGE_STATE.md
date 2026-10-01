@@ -38,7 +38,7 @@ before replaying package initializers and again through its state runner and
 its prior value after initialization. The numeric form can later be stored in
 off-heap allocator metadata without retaining a Go pointer there. It is an
 identity for future owned allocation and pointer checks, not an isolate heap.
-The package-state table and `Call`/`Inbox` transport remain
+The package-state table and `Call` transport remain
 separate: an initializer has an owner ID but cannot call the host boundary
 before `Start`.
 
@@ -48,9 +48,9 @@ mix allocations from different contexts through the shared per-P cache, and no
 span is reclaimed by isolate. The trusted `Call` bridge switches to process
 context while creating a command and copying its request, then copies the
 reply under the isolate ID. A large-payload race test checks all three origins.
-`Inbox` still delivers a host-allocated byte slice. A native owned queue must
-establish the correct allocation context on both sides before origin tags can
-support an ownership verifier.
+The former `Inbox` path delivered a host-allocated byte slice. Incoming
+requests now arrive as `Call` replies, which are copied under the receiver's
+isolate owner. The native allocator and cross-owner verifier remain pending.
 
 ## Two-package dependency probe
 

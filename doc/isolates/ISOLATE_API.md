@@ -91,9 +91,9 @@ Ordinary Go libraries become usable in workflow code.
 
 ---
 
-## Isolate-side API: two primitives
+## Isolate-side API: one primitive
 
-The entire runtime-provided surface inside an isolate is two functions. Keeping
+The entire runtime-provided surface inside an isolate is one function. Keeping
 it this small matters — it is the part that has to be maintained against a
 runtime fork forever.
 
@@ -108,15 +108,14 @@ package isolate
 // unmodified. The runtime never switches on it. The whole value space belongs
 // to the SDK.
 func Call(op uint32, payload []byte) ([]byte, error)
-
-// Inbox delivers messages pushed in by the host on resume — signals, updates,
-// cancellation.
-func Inbox() <-chan []byte
 ```
 
 Everything else is the SDK encoding command types into those bytes. Activity
 invocation, child workflows, signals, queries, continue-as-new, and timers are
 all `Call` with a different payload — none of them need runtime support.
+An SDK operation such as `NextRequest` calls `Call` and waits for the host to
+reply with the next inbound request. The host can hold that command until a
+request arrives. Initial input uses the same path.
 
 This is the zero-compiler-change option. See **Boundary interfaces** below for a
 typed alternative that subsumes `Call` and costs compiler work.
@@ -200,10 +199,14 @@ package main
 
 import "isolate"
 
-const completeOp uint32 = 1 // SDK-owned operation number
+const (
+    completeOp uint32 = 1
+    nextRequestOp uint32 = 2
+)
 
 func main() {
-    request := <-isolate.Inbox() // the host's initial input
+    request, err := isolate.Call(nextRequestOp, nil)
+    if err != nil { panic(err) }
     result := runWorkflow(request)
     if _, err := isolate.Call(completeOp, result); err != nil {
         panic(err)
@@ -219,20 +222,20 @@ isolate-owned closure. See [STATIC_PROGRAMS.md](./STATIC_PROGRAMS.md).
 ```go
 program, ok := isolate.LookupProgram("orders")
 if !ok { /* unknown program in this worker build */ }
-iso, err := isolate.New(isolate.Config{Program: program, Input: requestBytes})
+iso, err := isolate.New(isolate.Config{Program: program})
 ```
 
-`New` copies `Input` into the instance's first `Inbox` message before `main`
-runs. The SDK may decode that message and dispatch to a typed workflow
-function. A final SDK `Call` can carry a serialized result; the runtime
+After `Start`, the host answers the program's first `NextRequest` command with
+the initial request bytes. The SDK may decode that reply and dispatch to a
+typed workflow function. A final SDK `Call` can carry a serialized result; the runtime
 itself only sees bytes and an opaque operation number. The logical program
 name belongs in persisted instance metadata, while a separate build artifact
 identity identifies the exact code and dependencies needed for replay.
 
-The source-level `isolate` package now implements `Call` and `Inbox` through
+The source-level `isolate` package now implements `Call` through
 a trusted, per-goroutine [boundary probe](../../src/internal/isolatebridge/bridge.go).
 The static build generates the program selector, and the current host API
-provides `New`, `Start`, `Commands`, `Send`, and `Done`. The probe copies byte
+provides `New`, `Start`, `Commands`, and `Done`. The probe copies byte
 payloads and correlates concurrent calls, including calls from native child
 goroutines. The build now gives each configured program, its reachable
 non-standard packages, and selected standard packages separate initialized
@@ -255,6 +258,9 @@ rules before the native runtime implements them:
 | `Channel[T]` | A buffered or unbuffered channel whose send, receive, close, and select operations are visible to that coordinator. It is not a native Go `chan`. |
 | `Entry` | A process-local handle for the registered starting function. Its name is the stable identity. |
 | `Command` and `Event` | Copied host requests and replies; an event with ID zero feeds `Inbox`. |
+
+The reference model retains its original `Inbox` operation for scheduler
+experiments. It is absent from the current source-level `isolate` API.
 
 Only one registered `Task` runs at a time in that prototype. Its
 `SelectReceive` chooses the lowest ready argument index. Native `go`, `chan`,
@@ -388,10 +394,9 @@ decision 3 guarantees both sides are always the same build.
 
 ### It subsumes `Call`
 
-If boundary interfaces exist, `Call` is just a method on a standard one, and the
-isolate-side surface becomes a single concept rather than two. `Inbox` stays
-isolate-local — a channel is a pointer and cannot be a boundary type, but it
-doesn't need to be, since the runtime feeds it from inside.
+If boundary interfaces exist, `Call` is just a method on a standard one.
+`NextRequest` can become another boundary method that parks until the host
+returns a request.
 
 ### Decision
 
@@ -413,8 +418,8 @@ that never leave the process is measurable.
 
 ## Host API
 
-The current trusted POC has `Config{Program, Input}` and an asynchronous
-`Start`/`Commands`/`Send`/`Done` loop. The API below is the planned native
+The current trusted POC has `Config{Program}` and an asynchronous
+`Start`/`Commands`/`Done` loop. The API below is the planned native
 contract. Its limits, clock, capabilities, `Resume`, and `Kill` are not yet
 implemented in the source-level `isolate` package.
 
@@ -427,7 +432,6 @@ func LookupProgram(name string) (Program, bool)
 
 type Config struct {
 	Program      Program       // handle from LookupProgram
-	Input        []byte        // copied into the first Inbox message
 	MemoryLimit  int64         // enforced via span accounting
 	GoroutineLimit int
 	Clock        Clock         // host-injected time (see DETERMINISM.md)
@@ -460,8 +464,7 @@ func (iso *Isolate) Snapshot() ([]byte, error)              // later
 func Restore(b []byte, cfg Config) (*Isolate, error)        // later
 ```
 
-A command is one goroutine parked in `Call`; an event is a reply or an inbound
-message:
+A command is one goroutine parked in `Call`; an event is its reply:
 
 ```go
 type Command struct {
@@ -471,7 +474,7 @@ type Command struct {
 }
 
 type Event struct {
-	ID      uint64   // 0 for unsolicited events delivered to Inbox
+	ID      uint64   // matches one pending Call
 	Payload []byte   // copied into isolate memory
 	Err     error
 }
@@ -583,13 +586,13 @@ changes, continue-as-new, child workflow and signal semantics, and
    it shapes what the "after" code above actually looks like.
 2. **Does `context.Context` still appear in workflow signatures?** It is no
    longer needed for dispatcher state, but cancellation still has to arrive
-   somehow, and `Inbox` is a lower-level answer than users will want.
+   through an SDK operation or the runtime's isolate termination mechanism.
 3. **Correlating `Call` responses across suspend/restore.** Call IDs must
    survive a snapshot and restore, so they cannot be addresses.
 4. **Is one `Call` primitive really enough for queries?** Queries are
-   host-initiated and must not mutate state — that is an inbound pattern
-   `Inbox` can express, but read-only enforcement may need runtime help.
+   host-initiated and must not mutate state. A pending `NextRequest` call can
+   receive one, but read-only enforcement may need runtime help.
 5. **How should the SDK dispatch within one program?** A program's `main`
-   may decode its first Inbox message and choose a workflow function. The
+   may decode its first `NextRequest` reply and choose a workflow function. The
    runtime needs only the static program table; the SDK's typed dispatch and
    result protocol still need a concrete design.

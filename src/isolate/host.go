@@ -28,11 +28,9 @@ func LookupProgram(name string) (Program, bool) {
 	return Program{name: name, entry: entry}, true
 }
 
-// Config selects one program and supplies its first Inbox message.
-// The input is copied by New.
+// Config selects one program.
 type Config struct {
 	Program Program
-	Input   []byte
 }
 
 // Command is one host request made by Call. Reply must be called once.
@@ -48,12 +46,12 @@ type Isolate struct {
 	done     chan struct{}
 }
 
-// New prepares an instance and copies its initial Inbox message.
+// New prepares an instance. Its program can request initial input with Call.
 func New(cfg Config) (*Isolate, error) {
 	if cfg.Program.entry.Main == nil || cfg.Program.entry.NewState == nil {
 		return nil, errors.New("isolate: unknown program")
 	}
-	boundary := isolatebridge.New(cfg.Input)
+	boundary := isolatebridge.New()
 	var runState func(func())
 	var err error
 	boundary.RunOwner(func() { runState, err = cfg.Program.entry.NewState() })
@@ -89,9 +87,6 @@ func (i *Isolate) Start() error {
 // Commands returns host requests from the program. The host must reply to
 // each request using Command.Reply.
 func (i *Isolate) Commands() <-chan *Command { return i.boundary.Commands() }
-
-// Send copies a message into the program's Inbox.
-func (i *Isolate) Send(payload []byte) { i.boundary.Send(payload) }
 
 // Done is closed when the program's main returns.
 func (i *Isolate) Done() <-chan struct{} { return i.done }

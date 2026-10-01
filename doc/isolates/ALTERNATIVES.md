@@ -167,7 +167,7 @@ actually see:
 - Workflow code becomes ordinary Go — real `go`, real channels, real `time.Sleep`
 - Determinism is guaranteed, and cross-architecture for free
 - Per-isolate globals work, including for stdlib packages
-- The `Call`/`Inbox` API and quiescence model are exercised against real workflows
+- The `Call` API and quiescence model are exercised against real workflows
 - It installs as a normal Go build tool, with no custom toolchain distribution
 - Maintenance is AST-tracking, not a permanent rebase
 
@@ -188,7 +188,7 @@ its own.
 3. **E5** unchanged — the pure-Go API mock, which is now the first increment of
    option 1 rather than a throwaway.
 4. **Option 1 MVP** — `-toolexec` rewriter, baton scheduler, isolate state
-   struct, `Call`/`Inbox`, quiescence. Roughly the same milestone shape as
+   struct, `Call`, quiescence. Roughly the same milestone shape as
    IMPLEMENTATION_PLAN.md Phase 2A, without compiler or linker work.
 5. **Fork only if** hard kill, memory reclamation, or hostile containment turn
    out to bind.

@@ -125,7 +125,7 @@ func run(name string) uintptr {
 	if !ok {
 		panic("missing program " + name)
 	}
-	instance, err := isolate.New(isolate.Config{Program: program, Input: []byte(name)})
+	instance, err := isolate.New(isolate.Config{Program: program})
 	if err != nil {
 		panic(err)
 	}
@@ -135,6 +135,14 @@ func run(name string) uintptr {
 	}
 	select {
 	case command := <-instance.Commands():
+		if command.Op != 2 || len(command.Payload) != 0 { panic("unexpected request command") }
+		command.Reply([]byte(name), nil)
+	case <-instance.Done():
+		panic("program returned without requesting input")
+	}
+	select {
+	case command := <-instance.Commands():
+		if command.Op != 1 { panic("unexpected completion command") }
 		payload := string(command.Payload)
 		var optionPtr uintptr
 		if name == "orders" {
@@ -183,10 +191,14 @@ func main() {
     fmt.Println("host before", shared.Next())
     program, ok := isolate.LookupProgram("orders")
     if !ok { panic("missing orders") }
-    instance, err := isolate.New(isolate.Config{Program: program, Input: []byte("orders")})
+    instance, err := isolate.New(isolate.Config{Program: program})
     if err != nil { panic(err) }
     if err := instance.Start(); err != nil { panic(err) }
+    inputCommand := <-instance.Commands()
+    if inputCommand.Op != 2 || len(inputCommand.Payload) != 0 { panic("unexpected request command") }
+    inputCommand.Reply([]byte("orders"), nil)
     command := <-instance.Commands()
+    if command.Op != 1 { panic("unexpected completion command") }
     payload, _, ok := strings.Cut(string(command.Payload), "|")
     if !ok { panic("missing JSON options pointer") }
     fmt.Println("overlap", payload)
@@ -222,7 +234,8 @@ func main() {
 	if err := json.Unmarshal(encoded, &decoded); err != nil || decoded.Counter != counter {
 		panic("json round trip did not preserve isolate value")
 	}
-	input := <-isolate.Inbox()
+	input, err := isolate.Call(2, nil)
+	if err != nil { panic(err) }
 	shared.CheckPool()
 	if got := shared.PeekCounter(0); got != 101 {
 		panic("generic read did not use initialized isolate state")
@@ -313,7 +326,8 @@ import (
 func init() { println("billing init") }
 
 func main() {
-	input := <-isolate.Inbox()
+	input, err := isolate.Call(2, nil)
+	if err != nil { panic(err) }
 	shared.CheckPool()
 	payload := append([]byte("billing:"), input...)
 	payload = append(payload, ':')

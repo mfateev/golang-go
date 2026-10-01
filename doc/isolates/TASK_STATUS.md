@@ -126,18 +126,21 @@ ordinary-Go execution remains unproved.**
 - [x] Initial build-side `isolate.json` reader accepts explicitly selected
       directories, rejects unknown fields and duplicate names, and returns a
       deterministic program list; focused package tests pass
-- [x] Source-level `isolate` package implements `Call` and `Inbox` for a
+- [x] Source-level `isolate` package implements `Call` for a
       normal per-program `func main()` through a trusted per-goroutine
-      boundary probe. It copies request, response, and Inbox bytes; correlates
+      boundary probe. It copies request and response bytes; correlates
       concurrent calls; and is inherited by native child goroutines. The
-      native owned queue and deterministic scheduler remain pending
+      native owned command queue and deterministic scheduler remain pending
+- [x] Incoming work now uses an SDK `Call` operation whose host reply carries
+      one request. Removed the source-level `Inbox`, `Config.Input`, and host
+      `Send` path; the static two-program build and focused race tests pass
 - [x] Direct-toolchain static probe linked two separately compiled configured
       `package main` directories into one host and ran both through the
-      trusted `Call`/`Inbox` boundary
+      trusted `Call` boundary (the original probe also had `Inbox`)
 - [x] Experimental `go build -isolate-dir` loads configured `package main`
       directories under distinct paths, generates the name-to-entry table,
       and links one executable with the host. The trusted host API can look up
-      each program, start its `main`, and exchange copied `Call`/`Inbox` bytes;
+      each program, start its `main`, and exchange copied `Call` bytes;
       a `cmd/go` script test builds and runs two programs by name
 - [x] The static build selects configured `package main` units and their
       reachable non-standard dependencies for the opt-in package-state mode.
@@ -195,12 +198,12 @@ ordinary-Go execution remains unproved.**
 - [x] Runtime `g` carries a monotonic numeric instance owner ID through
       initializer replay, the generated state runner, `main`, and native
       children. A race test checks distinct instance IDs and restored host
-      context, with `Call`/`Inbox` unavailable during init;
+      context, with `Call` unavailable during init;
       heap routing and cross-owner checks remain pending
 - [x] Large-object spans record the active numeric allocation ID and clear it
       on reuse. Focused and race tests check zero and nonzero origins.
       This is diagnostic metadata: small allocations still share per-P spans,
-      and `Inbox` still crosses allocation contexts
+      while incoming requests now use owner-copied `Call` replies
 - [x] The trusted `Call` bridge allocates the host command and request copy in
       process context, then copies the reply under the isolate ID. A 100-run
       race test checks large request, host copy, and reply origins

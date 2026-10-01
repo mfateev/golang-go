@@ -16,11 +16,10 @@ import (
 	"unsafe"
 )
 
-// Boundary is one host command and inbox transport. Its channels are
+// Boundary is one host command transport. Its channel is
 // infrastructure for the Phase 2B API probe, not a contained isolate heap.
 type Boundary struct {
 	owner uintptr
-	inbox chan []byte
 	calls chan *Command
 	next  atomic.Uint64
 }
@@ -44,18 +43,16 @@ type response struct {
 	hasErr  bool
 }
 
-// New creates a boundary with an initial, copied Inbox message.
-func New(initial []byte) *Boundary {
+// New creates a boundary for one instance.
+func New() *Boundary {
 	owner := nextOwner.Add(1)
 	if owner == 0 {
 		panic("isolate: owner ID exhausted")
 	}
 	b := &Boundary{
 		owner: owner,
-		inbox: make(chan []byte, 1),
 		calls: make(chan *Command),
 	}
-	b.inbox <- bytes.Clone(initial)
 	return b
 }
 
@@ -76,7 +73,7 @@ func (b *Boundary) Run(fn func()) {
 	fn()
 }
 
-// RunOwner binds b's stable instance identity without enabling Call or Inbox.
+// RunOwner binds b's stable instance identity without enabling Call.
 // The generated state factory uses it while replaying package initializers.
 func (b *Boundary) RunOwner(fn func()) {
 	if b == nil || fn == nil {
@@ -88,12 +85,6 @@ func (b *Boundary) RunOwner(fn func()) {
 		runtime.KeepAlive(b)
 	}()
 	fn()
-}
-
-// Send copies one host message into the Inbox. It blocks when the Inbox
-// buffer is full until isolate code receives a message.
-func (b *Boundary) Send(payload []byte) {
-	b.inbox <- bytes.Clone(payload)
 }
 
 // Commands returns the stream of host commands from this boundary.
@@ -119,7 +110,7 @@ func (c *Command) Reply(payload []byte, err error) {
 func Current() *Boundary {
 	p := getBoundary()
 	if p == nil {
-		panic("isolate: Call or Inbox outside an active isolate")
+		panic("isolate: Call outside an active isolate")
 	}
 	return (*Boundary)(p)
 }
@@ -150,11 +141,6 @@ func newHostCommand(id uint64, op uint32, payload []byte) *Command {
 		reply:   make(chan response, 1),
 	}
 	return c
-}
-
-// Inbox returns this boundary's copied host-message stream.
-func (b *Boundary) Inbox() <-chan []byte {
-	return b.inbox
 }
 
 //go:linkname getBoundary runtime.isolateGetBoundary
