@@ -420,3 +420,18 @@ and scanning and explicit reader/writer variants remain available. A focused
 race test covers each guarded entry point and the useful local variants.
 This is an effect guard, not a proof that an explicit reader or writer is
 isolate-owned.
+
+## Goroutines associated with execution threads
+
+The runtime group now counts goroutines associated with an M. `execute`
+increments the count; `dropg` decrements it after a goroutine parks, yields,
+or exits. Coroutine switches transfer the count directly because they bypass
+those scheduler functions. A host goroutine attached by `Run` or `RunOwner`
+also counts while attached. The count deliberately includes a goroutine in a
+syscall until it returns or yields its M. A focused race test covers a parked
+native child and `iter.Pull` coroutine switches in 100 runs.
+
+This remains a diagnostic, not a safe teardown condition. A zero count does
+not revoke runnable or parked goroutines, detach their waiters, account for
+timer callbacks, or prevent a new dispatch. Runtime work after `dropg` may
+also still reference instance records. `Kill(ctx)` therefore remains open.

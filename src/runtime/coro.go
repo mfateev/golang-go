@@ -170,6 +170,9 @@ func coroswitch_m(gp *g) {
 			// coordinating with the garbage collector about the state change.
 			casgstatus(gp, _Grunning, _Gwaiting)
 		}
+		if gp.isolateGroup != nil {
+			gp.isolateGroup.running.Add(-1)
+		}
 
 		// Clear gp.m.
 		setMNoWB(&gp.m, nil)
@@ -238,6 +241,9 @@ func coroswitch_m(gp *g) {
 		// coordinating with the garbage collector about the state change.
 		casgstatus(gnext, _Gwaiting, _Grunnable)
 		casgstatus(gnext, _Grunnable, _Grunning)
+	}
+	if gnext.isolateGroup != nil {
+		gnext.isolateGroup.running.Add(1)
 	}
 
 	// Donate locked state.

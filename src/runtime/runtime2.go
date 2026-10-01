@@ -17,11 +17,12 @@ import (
 // revocation experiment for Phase 2B.
 // The high bit of admission records revocation; the low bits count goroutines
 // admitted at first dispatch and not yet destroyed. A complete isolate also
-// needs ownership of parked waiters and an execution count before Kill can
-// report that no goroutine is executing.
+// needs ownership of parked waiters and an admission fence before Kill can
+// report that no goroutine can resume execution.
 type isolateRevocationGroup struct {
 	admission atomic.Uint64
 	live      atomic.Int32
+	running   atomic.Int32 // Goroutines associated with an M, including syscalls.
 }
 
 // defined constants

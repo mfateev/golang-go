@@ -3355,6 +3355,9 @@ func execute(gp *g, inheritTime bool) {
 	gp.m = mp
 	gp.syncSafePoint = false // Clear the flag, which may have been set by morestack.
 	casgstatus(gp, _Grunnable, _Grunning)
+	if gp.isolateGroup != nil {
+		gp.isolateGroup.running.Add(1)
+	}
 	gp.waitsince = 0
 	gp.preempt = false
 	gp.stackguard0 = gp.stack.lo + stackGuard
@@ -4261,6 +4264,9 @@ top:
 // call schedule to restart the scheduling of goroutines on this m.
 func dropg() {
 	gp := getg()
+	if group := gp.m.curg.isolateGroup; group != nil {
+		group.running.Add(-1)
+	}
 
 	setMNoWB(&gp.m.curg.m, nil)
 	setGNoWB(&gp.m.curg, nil)
@@ -4550,15 +4556,6 @@ func gdestroy(gp *g) {
 	gp.isolateE4Bases = nil
 	gp.isolateOwner = 0
 	gp.isolateBoundary = nil
-	if gp.isolateGroup != nil {
-		if gp.isolateAdmitted {
-			gp.isolateGroup.admission.Add(-1)
-		}
-		gp.isolateGroup.live.Add(-1)
-		gp.isolateGroup = nil
-	}
-	gp.isolateStarted = false
-	gp.isolateAdmitted = false
 	gp.timer = nil
 	gp.bubble = nil
 	gp.fipsOnlyBypass = false
@@ -4575,6 +4572,15 @@ func gdestroy(gp *g) {
 	}
 
 	dropg()
+	if gp.isolateGroup != nil {
+		if gp.isolateAdmitted {
+			gp.isolateGroup.admission.Add(-1)
+		}
+		gp.isolateGroup.live.Add(-1)
+		gp.isolateGroup = nil
+	}
+	gp.isolateStarted = false
+	gp.isolateAdmitted = false
 
 	if GOARCH == "wasm" { // no threads yet on wasm
 		gfput(pp, gp)

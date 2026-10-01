@@ -61,11 +61,13 @@ func isolateSetGroup(p unsafe.Pointer) unsafe.Pointer {
 		panic("isolate: cannot nest different goroutine groups")
 	}
 	if old != nil {
+		old.running.Add(-1)
 		old.live.Add(-1)
 	}
 	gp.isolateGroup = next
 	if next != nil {
 		next.live.Add(1)
+		next.running.Add(1)
 	}
 	return unsafe.Pointer(old)
 }
@@ -73,6 +75,11 @@ func isolateSetGroup(p unsafe.Pointer) unsafe.Pointer {
 //go:linkname isolateGroupLive
 func isolateGroupLive(p unsafe.Pointer) int32 {
 	return (*isolateRevocationGroup)(p).live.Load()
+}
+
+//go:linkname isolateGroupRunning
+func isolateGroupRunning(p unsafe.Pointer) int32 {
+	return (*isolateRevocationGroup)(p).running.Load()
 }
 
 // isolateLargeAllocOrigin is a diagnostic for live large heap objects. Small

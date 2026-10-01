@@ -141,6 +141,10 @@ ordinary-Go execution remains unproved.**
       initialization and entry. Native children inherit membership, and an
       internal live count includes parked children; this is not quiescence or
       `Kill` support
+- [x] The runtime group also tracks goroutines associated with an execution
+      thread across dispatch, park, yield, exit, and coroutine switches. It
+      counts syscalls conservatively and is a diagnostic, not a revocation or
+      safe-teardown proof
 - [x] `Wait` reports a normal return, panic, or `Goexit` from the isolate
       program's main goroutine after `Done`; `New` returns an error for an
       initializer panic or `Goexit` without terminating its host caller.

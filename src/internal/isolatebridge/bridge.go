@@ -98,6 +98,11 @@ func (b *Boundary) RunOwner(fn func()) {
 // A zero count does not yet establish isolate quiescence.
 func (b *Boundary) LiveGoroutines() int32 { return groupLive(b.group) }
 
+// RunningGoroutines counts goroutines associated with an execution thread,
+// including blocked syscalls. A zero count is not yet safe teardown: waiters
+// and scheduler records still need ownership and revocation handling.
+func (b *Boundary) RunningGoroutines() int32 { return groupRunning(b.group) }
+
 // Commands returns the stream of host commands from this boundary.
 func (b *Boundary) Commands() <-chan *Command {
 	return b.calls
@@ -171,3 +176,6 @@ func setGroup(unsafe.Pointer) unsafe.Pointer
 
 //go:linkname groupLive runtime.isolateGroupLive
 func groupLive(unsafe.Pointer) int32
+
+//go:linkname groupRunning runtime.isolateGroupRunning
+func groupRunning(unsafe.Pointer) int32

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"internal/isolatebridge"
 	"isolate"
+	"iter"
 	"net/netip"
 	"runtime"
 	"strconv"
@@ -161,6 +162,9 @@ func TestBoundaryTracksNativeChildren(t *testing.T) {
 			if got := b.LiveGoroutines(); got != 1 {
 				t.Fatalf("nested Run counted %d goroutines, want 1", got)
 			}
+			if got := b.RunningGoroutines(); got != 1 {
+				t.Fatalf("nested Run counted %d running goroutines, want 1", got)
+			}
 			go func() {
 				defer close(exited)
 				close(ready)
@@ -170,10 +174,16 @@ func TestBoundaryTracksNativeChildren(t *testing.T) {
 			if got := b.LiveGoroutines(); got != 2 {
 				t.Fatalf("Run with parked child counted %d goroutines, want 2", got)
 			}
+			if got := b.RunningGoroutines(); got != 1 {
+				t.Fatalf("Run with parked child counted %d running goroutines, want 1", got)
+			}
 		})
 	})
 	if got := b.LiveGoroutines(); got != 1 {
 		t.Fatalf("after Run, live goroutines = %d, want parked child", got)
+	}
+	if got := b.RunningGoroutines(); got != 0 {
+		t.Fatalf("after Run, running goroutines = %d, want 0", got)
 	}
 	releaseChild()
 	<-exited
@@ -183,6 +193,44 @@ func TestBoundaryTracksNativeChildren(t *testing.T) {
 	}
 	if got := b.LiveGoroutines(); got != 0 {
 		t.Fatalf("after child exit, live goroutines = %d, want 0", got)
+	}
+	if got := b.RunningGoroutines(); got != 0 {
+		t.Fatalf("after child exit, running goroutines = %d, want 0", got)
+	}
+}
+
+func TestBoundaryCountsCoroutineSwitches(t *testing.T) {
+	b := isolatebridge.New()
+	b.Run(func() {
+		seq := iter.Seq[int](func(yield func(int) bool) {
+			if got := b.RunningGoroutines(); got != 1 {
+				t.Errorf("inside coroutine, running goroutines = %d, want 1", got)
+			}
+			yield(7)
+		})
+		next, stop := iter.Pull(seq)
+		if got := b.LiveGoroutines(); got != 2 {
+			t.Errorf("with parked coroutine, live goroutines = %d, want 2", got)
+		}
+		if got := b.RunningGoroutines(); got != 1 {
+			t.Errorf("with parked coroutine, running goroutines = %d, want 1", got)
+		}
+		if value, ok := next(); !ok || value != 7 {
+			t.Errorf("next = %d, %v, want 7, true", value, ok)
+		}
+		if got := b.RunningGoroutines(); got != 1 {
+			t.Errorf("after yield, running goroutines = %d, want 1", got)
+		}
+		stop()
+		if got := b.RunningGoroutines(); got != 1 {
+			t.Errorf("after stop, running goroutines = %d, want 1", got)
+		}
+	})
+	if got := b.LiveGoroutines(); got != 0 {
+		t.Errorf("after Run, live goroutines = %d, want 0", got)
+	}
+	if got := b.RunningGoroutines(); got != 0 {
+		t.Errorf("after Run, running goroutines = %d, want 0", got)
 	}
 }
 
