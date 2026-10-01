@@ -22,18 +22,20 @@ done
 The host forces a GC before and after creating the instances, keeps every
 instance reachable, and reports the `HeapAlloc`, `HeapObjects`, and
 `TotalAlloc` differences. Each variant runs in a fresh process. On Linux
-arm64 with the default JSON v2 experiment, two runs on 2026-10-01 agreed to
-within 1 byte per instance:
+arm64, after the host boundary moved to a `Call`-only API, two runs on
+2026-10-01 agreed to within 1 byte per instance:
 
 | Program import | Retained bytes/instance | Retained objects/instance | Allocated bytes/instance |
 |---|---:|---:|---:|
-| None | 538 | 11 | 610 |
-| `reflect` | 2,554 | 14 | 2,730 |
-| `encoding/json/jsontext` | 3,250 | 45 | 3,650 |
-| `encoding/json/v2` | 9,090 | 89 | 9,954 |
-| `encoding/json` | 9,402 | 93 | 11,274 |
+| None | 394 | 9 | 466 |
+| `reflect` | 2,410 | 12 | 2,586 |
+| `encoding/json/jsontext` | 3,106 | 43 | 3,506 |
+| `encoding/json/v2` | 8,946 | 87 | 9,810 |
+| `encoding/json` | 9,258 | 91 | 11,130 |
 
-The JSON program retains about 8.86 KB more per prepared instance than the
+Removing the unused Inbox channel and its initial message reduced every
+variant by about 144 retained bytes and two objects per instance. The JSON
+program retains about 8.86 KB more per prepared instance than the
 empty program. The inspector reads the current compiler descriptor and
 runtime type ABI; it reports fixed layout sizes of 1,448 bytes for `reflect`,
 40 for `encoding/json`, 96 for `encoding/json/internal`, 288 for
