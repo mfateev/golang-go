@@ -339,9 +339,12 @@ const (
 	isolateForeverRegistered
 	isolateForeverParked
 	isolateForeverReady
+	isolateChanSend
+	isolateChanReceive
+	isolateChanReady
 )
 
-func (group *isolateRevocationGroup) registerPark(gp *g, state uint8) bool {
+func (group *isolateRevocationGroup) registerPark(gp *g, state uint8, c *hchan) bool {
 	lockWithRank(&group.parkLock, lockRankIsolatePark)
 	if group.admission.Load()&isolateRevokedBit != 0 {
 		unlock(&group.parkLock)
@@ -351,6 +354,7 @@ func (group *isolateRevocationGroup) registerPark(gp *g, state uint8) bool {
 		throw("isolate: goroutine registered two parks")
 	}
 	gp.isolateParkState = state
+	gp.isolateParkChan = c
 	gp.isolateParkNext = group.parkWaits
 	if gp.isolateParkNext != nil {
 		gp.isolateParkNext.isolateParkPrev = gp
@@ -376,6 +380,7 @@ func (group *isolateRevocationGroup) removePark(gp *g) {
 		gp.isolateParkNext.isolateParkPrev = gp.isolateParkPrev
 	}
 	gp.isolateParkPrev, gp.isolateParkNext = nil, nil
+	gp.isolateParkChan = nil
 	gp.isolateParkState = isolateParkNone
 }
 
@@ -403,6 +408,11 @@ func isolateRevokeParkWaiters(group *isolateRevocationGroup) {
 		case isolateForeverParked:
 			gp.isolateParkState = isolateForeverReady
 			ready.push(gp)
+		case isolateChanSend, isolateChanReceive:
+			if isolateRevokeChannelPark(gp) {
+				gp.isolateParkState = isolateChanReady
+				ready.push(gp)
+			}
 		}
 	}
 	unlock(&group.parkLock)
@@ -448,7 +458,7 @@ func timeSleep(ns int64) {
 		resetForSleep(gp, nil)
 		gopark(nil, nil, waitReasonSleep, traceBlockSleep, 1)
 	} else {
-		if group := gp.isolateGroup; group != nil && !group.registerPark(gp, isolateSleepRegistered) {
+		if group := gp.isolateGroup; group != nil && !group.registerPark(gp, isolateSleepRegistered, nil) {
 			isolateExitIfRevoked()
 			throw("isolate: rejected sleep without revocation")
 		}

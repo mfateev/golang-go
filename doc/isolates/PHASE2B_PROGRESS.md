@@ -492,7 +492,8 @@ still need their own cleanup and post-wait fence. The complete `src/all.bash`
 suite passes after updating `go/build`'s declared dependencies for the
 provisional host `Kill` API.
 
-Ordinary channel send and receive now check revocation before the operation
+Ordinary channel send and receive initially checked revocation before the
+operation
 and after a parked wait has released its `sudog`, cleared the G waiting state,
 and adjusted timer-channel counts. A revoked waiter can finish its normal
 wakeup cleanup but exits before the next user instruction. Kill remains
@@ -625,9 +626,28 @@ Nil channel send and receive, an empty `select`, and a blocking `select` with
 only nil channels have no channel queue record to detach. They now register
 the G in the same group park list used by `time.Sleep`. Revocation cancels a
 park that has not committed or wakes a committed one. The resumed G removes
-its registration and exits before user code. Ordinary channel and multi-case
-select queue detachment remains separate work. The host Kill cases cover nil
-send and receive, an empty select, an all-nil select, and an empty reflected
-select. A direct Stop race covers revocation before or during park registration.
+its registration and exits before user code. Ordinary channel detachment is
+covered in the next section; multi-case select remains separate. The host
+Kill cases cover nil send and receive, an empty select, an all-nil select,
+and an empty reflected select. A direct Stop race covers revocation before
+or during park registration.
 The focused tests passed 100 race-detector runs with static lock ranking; the
 full isolate race suite passed 10 runs, and the Plan 9 runtime build passes.
+
+## Ordinary channel wait detachment
+
+Blocking channel send and receive now register the G and channel before
+locking the channel. Revocation holds the group park lock and the channel
+lock while removing a queued `sudog`. The channel lock prevents it from
+readying a G before `chanparkcommit` has parked it. If a peer or close has
+already dequeued the record, that operation retains responsibility for the
+wake. The resumed G unregisters before clearing `gp.waiting` and releasing
+its `sudog`, so revocation cannot inspect a record being recycled. Direct
+timer-channel receives follow the same path and perform normal timer wait
+count cleanup. Multi-case `select` queue detachment remains open.
+
+Tests cover send and receive, two waiters on one channel, direct timer-channel
+receive, close racing Stop, and a process waiter using the channel after the
+isolate waiter is detached. Focused tests passed 100 race-detector runs with
+`GOGC=1` and static lock ranking; the full isolate race suite passed 10 runs.
+The 32-bit G size was confirmed from the compiled runtime's DWARF record.

@@ -108,14 +108,16 @@ ordinary-Go execution remains unproved.**
       pending sleep timers and wakes their Gs early; a callback already in
       progress wakes its own G. Each G unregisters before exiting without
       returning to user code. Fake synctest timers retain ordinary wakeup;
-      timer-channel waits remain open
+      direct timer-channel receives use channel detachment; timer-channel
+      select cases remain open
 - [x] Nil channel send/receive and empty or all-nil `select` register a
       permanent park with the runtime group. Kill wakes parked Gs or cancels
       parks in progress; they unregister and exit before user code resumes
-- [x] Ordinary channel send and receive check revocation at entry and after
-      their normal parked-wait cleanup. A pending Kill can finish after a
-      channel wakeup without returning to user code; early waiter detachment
-      remains open
+- [x] Ordinary channel send and receive register with the group before
+      taking the channel lock. Kill detaches queued senders and receivers,
+      including direct timer-channel receives, and wakes their Gs. Peer wakes
+      that already removed a waiter finish normally; the G cleans its own
+      wait state and exits before user code. Multi-case select remains open
 - [x] Multi-case `select` checks revocation at entry and after removing all
       channel wait records on normal wakeup. A pending Kill can finish after
       a selected channel wakes; early waiter detachment remains open

@@ -16,7 +16,7 @@ func isolateParkForever(reason waitReason, traceReason traceBlockReason, tracesk
 		gopark(nil, nil, reason, traceReason, traceskip+1)
 		throw("isolate: permanent park returned without a group")
 	}
-	if !group.registerPark(gp, isolateForeverRegistered) {
+	if !group.registerPark(gp, isolateForeverRegistered, nil) {
 		isolateExitIfRevoked()
 		throw("isolate: rejected permanent park without revocation")
 	}

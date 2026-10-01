@@ -64,7 +64,7 @@ NONE < timerSend;
 
 # Scheduler, timers, netpoll
 NONE < allocmW, execW, cpuprof, pollCache, pollDesc, isolatePark, wakeableSleep;
-scavenge, sweep, testR, wakeableSleep, timerSend < hchan;
+scavenge, sweep, testR, isolatePark, wakeableSleep, timerSend < hchan;
 assistQueue,
   cleanupQueue,
   computeMaxProcs,

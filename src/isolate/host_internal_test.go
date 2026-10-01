@@ -93,7 +93,7 @@ func TestKillStopsCallWaiter(t *testing.T) {
 	}
 }
 
-func TestKillPendingOnChannelWait(t *testing.T) {
+func TestKillWakesChannelWait(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	var resumed atomic.Bool
@@ -120,14 +120,16 @@ func TestKillPendingOnChannelWait(t *testing.T) {
 	if i.boundary.RunningGoroutines() != 0 || i.boundary.LiveGoroutines() != 1 {
 		t.Fatal("main did not park on channel")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	err = i.Kill(ctx)
-	var pending *KillPendingError
-	if !errors.As(err, &pending) || pending.LiveGoroutines == 0 {
-		t.Fatalf("Kill on channel wait = %v, want pending live goroutine", err)
+	if err := i.Kill(ctx); err != nil {
+		t.Fatalf("Kill on channel wait = %v", err)
 	}
-	close(release)
+	select {
+	case release <- struct{}{}:
+		t.Fatal("revoked receive remained queued")
+	default:
+	}
 	if err := i.Wait(); err != errMainRevoked {
 		t.Fatalf("Wait after revoked channel receive = %v, want %v", err, errMainRevoked)
 	}
@@ -136,6 +138,90 @@ func TestKillPendingOnChannelWait(t *testing.T) {
 	}
 	if err := i.Kill(context.Background()); err != nil {
 		t.Fatalf("Kill after exit = %v", err)
+	}
+}
+
+func TestKillWakesMultipleChannelWaiters(t *testing.T) {
+	release := make(chan struct{})
+	entered := make(chan struct{}, 2)
+	var resumed atomic.Bool
+	wait := func() {
+		entered <- struct{}{}
+		<-release
+		resumed.Store(true)
+	}
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main: func() {
+			go wait()
+			wait()
+		},
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	<-entered
+	deadline := time.Now().Add(time.Second)
+	for i.boundary.RunningGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if i.boundary.RunningGoroutines() != 0 || i.boundary.LiveGoroutines() != 2 {
+		t.Fatal("both channel waiters did not park")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := i.Kill(ctx); err != nil {
+		t.Fatalf("Kill with two channel waiters = %v", err)
+	}
+	if err := i.Wait(); err != errMainRevoked {
+		t.Fatalf("Wait after channel revocation = %v, want %v", err, errMainRevoked)
+	}
+	if resumed.Load() || i.boundary.LiveGoroutines() != 0 {
+		t.Fatalf("channel returned=%t, live=%d", resumed.Load(), i.boundary.LiveGoroutines())
+	}
+}
+
+func TestKillWakesTimerChannelReceive(t *testing.T) {
+	entered := make(chan struct{})
+	var resumed atomic.Bool
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main: func() {
+			close(entered)
+			<-time.After(time.Hour)
+			resumed.Store(true)
+		},
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	deadline := time.Now().Add(time.Second)
+	for i.boundary.RunningGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if i.boundary.RunningGoroutines() != 0 || i.boundary.LiveGoroutines() != 1 {
+		t.Fatal("timer channel receive did not park")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := i.Kill(ctx); err != nil {
+		t.Fatalf("Kill during timer receive = %v", err)
+	}
+	if err := i.Wait(); err != errMainRevoked {
+		t.Fatalf("Wait after timer channel revocation = %v, want %v", err, errMainRevoked)
+	}
+	if resumed.Load() {
+		t.Fatal("timer channel receive returned to user code")
 	}
 }
 

@@ -174,6 +174,23 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 		isolateParkForever(waitReasonChanSendNilChan, traceBlockForever, 2)
 		throw("unreachable")
 	}
+	gp := getg()
+	var group *isolateRevocationGroup
+	if block {
+		group = gp.isolateGroup
+	}
+	if group != nil {
+		// Revocation takes the group park lock before the channel lock.
+		if !group.registerPark(gp, isolateChanSend, c) {
+			isolateExitIfRevoked()
+			throw("isolate: rejected channel send without revocation")
+		}
+		defer func() {
+			if group != nil {
+				group.unregisterPark(gp)
+			}
+		}()
+	}
 
 	if debugChan {
 		print("chansend: chan=", c, "\n")
@@ -213,9 +230,14 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 	}
 
 	lock(&c.lock)
+	if group != nil && group.admission.Load()&isolateRevokedBit != 0 {
+		unlock(&c.lock)
+		isolateExitIfRevoked()
+	}
 
 	if c.closed != 0 {
 		unlock(&c.lock)
+		isolateChannelFinish(&group, gp)
 		panic(plainError("send on closed channel"))
 	}
 
@@ -223,6 +245,7 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 		// Found a waiting receiver. We pass the value we want to send
 		// directly to the receiver, bypassing the channel buffer (if any).
 		send(c, sg, ep, func() { unlock(&c.lock) }, 3)
+		isolateChannelFinish(&group, gp)
 		return true
 	}
 
@@ -239,6 +262,7 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 		}
 		c.qcount++
 		unlock(&c.lock)
+		isolateChannelFinish(&group, gp)
 		return true
 	}
 
@@ -248,7 +272,6 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 	}
 
 	// Block on the channel. Some receiver will complete our operation for us.
-	gp := getg()
 	mysg := acquireSudog()
 	mysg.releasetime = 0
 	if t0 != 0 {
@@ -274,6 +297,7 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 		reason = waitReasonSynctestChanSend
 	}
 	gopark(chanparkcommit, unsafe.Pointer(&c.lock), reason, traceBlockChanSend, 2)
+	isolateChannelUnregister(&group, gp)
 	// Ensure the value being sent is kept alive until the
 	// receiver copies it out. The sudog has a pointer to the
 	// stack object, but sudogs aren't considered as roots of the
@@ -531,6 +555,23 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 		isolateParkForever(waitReasonChanReceiveNilChan, traceBlockForever, 2)
 		throw("unreachable")
 	}
+	gp := getg()
+	var group *isolateRevocationGroup
+	if block {
+		group = gp.isolateGroup
+	}
+	if group != nil {
+		// Revocation takes the group park lock before the channel lock.
+		if !group.registerPark(gp, isolateChanReceive, c) {
+			isolateExitIfRevoked()
+			throw("isolate: rejected channel receive without revocation")
+		}
+		defer func() {
+			if group != nil {
+				group.unregisterPark(gp)
+			}
+		}()
+	}
 
 	if c.bubble != nil && getg().bubble != c.bubble {
 		fatal("receive on synctest channel from outside bubble")
@@ -579,6 +620,10 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 	}
 
 	lock(&c.lock)
+	if group != nil && group.admission.Load()&isolateRevokedBit != 0 {
+		unlock(&c.lock)
+		isolateExitIfRevoked()
+	}
 
 	if c.closed != 0 {
 		if c.qcount == 0 {
@@ -589,6 +634,7 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 			if ep != nil {
 				typedmemclr(c.elemtype, ep)
 			}
+			isolateChannelFinish(&group, gp)
 			return true, false
 		}
 		// The channel has been closed, but the channel's buffer have data.
@@ -600,6 +646,7 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 			// and add sender's value to the tail of the queue (both map to
 			// the same buffer slot because the queue is full).
 			recv(c, sg, ep, func() { unlock(&c.lock) }, 3)
+			isolateChannelFinish(&group, gp)
 			return true, true
 		}
 	}
@@ -620,6 +667,7 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 		}
 		c.qcount--
 		unlock(&c.lock)
+		isolateChannelFinish(&group, gp)
 		return true, true
 	}
 
@@ -629,7 +677,6 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 	}
 
 	// no sender available: block on this channel.
-	gp := getg()
 	mysg := acquireSudog()
 	mysg.releasetime = 0
 	if t0 != 0 {
@@ -660,6 +707,7 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 		reason = waitReasonSynctestChanReceive
 	}
 	gopark(chanparkcommit, unsafe.Pointer(&c.lock), reason, traceBlockChanRecv, 2)
+	isolateChannelUnregister(&group, gp)
 
 	// someone woke us up
 	if mysg != gp.waiting {
@@ -759,6 +807,61 @@ func chanparkcommit(gp *g, chanLock unsafe.Pointer) bool {
 	// the unlock is visible (even to gp itself).
 	unlock((*mutex)(chanLock))
 	return true
+}
+
+// isolateRevokeChannelPark is called with the group park lock held. The
+// channel lock keeps a queued sudog in place until its G has committed to
+// parking. A peer that has already dequeued it remains responsible for the
+// wake; otherwise revocation removes and wakes it.
+func isolateRevokeChannelPark(gp *g) bool {
+	assertLockHeld(&gp.isolateGroup.parkLock)
+	c := gp.isolateParkChan
+	if c == nil {
+		throw("isolate: channel park without channel")
+	}
+	lock(&c.lock)
+	sg := gp.waiting
+	if sg == nil {
+		unlock(&c.lock)
+		return false
+	}
+	if sg.isSelect || sg.c.get() != c {
+		throw("isolate: channel park has wrong sudog")
+	}
+	q := &c.recvq
+	if gp.isolateParkState == isolateChanSend {
+		q = &c.sendq
+	}
+	if sg.prev == nil && sg.next == nil && q.first != sg {
+		unlock(&c.lock)
+		return false
+	}
+	q.dequeueSudoG(sg)
+	sg.elem.set(nil)
+	sg.success = false
+	if sg.releasetime != 0 {
+		sg.releasetime = cputicks()
+	}
+	gp.param = unsafe.Pointer(sg)
+	unlock(&c.lock)
+	return true
+}
+
+// isolateChannelUnregister prevents revocation from inspecting gp.waiting
+// while the resumed G clears and releases its sudog.
+func isolateChannelUnregister(group **isolateRevocationGroup, gp *g) {
+	if *group != nil {
+		owner := *group
+		*group = nil
+		owner.unregisterPark(gp)
+	}
+}
+
+func isolateChannelFinish(group **isolateRevocationGroup, gp *g) {
+	if *group != nil {
+		isolateChannelUnregister(group, gp)
+		isolateExitIfRevoked()
+	}
 }
 
 // compiler implements

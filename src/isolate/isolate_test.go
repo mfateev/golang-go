@@ -558,20 +558,105 @@ func TestRevokedChannelWaitDoesNotResumeUserCode(t *testing.T) {
 				t.Fatalf("channel operation did not park: live=%d running=%d", b.LiveGoroutines(), b.RunningGoroutines())
 			}
 			b.Stop()
-			if name == "receive" {
-				ch <- 1
-			} else {
-				<-ch
-			}
 			select {
 			case <-exited:
 			case <-time.After(5 * time.Second):
-				t.Fatal("channel waiter did not exit after wakeup")
+				t.Fatal("channel waiter did not exit after revocation")
+			}
+			if name == "receive" {
+				select {
+				case ch <- 1:
+					t.Fatal("revoked receive remained queued")
+				default:
+				}
+			} else {
+				select {
+				case <-ch:
+					t.Fatal("revoked send remained queued")
+				default:
+				}
 			}
 			if resumed.Load() {
 				t.Fatal("channel operation returned to user code after revocation")
 			}
 		})
+	}
+}
+
+func TestChannelRevocationCloseRace(t *testing.T) {
+	for n := 0; n < 200; n++ {
+		b := isolatebridge.New()
+		ch := make(chan int)
+		entered := make(chan struct{})
+		exited := make(chan struct{})
+		go func() {
+			defer close(exited)
+			b.Run(func() {
+				close(entered)
+				<-ch
+			})
+		}()
+		<-entered
+		closed := make(chan struct{})
+		go func() {
+			close(ch)
+			close(closed)
+		}()
+		b.Stop()
+		<-closed
+		select {
+		case <-exited:
+		case <-time.After(5 * time.Second):
+			t.Fatal("channel waiter did not exit after close or revocation")
+		}
+	}
+}
+
+func TestChannelRevocationLeavesProcessWaiter(t *testing.T) {
+	b := isolatebridge.New()
+	ch := make(chan int)
+	entered := make(chan struct{})
+	exited := make(chan struct{})
+	go func() {
+		defer close(exited)
+		b.Run(func() {
+			close(entered)
+			<-ch
+		})
+	}()
+	<-entered
+	deadline := time.Now().Add(time.Second)
+	for b.RunningGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if b.RunningGoroutines() != 0 {
+		t.Fatal("isolate waiter did not park")
+	}
+	hostEntered := make(chan struct{})
+	hostReceived := make(chan int, 1)
+	go func() {
+		close(hostEntered)
+		hostReceived <- <-ch
+	}()
+	<-hostEntered
+	b.Stop()
+	select {
+	case <-exited:
+	case <-time.After(5 * time.Second):
+		t.Fatal("isolate waiter did not exit")
+	}
+	select {
+	case ch <- 7:
+	case <-time.After(5 * time.Second):
+		t.Fatal("process waiter did not remain on channel")
+	}
+	select {
+	case got := <-hostReceived:
+		if got != 7 {
+			t.Fatalf("process waiter received %d, want 7", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("process waiter did not receive")
 	}
 }
 
