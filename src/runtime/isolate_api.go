@@ -41,6 +41,40 @@ func isolateSetOwner(id uintptr) uintptr {
 	return old
 }
 
+// These hooks attach the existing first-dispatch experiment to an actual
+// trusted instance. A live count alone is not quiescence or kill support.
+
+//go:linkname isolateNewGroup
+func isolateNewGroup() unsafe.Pointer {
+	return unsafe.Pointer(new(isolateRevocationGroup))
+}
+
+//go:linkname isolateSetGroup
+func isolateSetGroup(p unsafe.Pointer) unsafe.Pointer {
+	gp := getg()
+	old := gp.isolateGroup
+	next := (*isolateRevocationGroup)(p)
+	if old == next {
+		return unsafe.Pointer(old)
+	}
+	if old != nil && next != nil {
+		panic("isolate: cannot nest different goroutine groups")
+	}
+	if old != nil {
+		old.live.Add(-1)
+	}
+	gp.isolateGroup = next
+	if next != nil {
+		next.live.Add(1)
+	}
+	return unsafe.Pointer(old)
+}
+
+//go:linkname isolateGroupLive
+func isolateGroupLive(p unsafe.Pointer) int32 {
+	return (*isolateRevocationGroup)(p).live.Load()
+}
+
 // isolateLargeAllocOrigin is a diagnostic for live large heap objects. Small
 // object spans still mix allocation contexts and cannot report an owner.
 //

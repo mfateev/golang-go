@@ -381,3 +381,20 @@ this audit does not classify either package as fully supported. The 10,000
 prepared-instance harness measures `time` at about 1.81 KB total per instance,
 roughly 1.42 KB more than the empty program; its fixed global layout is 584
 bytes. The default JSON variants also reach `time`, raising their eager floors.
+
+## Native goroutine group attachment
+
+The trusted boundary now allocates one runtime goroutine group per instance.
+`RunOwner` and `Run` attach that group while executing the initializer and
+program entry. Native child goroutines inherit it through `newproc1`, and the
+runtime decrements its live counter when each child is destroyed. Nested entry
+into the same boundary does not count the current goroutine twice; entry into
+a different instance's group panics. An internal diagnostic can read the live
+count. A focused race test parks a child after its parent returns and checks
+that the count drops after the child exits; it passed 100 runs. The complete
+native `runtime` suite and focused static-program script also passed.
+
+This count is not quiescence: it includes an attached host goroutine during
+initialization or a direct boundary run, and it does not track timer work,
+running state, or every scheduler wakeup. No host `Kill` claim follows from it.
+Its prepared-instance cost is about 24 retained bytes and one object.

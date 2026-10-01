@@ -20,6 +20,7 @@ import (
 // infrastructure for the Phase 2B API probe, not a contained isolate heap.
 type Boundary struct {
 	owner uintptr
+	group unsafe.Pointer
 	calls chan *Command
 	next  atomic.Uint64
 }
@@ -51,6 +52,7 @@ func New() *Boundary {
 	}
 	b := &Boundary{
 		owner: owner,
+		group: newGroup(),
 		calls: make(chan *Command),
 	}
 	return b
@@ -63,6 +65,8 @@ func (b *Boundary) Run(fn func()) {
 	if b == nil || fn == nil {
 		panic("isolate: nil boundary or entry")
 	}
+	oldGroup := setGroup(b.group)
+	defer setGroup(oldGroup)
 	oldOwner := setOwner(b.owner)
 	defer setOwner(oldOwner)
 	old := setBoundary(unsafe.Pointer(b))
@@ -79,6 +83,8 @@ func (b *Boundary) RunOwner(fn func()) {
 	if b == nil || fn == nil {
 		panic("isolate: nil boundary or initializer")
 	}
+	oldGroup := setGroup(b.group)
+	defer setGroup(oldGroup)
 	old := setOwner(b.owner)
 	defer func() {
 		setOwner(old)
@@ -86,6 +92,11 @@ func (b *Boundary) RunOwner(fn func()) {
 	}()
 	fn()
 }
+
+// LiveGoroutines counts goroutines currently attached to this boundary's
+// group. It includes a host goroutine while Run or RunOwner is executing.
+// A zero count does not yet establish isolate quiescence.
+func (b *Boundary) LiveGoroutines() int32 { return groupLive(b.group) }
 
 // Commands returns the stream of host commands from this boundary.
 func (b *Boundary) Commands() <-chan *Command {
@@ -151,3 +162,12 @@ func setBoundary(unsafe.Pointer) unsafe.Pointer
 
 //go:linkname setOwner runtime.isolateSetOwner
 func setOwner(uintptr) uintptr
+
+//go:linkname newGroup runtime.isolateNewGroup
+func newGroup() unsafe.Pointer
+
+//go:linkname setGroup runtime.isolateSetGroup
+func setGroup(unsafe.Pointer) unsafe.Pointer
+
+//go:linkname groupLive runtime.isolateGroupLive
+func groupLive(unsafe.Pointer) int32

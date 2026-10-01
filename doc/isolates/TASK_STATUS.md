@@ -137,6 +137,10 @@ ordinary-Go execution remains unproved.**
 - [x] The static package-state probe now selects `time` globals. The build
       script checks `time.Local` starts fresh in two instances and leaves the
       host value intact; runtime timers and clocks remain outside this result
+- [x] A trusted instance now attaches the runtime goroutine group during
+      initialization and entry. Native children inherit membership, and an
+      internal live count includes parked children; this is not quiescence or
+      `Kill` support
 - [x] Direct-toolchain static probe linked two separately compiled configured
       `package main` directories into one host and ran both through the
       trusted `Call` boundary (the original probe also had `Inbox`)

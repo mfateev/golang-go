@@ -113,6 +113,59 @@ func TestCallReceivesHostRequests(t *testing.T) {
 	}
 }
 
+func TestBoundaryTracksNativeChildren(t *testing.T) {
+	b := isolatebridge.New()
+	release := make(chan struct{})
+	releaseChild := sync.OnceFunc(func() { close(release) })
+	defer releaseChild()
+	ready := make(chan struct{})
+	exited := make(chan struct{})
+	b.RunOwner(func() {
+		b.Run(func() {
+			if got := b.LiveGoroutines(); got != 1 {
+				t.Fatalf("nested Run counted %d goroutines, want 1", got)
+			}
+			go func() {
+				defer close(exited)
+				close(ready)
+				<-release
+			}()
+			<-ready
+			if got := b.LiveGoroutines(); got != 2 {
+				t.Fatalf("Run with parked child counted %d goroutines, want 2", got)
+			}
+		})
+	})
+	if got := b.LiveGoroutines(); got != 1 {
+		t.Fatalf("after Run, live goroutines = %d, want parked child", got)
+	}
+	releaseChild()
+	<-exited
+	deadline := time.Now().Add(time.Second)
+	for b.LiveGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if got := b.LiveGoroutines(); got != 0 {
+		t.Fatalf("after child exit, live goroutines = %d, want 0", got)
+	}
+}
+
+func TestBoundaryRejectsNestedOtherInstance(t *testing.T) {
+	first, second := isolatebridge.New(), isolatebridge.New()
+	first.Run(func() {
+		defer func() {
+			got, ok := recover().(string)
+			if !ok || got != "isolate: cannot nest different goroutine groups" {
+				t.Errorf("nested boundary panic = %v", got)
+			}
+		}()
+		second.Run(func() { t.Error("nested instance ran") })
+	})
+	if first.LiveGoroutines() != 0 || second.LiveGoroutines() != 0 {
+		t.Fatalf("leaked group membership: first=%d second=%d", first.LiveGoroutines(), second.LiveGoroutines())
+	}
+}
+
 func TestConcurrentCallsKeepTheirReplies(t *testing.T) {
 	b := isolatebridge.New()
 	done := make(chan string, 2)

@@ -13,7 +13,8 @@ import (
 	"unsafe"
 )
 
-// isolateRevocationGroup is the first-dispatch experiment for Phase 2B.
+// isolateRevocationGroup tracks live goroutines and the first-dispatch
+// revocation experiment for Phase 2B.
 // The high bit of admission records revocation; the low bits count goroutines
 // admitted at first dispatch and not yet destroyed. A complete isolate also
 // needs ownership of parked waiters and an execution count before Kill can
@@ -574,8 +575,8 @@ type g struct {
 	isolateE4Base   unsafe.Pointer          // tagged Phase 0 global-base experiment
 	isolateE4Bases  unsafe.Pointer          // tagged Phase 2B package-state table probe
 	isolateOwner    uintptr                 // monotonic trusted instance ID for future heap ownership
-	isolateBoundary unsafe.Pointer          // provisional host transport for Call and Inbox
-	isolateGroup    *isolateRevocationGroup // tagged Phase 2B first-dispatch experiment
+	isolateBoundary unsafe.Pointer          // provisional host transport for Call
+	isolateGroup    *isolateRevocationGroup // Phase 2B live count and first-dispatch experiment
 	isolateStarted  bool
 	isolateAdmitted bool
 	timer           *timer        // cached timer for time.Sleep
