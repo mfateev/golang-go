@@ -50,6 +50,7 @@ type Isolate struct {
 var errMainPanicked = errors.New("isolate: main panicked")
 var errMainExited = errors.New("isolate: main goroutine exited without returning")
 var errInitializerPanicked = errors.New("isolate: package initializer panicked")
+var errInitializerExited = errors.New("isolate: package initializer goroutine exited without returning")
 
 // New prepares an instance. Its program can request initial input with Call.
 func New(cfg Config) (*Isolate, error) {
@@ -59,14 +60,25 @@ func New(cfg Config) (*Isolate, error) {
 	boundary := isolatebridge.New()
 	var runState func(func())
 	var err error
-	boundary.RunOwner(func() {
-		defer func() {
-			if recover() != nil {
-				err = errInitializerPanicked
-			}
-		}()
-		runState, err = cfg.Program.entry.NewState()
-	})
+	// Initializers can call runtime.Goexit. Run them on a dedicated goroutine
+	// so that doing so does not terminate the host goroutine calling New.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		boundary.RunOwner(func() {
+			returned := false
+			defer func() {
+				if recover() != nil {
+					err = errInitializerPanicked
+				} else if !returned {
+					err = errInitializerExited
+				}
+			}()
+			runState, err = cfg.Program.entry.NewState()
+			returned = true
+		})
+	}()
+	<-done
 	if err != nil {
 		return nil, err
 	}

@@ -143,8 +143,9 @@ ordinary-Go execution remains unproved.**
       `Kill` support
 - [x] `Wait` reports a normal return, panic, or `Goexit` from the isolate
       program's main goroutine after `Done`; `New` returns an error for an
-      initializer panic. Child goroutine panics remain a process-wide failure
-      until native lifecycle handling exists
+      initializer panic or `Goexit` without terminating its host caller.
+      Child goroutine panics remain a process-wide failure until native
+      lifecycle handling exists
 - [x] Direct-toolchain static probe linked two separately compiled configured
       `package main` directories into one host and ran both through the
       trusted `Call` boundary (the original probe also had `Inbox`)

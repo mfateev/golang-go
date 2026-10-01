@@ -422,21 +422,29 @@ func TestMainFailureReportedToHost(t *testing.T) {
 }
 
 func TestInitializerPanicReportedToHost(t *testing.T) {
-	name := "test-initializer-failure-" + strconv.FormatUint(ownerTestSequence.Add(1), 10)
-	isolatebridge.RegisterProgram(name, isolatebridge.ProgramEntry{
-		NewState: func() (func(func()), error) { panic("boom") },
-		Main:     func() {},
-	})
-	program, ok := isolate.LookupProgram(name)
-	if !ok {
-		t.Fatal("missing test program")
-	}
-	instance, err := isolate.New(isolate.Config{Program: program})
-	if instance != nil || err == nil || err.Error() != "isolate: package initializer panicked" {
-		t.Fatalf("New = %v, %v, want initializer failure", instance, err)
-	}
-	if owner := runtimeOwner(); owner != 0 {
-		t.Fatalf("owner after failed New = %d, want process owner", owner)
+	for _, tt := range []struct {
+		name string
+		init func() (func(func()), error)
+		want string
+	}{
+		{"panic", func() (func(func()), error) { panic("boom") }, "isolate: package initializer panicked"},
+		{"Goexit", func() (func(func()), error) { runtime.Goexit(); return nil, nil }, "isolate: package initializer goroutine exited without returning"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			name := "test-initializer-failure-" + strconv.FormatUint(ownerTestSequence.Add(1), 10)
+			isolatebridge.RegisterProgram(name, isolatebridge.ProgramEntry{NewState: tt.init, Main: func() {}})
+			program, ok := isolate.LookupProgram(name)
+			if !ok {
+				t.Fatal("missing test program")
+			}
+			instance, err := isolate.New(isolate.Config{Program: program})
+			if instance != nil || err == nil || err.Error() != tt.want {
+				t.Fatalf("New = %v, %v, want %q", instance, err, tt.want)
+			}
+			if owner := runtimeOwner(); owner != 0 {
+				t.Fatalf("owner after failed New = %d, want process owner", owner)
+			}
+		})
 	}
 }
 

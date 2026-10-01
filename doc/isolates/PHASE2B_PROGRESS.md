@@ -405,7 +405,7 @@ The trusted host API now has `Wait`, which observes `Done` and returns a
 process-owned error when the program's main goroutine panics or calls
 `runtime.Goexit`. The error contains no panic value, so an isolate-owned
 pointer or a user-defined formatter cannot escape through it. A focused test
-checks normal return, panic, and `Goexit`. `New` also catches a panic during
-selected package initialization and returns a process-owned error. This does
-not catch panics in native child goroutines, `Goexit` during synchronous
-initialization, detach waiters, or reclaim instance memory.
+checks normal return, panic, and `Goexit`. `New` runs selected package
+initialization on a dedicated goroutine, returning a process-owned error for
+panic or `Goexit` without exiting its host caller. This does not catch panics
+in native child goroutines, detach waiters, or reclaim instance memory.
