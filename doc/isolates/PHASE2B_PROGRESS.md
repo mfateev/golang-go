@@ -438,6 +438,16 @@ also still reference instance records. `Kill(ctx)` therefore remains open.
 The waiter inventory and required detach order are in
 [RUNTIME_REVOCATION.md](./RUNTIME_REVOCATION.md).
 
+The group now also counts goroutines entering and leaving `_Grunnable` at the
+runtime status transition. It increments before a G can become runnable and
+decrements after that G leaves the state, so a transition may briefly
+overcount. The trusted boundary exposes this as a diagnostic; a 100-run race
+test checks one native child while parked, after a channel wakeup, and after
+exit. The full `isolate` race suite passed 10 runs, and the complete Linux
+arm64 `src/all.bash` suite passed. This count does not include timer work or
+host commands, and the current goroutine group still lacks a quiescence or
+suspend decision.
+
 The trusted host lifecycle now calls the existing atomic group revocation
 hook when `main` exits or instance preparation fails. This blocks a child
 created later by an already parked goroutine from entering its first user

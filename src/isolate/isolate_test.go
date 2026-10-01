@@ -323,6 +323,46 @@ func TestBoundaryTracksNativeChildren(t *testing.T) {
 	}
 }
 
+func TestBoundaryCountsRunnableChildren(t *testing.T) {
+	oldProcs := runtime.GOMAXPROCS(1)
+	defer runtime.GOMAXPROCS(oldProcs)
+	b := isolatebridge.New()
+	release := make(chan struct{})
+	releaseChild := sync.OnceFunc(func() { close(release) })
+	defer releaseChild()
+	started := make(chan struct{})
+	exited := make(chan struct{})
+	b.Run(func() {
+		go func() {
+			defer close(exited)
+			close(started)
+			<-release
+		}()
+	})
+	<-started
+	deadline := time.Now().Add(time.Second)
+	for b.RunningGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if b.LiveGoroutines() != 1 || b.RunningGoroutines() != 0 || b.RunnableGoroutines() != 0 {
+		t.Fatalf("parked child: live=%d running=%d runnable=%d, want 1, 0, 0",
+			b.LiveGoroutines(), b.RunningGoroutines(), b.RunnableGoroutines())
+	}
+	releaseChild()
+	if got := b.RunnableGoroutines(); got != 1 {
+		t.Fatalf("readied child: runnable=%d, want 1", got)
+	}
+	<-exited
+	deadline = time.Now().Add(time.Second)
+	for b.LiveGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if b.LiveGoroutines() != 0 || b.RunnableGoroutines() != 0 {
+		t.Fatalf("exited child: live=%d runnable=%d, want 0, 0",
+			b.LiveGoroutines(), b.RunnableGoroutines())
+	}
+}
+
 func TestBoundaryRevokesUnstartedChildren(t *testing.T) {
 	b := isolatebridge.New()
 	var release atomic.Bool

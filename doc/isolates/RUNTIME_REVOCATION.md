@@ -3,11 +3,11 @@
 This is the implementation checklist for the trusted MVP's whole-isolate
 `Kill(ctx)`. The provisional host method stops `Call` waits and waits for the
 runtime group's live count; unrelated waits can resume while it is pending.
-The group has a first-dispatch admission bit, a live goroutine count, and a
-count of goroutines associated with an M. None is yet a safe teardown
-condition. See [ISOLATE_API.md](./ISOLATE_API.md) for the
-requested host contract and [PHASE2B_PROGRESS.md](./PHASE2B_PROGRESS.md) for
-the implemented probes.
+The group has a first-dispatch admission bit, a live goroutine count, a
+conservative runnable count, and a count of goroutines associated with an M.
+None is yet a safe teardown condition. See [ISOLATE_API.md](./ISOLATE_API.md)
+for the requested host contract and
+[PHASE2B_PROGRESS.md](./PHASE2B_PROGRESS.md) for the implemented probes.
 
 ## Required order
 

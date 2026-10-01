@@ -1306,6 +1306,13 @@ func casgstatus(gp *g, oldval, newval uint32) {
 			throw("casgstatus: bad incoming values")
 		})
 	}
+	// Publish a new runnable member before its status can become runnable.
+	// Decrement only after it has left that state. A concurrent observer may
+	// overcount during a transition, but cannot miss a runnable member here.
+	group := gp.isolateGroup
+	if group != nil && newval == _Grunnable {
+		group.runnable.Add(1)
+	}
 
 	lockWithRankMayAcquire(nil, lockRankGscan)
 
@@ -1334,6 +1341,9 @@ func casgstatus(gp *g, oldval, newval uint32) {
 			osyield()
 			nextYield = nanotime() + yieldDelay/2
 		}
+	}
+	if group != nil && oldval == _Grunnable {
+		group.runnable.Add(-1)
 	}
 
 	if gp.bubble != nil {

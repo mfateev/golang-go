@@ -23,6 +23,7 @@ type isolateRevocationGroup struct {
 	admission atomic.Uint64
 	live      atomic.Int32
 	running   atomic.Int32 // Goroutines associated with an M, including syscalls.
+	runnable  atomic.Int32 // Conservative count of group Gs in or entering _Grunnable.
 }
 
 // defined constants

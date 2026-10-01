@@ -82,6 +82,11 @@ func isolateGroupRunning(p unsafe.Pointer) int32 {
 	return (*isolateRevocationGroup)(p).running.Load()
 }
 
+//go:linkname isolateGroupRunnable
+func isolateGroupRunnable(p unsafe.Pointer) int32 {
+	return (*isolateRevocationGroup)(p).runnable.Load()
+}
+
 //go:linkname isolateRevokeUnstarted
 func isolateRevokeUnstarted(p unsafe.Pointer) {
 	(*isolateRevocationGroup)(p).revoke()

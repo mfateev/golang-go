@@ -168,6 +168,10 @@ ordinary-Go execution remains unproved.**
       initialization and entry. Native children inherit membership, and an
       internal live count includes parked children; this is not quiescence or
       `Kill` support
+- [x] The group now conservatively counts goroutines transitioning into and
+      out of the runnable scheduler state. A 100-run race test covers a
+      parked child, wakeup, and exit; this is still a diagnostic, not a
+      quiescence decision
 - [x] The runtime group also tracks goroutines associated with an execution
       thread across dispatch, park, yield, exit, and coroutine switches. It
       counts syscalls conservatively and is a diagnostic, not a revocation or
