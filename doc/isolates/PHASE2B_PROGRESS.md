@@ -359,3 +359,20 @@ or lazy materialization to meet the density target.
 The generic layout change passed `src/make.bash`, the focused static-build
 script and tagged generic compiler test, a standalone `-race` build/run, and
 a complete Linux arm64 `src/all.bash` run.
+
+## `time` and `context` ownership audit
+
+`context` mostly keeps identity sentinels in package globals: `Canceled`,
+`DeadlineExceeded`, `cancelCtxKey`, and the permanently closed `closedchan`.
+Its `goroutines` counter is diagnostic. The mutable cancellation graph lives
+in allocated context values, not a package-global registry. Selecting all of
+`context` would duplicate those identities without solving callback ownership.
+
+`time` has different state. `Local` and its zone caches initialize lazily from
+the process environment or zone files. `startNano` is initialized from the
+process monotonic clock. Those globals and the runtime timer heap are still
+process-scoped in the current probe. `time.AfterFunc` and the `context`
+callback paths now reject registration from an active isolate when the later
+callback could start with process ownership. `time.NewTimer`, `time.Sleep`,
+`time.Now`, and zone loading still need an isolate clock and effect policy;
+this audit does not classify either package as fully supported.
