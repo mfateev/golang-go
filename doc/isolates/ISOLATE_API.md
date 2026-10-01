@@ -234,15 +234,33 @@ a trusted, per-goroutine [boundary probe](../../src/internal/isolatebridge/bridg
 The static build generates the program selector, and the current host API
 provides `New`, `Start`, `Commands`, `Send`, and `Done`. The probe copies byte
 payloads and correlates concurrent calls, including calls from native child
-goroutines. The build now gives each configured program and its reachable
-non-standard packages separate initialized global layouts per instance.
-Standard-library packages still have process-wide state. The transport uses
+goroutines. The build now gives each configured program, its reachable
+non-standard packages, and selected standard packages separate initialized
+global layouts per instance. Unselected standard-library packages still have
+process-wide state. The transport uses
 ordinary Go channels and the shared heap; native isolate ownership,
 deterministic scheduling, and the final host command queue remain to be
 implemented.
-The Phase 1
-`internal/isolateproto.Register` and `Entry` model remains a reference-model
-dispatch mechanism, not this source contract.
+
+### What `internal/isolateproto` models
+
+`internal/isolateproto` is the earlier Phase 1 reference model, not the
+isolate-side API above. It uses explicit types so it can test scheduling
+rules before the native runtime implements them:
+
+| Reference-model type | Role |
+|---|---|
+| `Isolate` | Holds one cooperative scheduler, logical clock, input, and result. The host calls `Resume` with events and receives a state and outstanding commands. |
+| `Task` | Represents one registered goroutine holding the execution baton. `Go`, `Yield`, `Call`, `Inbox`, and `Sleep` report scheduling points to the coordinator. |
+| `Channel[T]` | A buffered or unbuffered channel whose send, receive, close, and select operations are visible to that coordinator. It is not a native Go `chan`. |
+| `Entry` | A process-local handle for the registered starting function. Its name is the stable identity. |
+| `Command` and `Event` | Copied host requests and replies; an event with ID zero feeds `Inbox`. |
+
+Only one registered `Task` runs at a time in that prototype. Its
+`SelectReceive` chooses the lowest ready argument index. Native `go`, `chan`,
+`select`, and blocking `sync` calls are outside its deterministic contract.
+The current source-level `isolate` package instead uses a normal `main()` and
+ordinary Go primitives; native deterministic scheduling is still pending.
 
 ---
 
