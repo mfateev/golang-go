@@ -438,6 +438,15 @@ also still reference instance records. `Kill(ctx)` therefore remains open.
 The waiter inventory and required detach order are in
 [RUNTIME_REVOCATION.md](./RUNTIME_REVOCATION.md).
 
+The trusted host lifecycle now calls the existing atomic group revocation
+hook when `main` exits or instance preparation fails. This blocks a child
+created later by an already parked goroutine from entering its first user
+instruction. Two 100-run race tests release a parked child after explicit
+boundary revocation and after host `main` exits, then observe that the
+grandchild is discarded. Main failure and static two-program tests pass.
+Already started children and
+their waiters remain alive, so this is only an admission fence, not `Kill`.
+
 ## Process-owned Unicode regexp cache
 
 `regexp/syntax` lazily builds a Unicode alias map through `sync.Once`. A first

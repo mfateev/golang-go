@@ -103,6 +103,10 @@ func (b *Boundary) LiveGoroutines() int32 { return groupLive(b.group) }
 // and scheduler records still need ownership and revocation handling.
 func (b *Boundary) RunningGoroutines() int32 { return groupRunning(b.group) }
 
+// RevokeUnstarted prevents group children that have not begun executing from
+// entering user code. It does not stop running or parked goroutines.
+func (b *Boundary) RevokeUnstarted() { revokeUnstarted(b.group) }
+
 // Commands returns the stream of host commands from this boundary.
 func (b *Boundary) Commands() <-chan *Command {
 	return b.calls
@@ -179,3 +183,6 @@ func groupLive(unsafe.Pointer) int32
 
 //go:linkname groupRunning runtime.isolateGroupRunning
 func groupRunning(unsafe.Pointer) int32
+
+//go:linkname revokeUnstarted runtime.isolateRevokeUnstarted
+func revokeUnstarted(unsafe.Pointer)

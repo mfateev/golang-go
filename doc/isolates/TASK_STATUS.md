@@ -92,6 +92,10 @@ ordinary-Go execution remains unproved.**
       runs passed; see PHASE2B_PROGRESS.md for its narrow scope
 - [x] Phase 2B admission and revocation now have one atomic order across Ps;
       a tagged native race test covers 1,000 competing transitions per run
+- [x] The trusted host revokes admission for unstarted children when main
+      exits or preparation fails. A 100-run race test checks a parked child
+      cannot start a new grandchild after revocation; started children and
+      waiter cleanup remain outside this fence
 - [x] Opt-in compiler mode keeps static package assignments executable so a
       fresh E4 toy base can replay variable initialization before user `init`
 - [x] Opt-in compiler-generated package layout and runtime GC type separate

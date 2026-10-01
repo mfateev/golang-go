@@ -82,6 +82,11 @@ func isolateGroupRunning(p unsafe.Pointer) int32 {
 	return (*isolateRevocationGroup)(p).running.Load()
 }
 
+//go:linkname isolateRevokeUnstarted
+func isolateRevokeUnstarted(p unsafe.Pointer) {
+	(*isolateRevocationGroup)(p).revoke()
+}
+
 // isolateLargeAllocOrigin is a diagnostic for live large heap objects. Small
 // object spans still mix allocation contexts and cannot report an owner.
 //

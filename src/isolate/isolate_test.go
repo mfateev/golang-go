@@ -323,6 +323,37 @@ func TestBoundaryTracksNativeChildren(t *testing.T) {
 	}
 }
 
+func TestBoundaryRevokesUnstartedChildren(t *testing.T) {
+	b := isolatebridge.New()
+	release := make(chan struct{})
+	ready := make(chan struct{})
+	childExited := make(chan struct{})
+	var grandchildRan atomic.Bool
+	b.Run(func() {
+		go func() {
+			close(ready)
+			<-release
+			go func() { grandchildRan.Store(true) }()
+			close(childExited)
+		}()
+		<-ready
+	})
+	b.RevokeUnstarted()
+	b.RevokeUnstarted() // repeated revocation is harmless
+	close(release)
+	<-childExited
+	deadline := time.Now().Add(time.Second)
+	for b.LiveGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if got := b.LiveGoroutines(); got != 0 {
+		t.Fatalf("after revocation, live goroutines = %d, want 0", got)
+	}
+	if grandchildRan.Load() {
+		t.Fatal("revoked grandchild entered user code")
+	}
+}
+
 func TestBoundaryCountsCoroutineSwitches(t *testing.T) {
 	b := isolatebridge.New()
 	b.Run(func() {
