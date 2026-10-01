@@ -479,6 +479,61 @@ func TestRevokedChannelWaitDoesNotResumeUserCode(t *testing.T) {
 	}
 }
 
+func TestRevokedSelectWaitDoesNotResumeUserCode(t *testing.T) {
+	for _, name := range []string{"receive", "send"} {
+		t.Run(name, func(t *testing.T) {
+			b := isolatebridge.New()
+			ch := make(chan int)
+			if name == "send" {
+				ch = make(chan int, 1)
+				ch <- 0
+			}
+			other := make(chan int)
+			entered := make(chan struct{})
+			exited := make(chan struct{})
+			var resumed atomic.Bool
+			go b.Run(func() {
+				defer close(exited)
+				close(entered)
+				if name == "receive" {
+					select {
+					case <-ch:
+					case <-other:
+					}
+				} else {
+					select {
+					case ch <- 1:
+					case other <- 2:
+					}
+				}
+				resumed.Store(true)
+			})
+			<-entered
+			deadline := time.Now().Add(time.Second)
+			for b.RunningGoroutines() != 0 && b.LiveGoroutines() != 0 && time.Now().Before(deadline) {
+				runtime.Gosched()
+			}
+			if b.LiveGoroutines() != 1 || b.RunningGoroutines() != 0 {
+				t.Fatalf("select did not park: live=%d running=%d", b.LiveGoroutines(), b.RunningGoroutines())
+			}
+			b.Stop()
+			if name == "receive" {
+				close(ch)
+			} else {
+				<-ch
+			}
+			select {
+			case <-exited:
+			case <-time.After(5 * time.Second):
+				t.Fatal("select waiter did not exit after wakeup")
+			}
+			if resumed.Load() {
+				t.Fatal("select returned to user code after revocation")
+			}
+		})
+	}
+}
+
 func TestBoundaryCountsCoroutineSwitches(t *testing.T) {
 	b := isolatebridge.New()
 	b.Run(func() {

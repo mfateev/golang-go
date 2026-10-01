@@ -492,6 +492,16 @@ plus a pending host Kill that completes after a channel wakeup. Existing
 admission tests now use an already running child so they continue to exercise
 the separate first-dispatch fence.
 
+Multi-case `select` now checks revocation on entry and after its normal wakeup
+has removed all losing channel wait records and released their `sudog`s. The
+closed-send path checks after unlocking channels and before panicking. A
+pending host Kill completes after a selected channel wakes, without returning
+to user code. The receive and buffered-send paths and host Kill passed 100
+race-detector runs, the full `isolate` race suite passed 10 runs, and the
+complete Linux arm64 `src/all.bash` suite passed. The check does not detach a
+parked select early, and it cannot prevent code already executing between
+runtime calls from running after revocation.
+
 ## Process-owned Unicode regexp cache
 
 `regexp/syntax` lazily builds a Unicode alias map through `sync.Once`. A first

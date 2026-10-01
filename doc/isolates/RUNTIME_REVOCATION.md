@@ -39,7 +39,7 @@ unlinked.
 | Wait | Runtime record | Cleanup currently done by the resumed G |
 |---|---|---|
 | Channel send/receive | One `sudog` in `hchan.sendq` or `recvq`, also on `gp.waiting` | `chan.go` clears `gp.waiting`, `activeStackChans`, and `gp.param`, then releases the `sudog`. A post-cleanup revocation check now exits a woken G before user code. Kill does not yet remove or wake the queued waiter early. |
-| `select` | One `sudog` per case, linked through `gp.waiting` and several channel queues | `select.go` locks the cases, removes losing entries, updates channel timer wait counts, clears stack element pointers, and releases all records. |
+| `select` | One `sudog` per case, linked through `gp.waiting` and several channel queues | `select.go` locks the cases, removes losing entries, updates channel timer wait counts, clears stack element pointers, and releases all records. A post-cleanup revocation check now exits a woken G before it returns to user code. Kill does not yet remove or wake its queued cases early. |
 | `sync.Mutex`, `WaitGroup`, and related semaphores | `sudog` in a hashed `semaRoot` queue | `sema.go` releases the record after wakeup; non-head queue removal must preserve other waiters. |
 | `sync.Cond` | Ticketed `sudog` in `notifyList`, also in `gp.waiting` | `sema.go` clears the G waiting pointer and releases the record. Removing an earlier ticket must preserve later `Signal` behavior. |
 | `time.Sleep` and timer channels | Per-G timer or channel timer linked into runtime timer machinery | `time.Sleep` now checks revocation after its normal wakeup and exits before user code; it is not woken early. Timer channels still need wait detachment and post-wakeup checks. |

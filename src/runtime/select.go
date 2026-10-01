@@ -101,6 +101,7 @@ func selparkcommit(gp *g, _ unsafe.Pointer) bool {
 }
 
 func block() {
+	isolateExitIfRevoked()
 	gopark(nil, nil, waitReasonSelectNoCases, traceBlockForever, 1) // forever
 }
 
@@ -120,6 +121,7 @@ func block() {
 // Also, if the chosen scase was a receive operation, it reports whether
 // a value was received.
 func selectgo(cas0 *scase, order0 *uint16, pc0 *uintptr, nsends, nrecvs int, block bool) (int, bool) {
+	isolateExitIfRevoked()
 	gp := getg()
 	if debugSelect {
 		print("select: cas0=", cas0, "\n")
@@ -534,11 +536,15 @@ retc:
 	if caseReleaseTime > 0 {
 		blockevent(caseReleaseTime-t0, 1)
 	}
+	// A parked select may have owned sudogs on several channels. Only exit
+	// after pass 3 has removed every losing case and released those sudogs.
+	isolateExitIfRevoked()
 	return casi, recvOK
 
 sclose:
 	// send on closed channel
 	selunlock(scases, lockorder)
+	isolateExitIfRevoked()
 	panic(plainError("send on closed channel"))
 }
 

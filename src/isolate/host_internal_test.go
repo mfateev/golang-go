@@ -138,6 +138,55 @@ func TestKillPendingOnChannelWait(t *testing.T) {
 	}
 }
 
+func TestKillPendingOnSelectWait(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	other := make(chan struct{})
+	var resumed atomic.Bool
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main: func() {
+			close(entered)
+			select {
+			case <-release:
+			case <-other:
+			}
+			resumed.Store(true)
+		},
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	deadline := time.Now().Add(time.Second)
+	for i.boundary.RunningGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if i.boundary.RunningGoroutines() != 0 || i.boundary.LiveGoroutines() != 1 {
+		t.Fatal("main did not park in select")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	var pending *KillPendingError
+	if err := i.Kill(ctx); !errors.As(err, &pending) || pending.LiveGoroutines == 0 {
+		t.Fatalf("Kill on select wait = %v, want pending live goroutine", err)
+	}
+	close(release)
+	if err := i.Wait(); err != errMainRevoked {
+		t.Fatalf("Wait after revoked select = %v, want %v", err, errMainRevoked)
+	}
+	if resumed.Load() {
+		t.Fatal("main resumed after revoked select")
+	}
+	if err := i.Kill(context.Background()); err != nil {
+		t.Fatalf("Kill after exit = %v", err)
+	}
+}
+
 func TestKillPendingSleepStopsAtTimer(t *testing.T) {
 	entered := make(chan struct{})
 	var resumed atomic.Bool

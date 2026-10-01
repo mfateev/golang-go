@@ -110,7 +110,10 @@ ordinary-Go execution remains unproved.**
 - [x] Ordinary channel send and receive check revocation at entry and after
       their normal parked-wait cleanup. A pending Kill can finish after a
       channel wakeup without returning to user code; early waiter detachment
-      and `select` remain open
+      remains open
+- [x] Multi-case `select` checks revocation at entry and after removing all
+      channel wait records on normal wakeup. A pending Kill can finish after
+      a selected channel wakes; early waiter detachment remains open
 - [x] Opt-in compiler mode keeps static package assignments executable so a
       fresh E4 toy base can replay variable initialization before user `init`
 - [x] Opt-in compiler-generated package layout and runtime GC type separate
