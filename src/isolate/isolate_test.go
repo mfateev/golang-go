@@ -354,6 +354,38 @@ func TestBoundaryRevokesUnstartedChildren(t *testing.T) {
 	}
 }
 
+func TestBoundaryStopWakesCallWaiters(t *testing.T) {
+	b := isolatebridge.New()
+	exited := make(chan struct{})
+	var callReturned atomic.Bool
+	go b.Run(func() {
+		defer close(exited)
+		_, _ = b.Call(1, nil)
+		callReturned.Store(true)
+	})
+	command := <-b.Commands()
+	b.Stop()
+	b.Stop()
+	<-exited
+	command.Reply(nil, nil) // a late host reply must not block
+	if callReturned.Load() || b.LiveGoroutines() != 0 {
+		t.Fatalf("stopped Call returned=%t, live=%d", callReturned.Load(), b.LiveGoroutines())
+	}
+
+	blocked := isolatebridge.New()
+	sendExited := make(chan struct{})
+	go blocked.Run(func() {
+		defer close(sendExited)
+		_, _ = blocked.Call(2, nil) // no host receiver
+		callReturned.Store(true)
+	})
+	blocked.Stop()
+	<-sendExited
+	if callReturned.Load() || blocked.LiveGoroutines() != 0 {
+		t.Fatalf("stopped command send returned=%t, live=%d", callReturned.Load(), blocked.LiveGoroutines())
+	}
+}
+
 func TestBoundaryCountsCoroutineSwitches(t *testing.T) {
 	b := isolatebridge.New()
 	b.Run(func() {

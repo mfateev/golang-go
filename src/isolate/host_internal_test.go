@@ -52,3 +52,41 @@ func TestMainExitRevokesUnstartedChildren(t *testing.T) {
 		t.Fatal("grandchild started after main exit")
 	}
 }
+
+func TestMainExitStopsCallWaiter(t *testing.T) {
+	releaseMain := make(chan struct{})
+	childExited := make(chan struct{})
+	var callReturned atomic.Bool
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main: func() {
+			go func() {
+				defer close(childExited)
+				_, _ = isolatebridge.Current().Call(1, nil)
+				callReturned.Store(true)
+			}()
+			<-releaseMain
+		},
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	command := <-i.Commands()
+	close(releaseMain)
+	if err := i.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	<-childExited
+	command.Reply(nil, nil)
+	deadline := time.Now().Add(time.Second)
+	for i.boundary.LiveGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if callReturned.Load() || i.boundary.LiveGoroutines() != 0 {
+		t.Fatalf("after main exit, Call returned=%t, live=%d", callReturned.Load(), i.boundary.LiveGoroutines())
+	}
+}

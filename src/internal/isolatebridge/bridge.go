@@ -12,6 +12,7 @@ import (
 	"errors"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"unsafe"
 )
@@ -23,6 +24,8 @@ type Boundary struct {
 	group unsafe.Pointer
 	calls chan *Command
 	next  atomic.Uint64
+	halt  chan struct{}
+	stop  sync.Once
 }
 
 var nextOwner atomic.Uintptr
@@ -54,6 +57,7 @@ func New() *Boundary {
 		owner: owner,
 		group: newGroup(),
 		calls: make(chan *Command),
+		halt:  make(chan struct{}),
 	}
 	return b
 }
@@ -107,6 +111,14 @@ func (b *Boundary) RunningGoroutines() int32 { return groupRunning(b.group) }
 // entering user code. It does not stop running or parked goroutines.
 func (b *Boundary) RevokeUnstarted() { revokeUnstarted(b.group) }
 
+// Stop fences unstarted children and wakes goroutines parked in Call.
+// A reply that wins just before Stop may leave its caller active. Other
+// runtime waiters and active code still require native revocation.
+func (b *Boundary) Stop() {
+	b.RevokeUnstarted()
+	b.stop.Do(func() { close(b.halt) })
+}
+
 // Commands returns the stream of host commands from this boundary.
 func (b *Boundary) Commands() <-chan *Command {
 	return b.calls
@@ -137,17 +149,36 @@ func Current() *Boundary {
 
 // Call copies one request to the host and waits for its response.
 func (b *Boundary) Call(op uint32, payload []byte) ([]byte, error) {
+	b.stopIfRevoked()
 	id := b.next.Add(1)
 	if id == 0 {
 		panic("isolate: command ID exhausted")
 	}
 	c := newHostCommand(id, op, payload)
-	b.calls <- c
-	r := <-c.reply
+	select {
+	case <-b.halt:
+		runtime.Goexit()
+	case b.calls <- c:
+	}
+	var r response
+	select {
+	case <-b.halt:
+		runtime.Goexit()
+	case r = <-c.reply:
+	}
+	b.stopIfRevoked()
 	if r.hasErr {
 		return bytes.Clone(r.payload), errors.New(r.errText)
 	}
 	return bytes.Clone(r.payload), nil
+}
+
+func (b *Boundary) stopIfRevoked() {
+	select {
+	case <-b.halt:
+		runtime.Goexit()
+	default:
+	}
 }
 
 //go:noinline

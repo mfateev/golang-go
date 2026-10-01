@@ -444,8 +444,18 @@ created later by an already parked goroutine from entering its first user
 instruction. Two 100-run race tests release a parked child after explicit
 boundary revocation and after host `main` exits, then observe that the
 grandchild is discarded. Main failure and static two-program tests pass.
-Already started children and
-their waiters remain alive, so this is only an admission fence, not `Kill`.
+Already started children remain alive at this admission fence, so it is not
+`Kill`.
+
+The provisional `Call` bridge now has a stop channel. Both its command send
+and reply receive select against that channel. A caller that observes stop
+exits by `Goexit`. A reply can win immediately before stop, leaving that
+caller active until another boundary. The host stops the bridge when main
+exits or preparation fails. A reply arriving after stop remains nonblocking.
+Two 100-run race tests cover an outstanding reply wait, a blocked command
+send, and a main child parked in `Call`; the static two-program script passes.
+`Goexit` still runs defers, and unrelated channel, semaphore, timer, and
+netpoll waits remain outside this stop path.
 
 ## Process-owned Unicode regexp cache
 

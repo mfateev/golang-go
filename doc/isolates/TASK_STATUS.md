@@ -96,6 +96,10 @@ ordinary-Go execution remains unproved.**
       exits or preparation fails. A 100-run race test checks a parked child
       cannot start a new grandchild after revocation; started children and
       waiter cleanup remain outside this fence
+- [x] The provisional `Call` bridge stops command-send and reply-receive
+      waiters when main exits or preparation fails. They exit through `Goexit`;
+      two 100-run race tests and the static program script pass. Other runtime
+      waiters and a public native `Kill(ctx)` remain open
 - [x] Opt-in compiler mode keeps static package assignments executable so a
       fresh E4 toy base can replay variable initialization before user `init`
 - [x] Opt-in compiler-generated package layout and runtime GC type separate

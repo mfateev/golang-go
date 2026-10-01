@@ -42,7 +42,7 @@ unlinked.
 | `sync.Cond` | Ticketed `sudog` in `notifyList`, also in `gp.waiting` | `sema.go` clears the G waiting pointer and releases the record. Removing an earlier ticket must preserve later `Signal` behavior. |
 | `time.Sleep` and timer channels | Per-G timer or channel timer linked into runtime timer machinery | `time.go` can ready a sleeping G later; channel paths also adjust timer wait counts after wakeup. |
 | Network poll | `pollDesc.rg` or `wg` and deadline timers | `netpoll.go` stores the G in a poll semaphore and may ready it from I/O or a deadline. |
-| Current `isolate.Call` | Channel send and reply receive on the provisional bridge | Both are ordinary channel waits and inherit the channel cleanup requirements. The bridge is not yet a native owned command queue. |
+| Current `isolate.Call` | Channel send and reply receive on the provisional bridge | The trusted bridge now selects each wait against a stop channel and exits the waiting G with `Goexit`. A late host reply uses a buffered channel. This handles the two bridge waits but does not detach arbitrary runtime channel waiters; the bridge is not yet a native owned command queue. |
 
 The table is an initial inventory, not a complete scheduler proof. Runtime
 coroutines switch Gs without `execute`/`dropg`; group accounting covers those

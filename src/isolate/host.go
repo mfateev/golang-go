@@ -86,11 +86,11 @@ func New(cfg Config) (*Isolate, error) {
 	}()
 	<-done
 	if err != nil {
-		boundary.RevokeUnstarted()
+		boundary.Stop()
 		return nil, err
 	}
 	if runState == nil {
-		boundary.RevokeUnstarted()
+		boundary.Stop()
 		return nil, errors.New("isolate: program has no state runner")
 	}
 	return &Isolate{
@@ -109,7 +109,7 @@ func (i *Isolate) Start() error {
 	}
 	go func() {
 		defer close(i.done)
-		defer i.boundary.RevokeUnstarted()
+		defer i.boundary.Stop()
 		i.boundary.RunOwner(func() {
 			returned := false
 			defer func() {
