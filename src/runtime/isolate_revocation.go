@@ -62,10 +62,18 @@ func (group *isolateRevocationGroup) wakeRevoked() {
 
 // isolateExitIfRevoked is a provisional boundary fence. After a blocking
 // operation, its caller must first release the waiter's runtime records and
-// restore any library state needed by Goexit and the caller's defers.
+// restore any library state needed by Goexit and the caller's defers. Call
+// waiters use hard discard after their select records have been removed.
 func isolateExitIfRevoked() {
-	group := getg().isolateGroup
+	gp := getg()
+	group := gp.isolateGroup
 	if group != nil && group.admission.Load()&isolateRevokedBit != 0 {
+		if gp.isolateCallWait {
+			// Call has its own stop path. A runtime channel/select wake
+			// can win the race to observe revocation after its sudogs
+			// have been cleaned up. Preserve hard discard there too.
+			isolateDiscardIfRevoked()
+		}
 		Goexit()
 	}
 }
@@ -74,6 +82,8 @@ func isolateExitIfRevoked() {
 // for waits on isolate-owned synchronization objects after their runtime wait
 // records have been removed. Running defers can touch a lock abandoned by
 // another goroutine in the same revoked isolate.
+//
+//go:linkname isolateDiscardIfRevoked
 func isolateDiscardIfRevoked() {
 	group := getg().isolateGroup
 	if group == nil || group.admission.Load()&isolateRevokedBit == 0 {

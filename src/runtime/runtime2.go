@@ -598,6 +598,7 @@ type g struct {
 	isolateParkState  uint8
 	isolateStarted    bool
 	isolateAdmitted   bool
+	isolateCallWait   bool          // bridge Call is in its independently wakeable select path
 	isolateSelectWake atomic.Uint32 // 0 before park, 1 parked, 2 revoked
 	timer             *timer        // cached timer for time.Sleep
 	sleepWhen         int64         // when to sleep until

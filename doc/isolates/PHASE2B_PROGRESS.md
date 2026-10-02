@@ -459,13 +459,12 @@ Already started children remain alive at this admission fence, so it is not
 
 The provisional `Call` bridge now has a stop channel. Both its command send
 and reply receive select against that channel. A caller that observes stop
-exits by `Goexit`. A reply can win immediately before stop, leaving that
+is discarded without user defers. A reply can win immediately before stop, leaving that
 caller active until another boundary. The host stops the bridge when main
 exits or preparation fails. A reply arriving after stop remains nonblocking.
 Two 100-run race tests cover an outstanding reply wait, a blocked command
 send, and a main child parked in `Call`; the static two-program script passes.
-`Goexit` still runs defers, and unrelated channel, semaphore, timer, and
-netpoll waits remain outside this stop path.
+Unrelated channel, timer, and netpoll waits remain outside this stop path.
 
 The source-level host now exposes a provisional `Kill(ctx)`. `Start` waits
 until main has joined its runtime group, so a concurrent kill cannot mistake
@@ -695,6 +694,16 @@ independently of a long waiter scan. The direct group revocation hook retains
 its combined fence-and-scan behavior. Focused Call and Cond cases passed 100
 race-detector runs with `GOGC=1` and static lock ranking after the split.
 
+The runtime's `select` cleanup can observe revocation before the bridge's
+stop case returns. A G inside `Call` now carries a call-wait marker; after
+`select` has removed all its queue records, the runtime uses hard discard
+instead of `Goexit` for that G. The bridge also discards a caller that sees
+the stop channel directly. Both paths skip user defers, which may use locks
+abandoned by the same revoked isolate. The marker is cleared on a normal
+reply and never inherited by child goroutines. Focused blocked-send,
+reply-wait, and main-child tests passed 100 race-detector runs with `GOGC=1`
+and static lock ranking.
+
 ## Isolate-owned semaphore waits
 
 Contended `sync.Mutex`, `RWMutex`, and `WaitGroup` waits now register their
@@ -712,3 +721,4 @@ semaphore users and synctest's special WaitGroup reason.
 Focused tests park two waiters on a locked Mutex, a locked RWMutex, and an
 unfinished WaitGroup, then Kill without unlocking or calling `Done`. They
 passed 100 race-detector runs with `GOGC=1` and static lock ranking.
+The complete `src/all.bash` suite passed after the semaphore change.

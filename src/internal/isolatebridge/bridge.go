@@ -178,17 +178,19 @@ func (b *Boundary) Call(op uint32, payload []byte) ([]byte, error) {
 		panic("isolate: command ID exhausted")
 	}
 	c := newHostCommand(id, op, payload)
+	setCallWait(true)
 	select {
 	case <-b.halt:
-		runtime.Goexit()
+		stopCall()
 	case b.calls <- c:
 	}
 	var r response
 	select {
 	case <-b.halt:
-		runtime.Goexit()
+		stopCall()
 	case r = <-c.reply:
 	}
+	setCallWait(false)
 	b.stopIfRevoked()
 	if r.hasErr {
 		return bytes.Clone(r.payload), errors.New(r.errText)
@@ -199,10 +201,25 @@ func (b *Boundary) Call(op uint32, payload []byte) ([]byte, error) {
 func (b *Boundary) stopIfRevoked() {
 	select {
 	case <-b.halt:
-		runtime.Goexit()
+		stopCall()
 	default:
 	}
 }
+
+// stopCall runs after Stop has marked the group revoked and closed halt.
+// Discarding the caller skips user defers, which may touch state abandoned by
+// other goroutines in the same isolate. Goexit is a fallback if this boundary
+// is used without an attached group.
+func stopCall() {
+	discardIfRevoked()
+	runtime.Goexit()
+}
+
+//go:linkname discardIfRevoked runtime.isolateDiscardIfRevoked
+func discardIfRevoked()
+
+//go:linkname setCallWait runtime.isolateSetCallWait
+func setCallWait(bool)
 
 //go:linkname markRevoked runtime.isolateMarkRevoked
 func markRevoked(unsafe.Pointer) bool

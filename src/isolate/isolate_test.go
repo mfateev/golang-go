@@ -402,35 +402,36 @@ func TestBoundaryRevokesUnstartedChildren(t *testing.T) {
 
 func TestBoundaryStopWakesCallWaiters(t *testing.T) {
 	b := isolatebridge.New()
-	exited := make(chan struct{})
-	var callReturned atomic.Bool
+	var callReturned, callDeferred atomic.Bool
 	go b.Run(func() {
-		defer close(exited)
+		defer callDeferred.Store(true)
 		_, _ = b.Call(1, nil)
 		callReturned.Store(true)
 	})
 	command := <-b.Commands()
 	b.Stop()
 	b.Stop()
-	<-exited
+	deadline := time.Now().Add(time.Second)
+	for b.LiveGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
 	command.Reply(nil, nil) // a late host reply must not block
-	if callReturned.Load() || b.LiveGoroutines() != 0 {
-		t.Fatalf("stopped Call returned=%t, live=%d", callReturned.Load(), b.LiveGoroutines())
+	if callReturned.Load() || callDeferred.Load() || b.LiveGoroutines() != 0 {
+		t.Fatalf("stopped Call returned=%t, deferred=%t, live=%d", callReturned.Load(), callDeferred.Load(), b.LiveGoroutines())
 	}
 
 	blocked := isolatebridge.New()
 	sendReady := make(chan struct{})
-	sendExited := make(chan struct{})
 	go func() {
-		defer close(sendExited)
 		blocked.Run(func() {
+			defer callDeferred.Store(true)
 			close(sendReady)
 			_, _ = blocked.Call(2, nil) // no host receiver
 			callReturned.Store(true)
 		})
 	}()
 	<-sendReady
-	deadline := time.Now().Add(time.Second)
+	deadline = time.Now().Add(time.Second)
 	for blocked.RunningGoroutines() != 0 && time.Now().Before(deadline) {
 		runtime.Gosched()
 	}
@@ -438,9 +439,12 @@ func TestBoundaryStopWakesCallWaiters(t *testing.T) {
 		t.Fatalf("command sender did not park: running=%d", got)
 	}
 	blocked.Stop()
-	<-sendExited
-	if callReturned.Load() || blocked.LiveGoroutines() != 0 {
-		t.Fatalf("stopped command send returned=%t, live=%d", callReturned.Load(), blocked.LiveGoroutines())
+	deadline = time.Now().Add(time.Second)
+	for blocked.LiveGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if callReturned.Load() || callDeferred.Load() || blocked.LiveGoroutines() != 0 {
+		t.Fatalf("stopped command send returned=%t, deferred=%t, live=%d", callReturned.Load(), callDeferred.Load(), blocked.LiveGoroutines())
 	}
 }
 

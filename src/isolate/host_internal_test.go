@@ -64,9 +64,13 @@ func TestMainExitRevokesUnstartedChildren(t *testing.T) {
 }
 
 func TestKillStopsCallWaiter(t *testing.T) {
+	var deferred atomic.Bool
 	program := Program{entry: isolatebridge.ProgramEntry{
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
-		Main:     func() { _, _ = isolatebridge.Current().Call(1, nil) },
+		Main: func() {
+			defer deferred.Store(true)
+			_, _ = isolatebridge.Current().Call(1, nil)
+		},
 	}}
 	i, err := New(Config{Program: program})
 	if err != nil {
@@ -85,8 +89,8 @@ func TestKillStopsCallWaiter(t *testing.T) {
 		t.Fatalf("Wait after Kill = %v, want %v", err, errMainRevoked)
 	}
 	command.Reply(nil, nil)
-	if i.boundary.LiveGoroutines() != 0 {
-		t.Fatal("Kill returned with live goroutines")
+	if deferred.Load() || i.boundary.LiveGoroutines() != 0 {
+		t.Fatalf("Kill returned with deferred=%t, live=%d", deferred.Load(), i.boundary.LiveGoroutines())
 	}
 	if err := i.Kill(ctx); err != nil {
 		t.Fatalf("repeated Kill = %v", err)
@@ -942,13 +946,12 @@ func TestConcurrentStartKill(t *testing.T) {
 
 func TestMainExitStopsCallWaiter(t *testing.T) {
 	releaseMain := make(chan struct{})
-	childExited := make(chan struct{})
-	var callReturned atomic.Bool
+	var callReturned, childDeferred atomic.Bool
 	program := Program{entry: isolatebridge.ProgramEntry{
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			go func() {
-				defer close(childExited)
+				defer childDeferred.Store(true)
 				_, _ = isolatebridge.Current().Call(1, nil)
 				callReturned.Store(true)
 			}()
@@ -967,13 +970,12 @@ func TestMainExitStopsCallWaiter(t *testing.T) {
 	if err := i.Wait(); err != nil {
 		t.Fatal(err)
 	}
-	<-childExited
 	command.Reply(nil, nil)
 	deadline := time.Now().Add(time.Second)
 	for i.boundary.LiveGoroutines() != 0 && time.Now().Before(deadline) {
 		runtime.Gosched()
 	}
-	if callReturned.Load() || i.boundary.LiveGoroutines() != 0 {
-		t.Fatalf("after main exit, Call returned=%t, live=%d", callReturned.Load(), i.boundary.LiveGoroutines())
+	if callReturned.Load() || childDeferred.Load() || i.boundary.LiveGoroutines() != 0 {
+		t.Fatalf("after main exit, Call returned=%t, deferred=%t, live=%d", callReturned.Load(), childDeferred.Load(), i.boundary.LiveGoroutines())
 	}
 }
