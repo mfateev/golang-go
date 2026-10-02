@@ -259,6 +259,10 @@ remains usable with a caller-supplied mapping; `os.ExpandEnv` reaches the
 guarded `os.Getenv`. Per-isolate environment values and `os.Args` routing are
 still open.
 
+The provisional `os/signal` guards reject signal registration, ignoring,
+resetting, deregistration, and process signal-state reads from active isolates.
+They run before the package's process-wide handler table is accessed.
+
 ## D. Virtualized — allowed, but redirected by the runtime
 
 These stay available because banning them would make ordinary Go unwritable.

@@ -89,11 +89,13 @@ func cancel(sigs []os.Signal, action func(int)) {
 // calls to [Notify] for the provided signals.
 // If no signals are provided, all incoming signals will be ignored.
 func Ignore(sig ...os.Signal) {
+	rejectIsolate("Ignore")
 	cancel(sig, ignoreSignal)
 }
 
 // Ignored reports whether sig is currently ignored.
 func Ignored(sig os.Signal) bool {
+	rejectIsolate("Ignored")
 	sn := signum(sig)
 	return sn >= 0 && signalIgnored(sn)
 }
@@ -124,6 +126,7 @@ var (
 // and the same signals: each channel receives copies of incoming
 // signals independently.
 func Notify(c chan<- os.Signal, sig ...os.Signal) {
+	rejectIsolate("Notify")
 	if c == nil {
 		panic("os/signal: Notify using nil channel")
 	}
@@ -184,6 +187,7 @@ func Notify(c chan<- os.Signal, sig ...os.Signal) {
 // signals.
 // If no signals are provided, all signal handlers will be reset.
 func Reset(sig ...os.Signal) {
+	rejectIsolate("Reset")
 	cancel(sig, disableSignal)
 }
 
@@ -191,6 +195,7 @@ func Reset(sig ...os.Signal) {
 // It undoes the effect of all prior calls to [Notify] using c.
 // When Stop returns, it is guaranteed that c will receive no more signals.
 func Stop(c chan<- os.Signal) {
+	rejectIsolate("Stop")
 	handlers.Lock()
 
 	h := handlers.m[c]
@@ -291,6 +296,7 @@ func process(sig os.Signal) {
 // call stop as soon as the operations running in this Context complete and
 // signals no longer need to be diverted to the context.
 func NotifyContext(parent context.Context, signals ...os.Signal) (ctx context.Context, stop context.CancelFunc) {
+	rejectIsolate("NotifyContext")
 	ctx, cancel := context.WithCancelCause(parent)
 	c := &signalCtx{
 		Context: ctx,

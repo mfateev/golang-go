@@ -834,3 +834,16 @@ syscalls, and the static subset gate remain open.
 The focused environment test passed 100 race-detector runs, the complete
 isolate package passed 10 race-detector runs, Plan 9/amd64 and Windows/amd64
 isolate test binaries compiled, and `src/all.bash` passed.
+
+## Process signal guards
+
+`os/signal` now rejects `Ignore`, `Ignored`, `Notify`, `Reset`, `Stop`, and
+`NotifyContext` before using its process-wide handler table. A focused test
+covers those entries, the complete isolate package passed 10 race-detector
+runs, `os/signal` passed three race-detector runs, and Plan 9/amd64 and
+Windows/amd64 isolate test binaries compiled. These guards still use
+recoverable panics, pending isolate-fatal enforcement.
+
+An existing child-accounting test occasionally sampled `RunningGoroutines`
+after its child had signaled readiness but before that child parked. It now
+waits for the parked count and passed 1,000 race-detector runs.

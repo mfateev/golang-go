@@ -16,6 +16,7 @@ import (
 	"net/netip"
 	"os"
 	"os/exec"
+	"os/signal"
 	"reflect"
 	"runtime"
 	rdebug "runtime/debug"
@@ -301,6 +302,10 @@ func TestBoundaryTracksNativeChildren(t *testing.T) {
 			<-ready
 			if got := b.LiveGoroutines(); got != 2 {
 				t.Fatalf("Run with parked child counted %d goroutines, want 2", got)
+			}
+			deadline := time.Now().Add(time.Second)
+			for b.RunningGoroutines() != 1 && time.Now().Before(deadline) {
+				runtime.Gosched()
 			}
 			if got := b.RunningGoroutines(); got != 1 {
 				t.Fatalf("Run with parked child counted %d running goroutines, want 1", got)
@@ -1061,6 +1066,37 @@ func TestEnvironmentAPIsRejectIsolate(t *testing.T) {
 	if got := os.Getenv(key); got != "host" {
 		t.Fatalf("host environment changed to %q", got)
 	}
+}
+
+func TestSignalAPIsRejectIsolate(t *testing.T) {
+	ch := make(chan os.Signal, 1)
+	b := isolatebridge.New()
+	b.Run(func() {
+		for _, tt := range []struct {
+			name string
+			call func()
+		}{
+			{"Ignore", func() { signal.Ignore(nil) }},
+			{"Ignored", func() { _ = signal.Ignored(nil) }},
+			{"Notify", func() { signal.Notify(ch, nil) }},
+			{"Reset", func() { signal.Reset(nil) }},
+			{"Stop", func() { signal.Stop(ch) }},
+			{"NotifyContext", func() {
+				_, stop := signal.NotifyContext(context.Background(), nil)
+				stop()
+			}},
+		} {
+			func() {
+				defer func() {
+					want := "os/signal." + tt.name + " is unavailable in an isolate"
+					if got := recover(); got != want {
+						t.Errorf("%s panic = %v, want %q", tt.name, got, want)
+					}
+				}()
+				tt.call()
+			}()
+		}
+	})
 }
 
 func TestAfterFuncRejectsUnownedCallback(t *testing.T) {

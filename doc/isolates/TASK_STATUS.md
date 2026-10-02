@@ -284,6 +284,9 @@ ordinary-Go execution remains unproved.**
 - [x] Provisional guards reject `os` and `syscall` process environment reads
       and mutations before host state is accessed. Per-isolate environment
       values and `os.Args` routing remain open
+- [x] Provisional `os/signal` guards reject process-wide signal
+      registration, handler changes, and signal-state reads before accessing
+      the handler table
 - [x] Runtime `g` carries a monotonic numeric instance owner ID through
       initializer replay, the generated state runner, `main`, and native
       children. A race test checks distinct instance IDs and restored host
