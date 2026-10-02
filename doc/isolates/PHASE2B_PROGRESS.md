@@ -925,13 +925,3 @@ The subsequent `src/all.bash` run did not complete successfully: the
 starting with `TestScript/list_std`, and later scripts reported `context
 deadline exceeded`. The isolated `TestScript/list_std` run passed in 13 seconds.
 The complete suite therefore remains unverified for this change.
-
-## cmd/go test telemetry sidecars
-
-The `cmd/go` test binary also serves as the `go` command in script tests. Its
-short-lived commands now record telemetry counters without starting detached
-upload sidecars. The complete `cmd/go` `TestScript` group passed in 286.712s,
-and the container's `go.test` zombie count stayed at 257 before and after it.
-Other script subprocesses still became zombies because PID 1 is `sleep
-infinity` and does not reap orphans; this test-only change does not fix that
-container issue or complete the full `src/all.bash` gate.

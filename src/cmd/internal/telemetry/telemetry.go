@@ -29,12 +29,8 @@ func MaybeParent() {
 	if !counter.OpenCalled() || !maybeChildCalled {
 		panic("MaybeParent must be called after OpenCounters and MaybeChild")
 	}
-	// The cmd/go tests reuse their test binary as the go command. Each short-lived
-	// invocation writes counters, but it does not need an upload sidecar. Such a
-	// sidecar can outlive the test command and become orphaned.
-	upload := os.Getenv("CMDGO_TEST_RUN_MAIN") == ""
 	telemetry.Start(telemetry.Config{
-		Upload:       upload,
+		Upload:       true,
 		TelemetryDir: os.Getenv("TEST_TELEMETRY_DIR"),
 	})
 }
