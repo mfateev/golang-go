@@ -794,3 +794,16 @@ The focused source-level cases passed 100 race-detector runs, the complete
 compiled. `src/all.bash` passed, including race and `../test`. The static
 multi-program script then built a configured `package main` that calls
 `os.Exit(42)` and verified that its host receives status 42 and continues.
+
+## Process debug API guards
+
+The provisional `runtime/debug` guards now reject reads of process GC and
+build data, changes to GC, memory, stack, thread, panic, crash, and traceback
+settings, stack output, and heap dumps from an active isolate. The heap-dump
+and traceback guards sit at their runtime implementations because the public
+functions have no Go body. The pure `ParseBuildInfo` parser remains available.
+A focused test exercises every guarded entry. Recoverable panics are still a
+temporary enforcement mechanism.
+
+The focused test passed 10 race-detector runs, the complete isolate package
+passed 10 race-detector runs, and `src/all.bash` passed.

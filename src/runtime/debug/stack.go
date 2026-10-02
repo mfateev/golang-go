@@ -15,12 +15,14 @@ import (
 
 // PrintStack prints to standard error the stack trace returned by [runtime.Stack].
 func PrintStack() {
+	rejectIsolate("PrintStack")
 	os.Stderr.Write(Stack())
 }
 
 // Stack returns a formatted stack trace of the goroutine that calls it.
 // It calls [runtime.Stack] with a large enough buffer to capture the entire trace.
 func Stack() []byte {
+	rejectIsolate("Stack")
 	buf := make([]byte, 1024)
 	for {
 		n := runtime.Stack(buf, false)
@@ -47,6 +49,7 @@ type CrashOptions struct {
 // If called concurrently with a crash, some in-progress output may be written
 // to the old file even after an overriding SetCrashOutput returns.
 func SetCrashOutput(f *os.File, opts CrashOptions) error {
+	rejectIsolate("SetCrashOutput")
 	fd := ^uintptr(0)
 	if f != nil {
 		// The runtime will write to this file descriptor from

@@ -232,12 +232,19 @@ The provisional runtime now rejects `LockOSThread`, `UnlockOSThread`,
 `SetDefaultGOMAXPROCS`, and `ReadMemStats` before reading or changing process
 state. These guards currently panic, like the provisional cleanup guards;
 isolate-fatal handling and an audit of other process-state APIs remain open.
+
 `os.Exit` and the direct `syscall.Exit` runtime entry now route an active
 isolate through its lifecycle callback. The callback revokes the whole group,
 wakes `Call` and registered runtime waits, publishes the exit code, and hard
 discards the caller before process exit hooks. An active CPU loop may still
 leave teardown pending, as with host `Kill(ctx)`. Other process-control paths
 still need the planned Tier 1 audit and build gate.
+
+The provisional `runtime/debug` entry guards reject process GC statistics and
+settings, heap dumps, traceback and crash-output settings, stack output, and
+build information before those operations run. `ParseBuildInfo` remains a
+pure parser. These guards also currently panic; the isolate-fatal path and
+other effectful standard-library packages still need work.
 
 ## D. Virtualized — allowed, but redirected by the runtime
 

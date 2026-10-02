@@ -18,6 +18,7 @@ func modinfo() string
 // in the running binary. The information is available only
 // in binaries built with module support.
 func ReadBuildInfo() (info *BuildInfo, ok bool) {
+	rejectIsolate("ReadBuildInfo")
 	data := modinfo()
 	if len(data) < 32 {
 		return nil, false

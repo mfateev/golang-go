@@ -29,6 +29,7 @@ type GCStats struct {
 // len(stats.PauseQuantiles) is 5, it will be filled with the minimum,
 // 25%, 50%, 75%, and maximum pause times.
 func ReadGCStats(stats *GCStats) {
+	rejectIsolate("ReadGCStats")
 	// Create a buffer with space for at least two copies of the
 	// pause history tracked by the runtime. One will be returned
 	// to the caller and the other will be used as transfer buffer
@@ -91,6 +92,7 @@ func ReadGCStats(stats *GCStats) {
 // the memory limit is reached.
 // See [SetMemoryLimit] for more details.
 func SetGCPercent(percent int) int {
+	rejectIsolate("SetGCPercent")
 	return int(setGCPercent(int32(percent)))
 }
 
@@ -99,6 +101,7 @@ func SetGCPercent(percent int) int {
 // as possible. (Even if this is not called, the runtime gradually
 // returns memory to the operating system in a background task.)
 func FreeOSMemory() {
+	rejectIsolate("FreeOSMemory")
 	freeOSMemory()
 }
 
@@ -115,6 +118,7 @@ func FreeOSMemory() {
 // goroutines that enter an infinite recursion. It only limits future
 // stack growth.
 func SetMaxStack(bytes int) int {
+	rejectIsolate("SetMaxStack")
 	return setMaxStack(bytes)
 }
 
@@ -133,6 +137,7 @@ func SetMaxStack(bytes int) int {
 // programs that create an unbounded number of threads. The idea is
 // to take down the program before it takes down the operating system.
 func SetMaxThreads(threads int) int {
+	rejectIsolate("SetMaxThreads")
 	return setMaxThreads(threads)
 }
 
@@ -153,6 +158,7 @@ func SetMaxThreads(threads int) int {
 // SetPanicOnFault applies only to the current goroutine.
 // It returns the previous setting.
 func SetPanicOnFault(enabled bool) bool {
+	rejectIsolate("SetPanicOnFault")
 	return setPanicOnFault(enabled)
 }
 
@@ -232,5 +238,6 @@ func SetTraceback(level string)
 // A negative input does not adjust the limit, and allows for
 // retrieval of the currently set memory limit.
 func SetMemoryLimit(limit int64) int64 {
+	rejectIsolate("SetMemoryLimit")
 	return setMemoryLimit(limit)
 }

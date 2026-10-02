@@ -572,6 +572,9 @@ func parsegodebug(godebug string, seen map[string]bool) {
 
 //go:linkname setTraceback runtime/debug.SetTraceback
 func setTraceback(level string) {
+	if isolateActive() {
+		panic("runtime/debug.SetTraceback is unavailable in an isolate")
+	}
 	var t uint32
 	switch level {
 	case "none":

@@ -16,6 +16,7 @@ import (
 	"net/netip"
 	"reflect"
 	"runtime"
+	rdebug "runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -939,6 +940,53 @@ func TestProcessRuntimeAPIsRejectIsolate(t *testing.T) {
 		}()
 		if !<-child {
 			t.Error("child goroutine read process CPU count")
+		}
+	})
+}
+
+func TestProcessDebugAPIsRejectIsolate(t *testing.T) {
+	b := isolatebridge.New()
+	b.Run(func() {
+		for _, tt := range []struct {
+			name string
+			call func()
+		}{
+			{"ReadGCStats", func() { rdebug.ReadGCStats(new(rdebug.GCStats)) }},
+			{"SetGCPercent", func() {
+				prev := rdebug.SetGCPercent(100)
+				rdebug.SetGCPercent(prev)
+			}},
+			{"FreeOSMemory", rdebug.FreeOSMemory},
+			{"SetMaxStack", func() {
+				prev := rdebug.SetMaxStack(1 << 30)
+				rdebug.SetMaxStack(prev)
+			}},
+			{"SetMaxThreads", func() {
+				prev := rdebug.SetMaxThreads(10000)
+				rdebug.SetMaxThreads(prev)
+			}},
+			{"SetPanicOnFault", func() {
+				prev := rdebug.SetPanicOnFault(false)
+				rdebug.SetPanicOnFault(prev)
+			}},
+			{"SetMemoryLimit", func() { rdebug.SetMemoryLimit(-1) }},
+			{"PrintStack", rdebug.PrintStack},
+			{"Stack", func() { rdebug.Stack() }},
+			{"SetCrashOutput", func() { _ = rdebug.SetCrashOutput(nil, rdebug.CrashOptions{}) }},
+			{"ReadBuildInfo", func() { rdebug.ReadBuildInfo() }},
+			{"WriteHeapDump", func() { rdebug.WriteHeapDump(^uintptr(0)) }},
+			{"SetTraceback", func() { rdebug.SetTraceback("single") }},
+		} {
+			func() {
+				defer func() {
+					got, ok := recover().(string)
+					want := "runtime/debug." + tt.name + " is unavailable in an isolate"
+					if !ok || got != want {
+						t.Errorf("%s panic = %q, want %q", tt.name, got, want)
+					}
+				}()
+				tt.call()
+			}()
 		}
 	})
 }

@@ -273,6 +273,10 @@ ordinary-Go execution remains unproved.**
       termination, hard discard their caller, and report nonzero status
       through `ExitError` without ending the host process. Initializer and
       child exits are covered; other process-control entry points remain open
+- [x] Provisional guards cover `runtime/debug` process diagnostics and
+      settings, including heap dump and traceback runtime entries. Its pure
+      `ParseBuildInfo` parser remains usable; other effectful packages and
+      isolate-fatal enforcement remain open
 - [x] Runtime `g` carries a monotonic numeric instance owner ID through
       initializer replay, the generated state runner, `main`, and native
       children. A race test checks distinct instance IDs and restored host
