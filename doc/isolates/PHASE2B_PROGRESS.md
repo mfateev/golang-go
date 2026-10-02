@@ -919,3 +919,9 @@ passed 100 race-detector runs, the complete isolate package passed 10
 race-detector runs, the ordinary `log` short suite passed, and Plan 9/amd64
 and Windows/amd64 isolate test binaries compiled. Other logging packages and
 writer ownership remain unaudited.
+
+The subsequent `src/all.bash` run did not complete successfully: the
+`cmd/go` script tests reached their deadline under heavy concurrent test load,
+starting with `TestScript/list_std`, and later scripts reported `context
+deadline exceeded`. The isolated `TestScript/list_std` run passed in 13 seconds.
+The complete suite therefore remains unverified for this change.
