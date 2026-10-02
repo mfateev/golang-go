@@ -43,6 +43,9 @@ func runtime_readMetrics(unsafe.Pointer, int, int)
 // Sample values with names not appearing in [All] will have their Value populated
 // as KindBad to indicate that the name is unknown.
 func Read(m []Sample) {
+	if isolateActive() {
+		panic("runtime/metrics.Read is unavailable in an isolate")
+	}
 	if len(m) == 0 {
 		return
 	}

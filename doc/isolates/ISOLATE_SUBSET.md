@@ -275,6 +275,13 @@ recorder controls. Inside an isolate, trace annotations emit no host events:
 inert, and `WithRegion` still executes its function. `IsEnabled` reports
 false to the isolate even while the host is tracing.
 
+The provisional entropy guards reject `crypto/rand.Read`, its default shared
+`Reader`, the internal DRBG, and the OS entropy source in active isolates.
+This covers direct default-reader and several internal crypto paths, but
+caller-supplied readers and other cryptographic setup effects still need the
+Tier 1 audit. `runtime/metrics.Read` also rejects process metrics, while
+`runtime/metrics.All` remains available as static metadata.
+
 ## D. Virtualized — allowed, but redirected by the runtime
 
 These stay available because banning them would make ordinary Go unwritable.

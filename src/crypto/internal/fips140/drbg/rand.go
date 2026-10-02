@@ -31,6 +31,9 @@ var drbgPool = sync.Pool{
 // uses an SP 800-90A Rev. 1 Deterministic Random Bit Generator (DRBG).
 // Otherwise, it uses the operating system's random number generator.
 func Read(b []byte) {
+	if isolateActive() {
+		panic("crypto/internal/fips140/drbg.Read is unavailable in an isolate")
+	}
 	if testingReader != nil {
 		fips140.RecordNonApproved()
 		// Avoid letting b escape in the non-testing case.

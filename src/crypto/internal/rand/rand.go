@@ -20,6 +20,9 @@ type defaultReader = drbg.DefaultReader
 type reader struct{ defaultReader }
 
 func (r reader) Read(b []byte) (n int, err error) {
+	if isolateActive() {
+		panic("crypto/rand.Reader is unavailable in an isolate")
+	}
 	if boring.Enabled {
 		if _, err := boring.RandReader.Read(b); err != nil {
 			panic("crypto/rand: boring RandReader failed: " + err.Error())

@@ -294,6 +294,10 @@ ordinary-Go execution remains unproved.**
 - [x] Provisional `runtime/trace` guards reject process trace and flight
       recorder controls. Isolate annotations are inert while preserving
       `WithRegion`'s function call; the host trace stays active
+- [x] Provisional entropy guards reject public `crypto/rand.Read`, its
+      default `Reader`, internal DRBG reads, and OS entropy reads. A direct
+      DRBG-backed ML-KEM path is covered; other cryptographic setup effects
+      still need audit. `runtime/metrics.Read` rejects process metrics
 - [x] Runtime `g` carries a monotonic numeric instance owner ID through
       initializer replay, the generated state runner, `main`, and native
       children. A race test checks distinct instance IDs and restored host

@@ -7,6 +7,8 @@ package isolate_test
 import (
 	"bytes"
 	"context"
+	"crypto/mlkem"
+	crand "crypto/rand"
 	"errors"
 	"fmt"
 	"internal/isolatebridge"
@@ -21,6 +23,7 @@ import (
 	"reflect"
 	"runtime"
 	rdebug "runtime/debug"
+	"runtime/metrics"
 	"runtime/pprof"
 	rtrace "runtime/trace"
 	"strconv"
@@ -1103,6 +1106,41 @@ func TestTraceAPIsKeepHostTraceIsolated(t *testing.T) {
 	if !rtrace.IsEnabled() {
 		t.Fatal("isolate stopped the host trace")
 	}
+}
+
+func TestEntropyAndMetricsRejectIsolate(t *testing.T) {
+	b := isolatebridge.New()
+	b.Run(func() {
+		if len(metrics.All()) == 0 {
+			t.Error("runtime/metrics.All returned no static descriptions")
+		}
+		for _, tt := range []struct {
+			want string
+			call func()
+		}{
+			{"crypto/rand.Read is unavailable in an isolate", func() {
+				_, _ = crand.Read(make([]byte, 1))
+			}},
+			{"crypto/rand.Reader is unavailable in an isolate", func() {
+				_, _ = io.ReadFull(crand.Reader, make([]byte, 1))
+			}},
+			{"crypto/internal/fips140/drbg.Read is unavailable in an isolate", func() {
+				_, _ = mlkem.GenerateKey768()
+			}},
+			{"runtime/metrics.Read is unavailable in an isolate", func() {
+				metrics.Read([]metrics.Sample{{Name: "/gc/cycles/total:gc-cycles"}})
+			}},
+		} {
+			func() {
+				defer func() {
+					if got := recover(); got != tt.want {
+						t.Errorf("panic = %v, want %q", got, tt.want)
+					}
+				}()
+				tt.call()
+			}()
+		}
+	})
 }
 
 func TestProcessLaunchAPIsRejectIsolate(t *testing.T) {

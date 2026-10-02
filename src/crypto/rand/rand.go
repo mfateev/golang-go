@@ -45,6 +45,9 @@ func fatal(string)
 // an error is returned. The default Reader uses operating system APIs that are
 // documented to never return an error on all but legacy Linux systems.
 func Read(b []byte) (n int, err error) {
+	if isolateActive() {
+		panic("crypto/rand.Read is unavailable in an isolate")
+	}
 	// We don't want b to escape to the heap, but escape analysis can't see
 	// through a potentially overridden Reader, so we special-case the default
 	// case which we can keep non-escaping, and in the general case we read into

@@ -35,6 +35,9 @@ var testingOnlyFailRead bool
 // Note that Read is not affected by [testing/cryptotest.SetGlobalRand], and it
 // should not be used directly by algorithm implementations.
 func Read(b []byte) {
+	if isolateActive() {
+		panic("crypto/internal/sysrand.Read is unavailable in an isolate")
+	}
 	if firstUse.CompareAndSwap(false, true) {
 		// First use of randomness. Start timer to warn about
 		// being blocked on entropy not being available.

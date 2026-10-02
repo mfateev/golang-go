@@ -872,3 +872,19 @@ focused test. That test passed 100 race-detector runs; the complete isolate
 package passed 10 race-detector runs, the ordinary `runtime/trace` short
 suite passed, and Plan 9/amd64 and Windows/amd64 isolate test binaries
 compiled. Process tracing through other entry points remains unaudited.
+
+## Entropy and process metrics guards
+
+The provisional entropy guards reject `crypto/rand.Read`, reads through its
+default `Reader`, direct internal DRBG reads, and direct OS entropy reads from
+an active isolate. The DRBG guard covers cryptographic APIs that draw random
+bytes without calling the public `crypto/rand` package. `runtime/metrics.Read`
+rejects process metrics; its static `All` descriptions remain available.
+A focused test covers the public random routes, a direct DRBG-backed ML-KEM
+key generation route, and process metrics. Caller-supplied readers and other
+setup effects remain outside this audit.
+
+The focused test passed 100 race-detector runs, the complete isolate package
+passed 10 race-detector runs, the ordinary `crypto/rand`, `crypto/mlkem`, and
+`runtime/metrics` short suites passed, Plan 9/amd64 and Windows/amd64 isolate
+test binaries compiled, and `src/all.bash` passed.
