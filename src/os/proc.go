@@ -60,6 +60,9 @@ func Getgroups() ([]int, error) {
 //
 // For portability, the status code should be in the range [0, 125].
 func Exit(code int) {
+	if runtime_isolateActive() {
+		runtime_isolateExit(code)
+	}
 	if code == 0 && testlog.PanicOnExit0() {
 		// We were told to panic on calls to os.Exit(0).
 		// This is used to fail tests that make an early

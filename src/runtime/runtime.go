@@ -130,6 +130,9 @@ func os_runtime_args() []string { return append([]string{}, argslice...) }
 //go:linkname syscall_Exit syscall.Exit
 //go:nosplit
 func syscall_Exit(code int) {
+	if isolateActive() {
+		isolateExit(code)
+	}
 	exit(int32(code))
 }
 

@@ -269,6 +269,10 @@ ordinary-Go execution remains unproved.**
       `NumCPU`, `NumCgoCall`, `NumGoroutine`, `GOMAXPROCS`,
       `SetDefaultGOMAXPROCS`, and `ReadMemStats` before accessing process
       state. Other process-state APIs and isolate-fatal handling remain open
+- [x] `os.Exit` and direct `syscall.Exit` now request whole-isolate
+      termination, hard discard their caller, and report nonzero status
+      through `ExitError` without ending the host process. Initializer and
+      child exits are covered; other process-control entry points remain open
 - [x] Runtime `g` carries a monotonic numeric instance owner ID through
       initializer replay, the generated state runner, `main`, and native
       children. A race test checks distinct instance IDs and restored host

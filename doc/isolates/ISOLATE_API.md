@@ -236,9 +236,11 @@ The source-level `isolate` package now implements `Call` through
 a trusted, per-goroutine [boundary probe](../../src/internal/isolatebridge/bridge.go).
 The static build generates the program selector, and the current host API
 provides `New`, `Start`, `Commands`, `Done`, and `Wait`. `Wait` reports a panic
-or `Goexit` from the program's `main` goroutine without terminating the host;
-`New` returns an error for a package initializer panic. Native child failures
-remain outside this provisional lifecycle. The probe copies byte
+or `Goexit` from the program's `main` goroutine without terminating the host.
+`os.Exit` and `syscall.Exit` revoke the instance without running user defers;
+status zero completes successfully and nonzero status returns `ExitError`.
+`New` returns an error for a package initializer panic or explicit exit.
+Native child panics remain outside this provisional lifecycle. The probe copies byte
 payloads and correlates concurrent calls, including calls from native child
 goroutines. The build now gives each configured program, its reachable
 non-standard packages, and selected standard packages separate initialized

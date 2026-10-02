@@ -43,17 +43,19 @@ type Command = isolatebridge.Command
 // Isolate is a trusted instance of one statically linked program. This POC
 // uses the ordinary Go heap and scheduler; it does not provide containment.
 type Isolate struct {
-	entry        func()
-	runState     func(func())
-	boundary     *isolatebridge.Boundary
-	started      atomic.Bool
-	lifecycleMu  sync.Mutex
-	killed       bool
-	done         chan struct{}
-	completeOnce sync.Once
-	watchOnce    sync.Once
-	scanOnce     sync.Once
-	err          error // published by closing done
+	entry         func()
+	runState      func(func())
+	boundary      *isolatebridge.Boundary
+	started       atomic.Bool
+	lifecycleMu   sync.Mutex
+	killed        bool
+	done          chan struct{}
+	completeOnce  sync.Once
+	watchOnce     sync.Once
+	scanOnce      sync.Once
+	exitRequested atomic.Bool
+	exitErr       ExitError
+	err           error // published by closing done
 }
 
 var errMainPanicked = errors.New("isolate: main panicked")
@@ -62,6 +64,14 @@ var errMainRevoked = errors.New("isolate: main goroutine revoked")
 var errInitializerPanicked = errors.New("isolate: package initializer panicked")
 var errInitializerExited = errors.New("isolate: package initializer goroutine exited without returning")
 var errInitializerFailed = errors.New("isolate: package initialization failed")
+
+// ExitError reports a nonzero status from os.Exit or syscall.Exit inside a
+// program. Exit with status zero completes Wait successfully.
+type ExitError struct{ Code int }
+
+func (e *ExitError) Error() string {
+	return "isolate: exited with status " + strconv.Itoa(e.Code)
+}
 
 // KillPendingError reports goroutines still attached to a revoked instance.
 // Running includes goroutines in syscalls; no stack sample is available yet.
@@ -83,13 +93,24 @@ func New(cfg Config) (*Isolate, error) {
 		return nil, errors.New("isolate: unknown program")
 	}
 	boundary := isolatebridge.New()
+	i := &Isolate{
+		entry:    cfg.Program.entry.Main,
+		boundary: boundary,
+		done:     make(chan struct{}),
+	}
 	var runState func(func())
 	var err error
 	// Initializers can call runtime.Goexit. Run them on a dedicated goroutine
 	// so that doing so does not terminate the host goroutine calling New.
 	done := make(chan struct{})
+	var doneOnce sync.Once
+	closeDone := func() { doneOnce.Do(func() { close(done) }) }
+	boundary.SetExitHandler(func(code int) {
+		i.completeExit(code)
+		closeDone()
+	})
 	go func() {
-		defer close(done)
+		defer closeDone()
 		boundary.RunOwner(func() {
 			returned := false
 			defer func() {
@@ -109,6 +130,10 @@ func New(cfg Config) (*Isolate, error) {
 		})
 	}()
 	<-done
+	if i.exitRequested.Load() {
+		boundary.Stop()
+		return nil, &i.exitErr
+	}
 	if err != nil {
 		boundary.Stop()
 		return nil, err
@@ -117,12 +142,8 @@ func New(cfg Config) (*Isolate, error) {
 		boundary.Stop()
 		return nil, errors.New("isolate: program has no state runner")
 	}
-	return &Isolate{
-		entry:    cfg.Program.entry.Main,
-		runState: runState,
-		boundary: boundary,
-		done:     make(chan struct{}),
-	}, nil
+	i.runState = runState
+	return i, nil
 }
 
 // Start runs the program's ordinary main on a new goroutine. It may be called
@@ -133,7 +154,7 @@ func (i *Isolate) Start() error {
 	}
 	i.lifecycleMu.Lock()
 	defer i.lifecycleMu.Unlock()
-	if i.killed || !i.started.CompareAndSwap(false, true) {
+	if i.killed || i.exitRequested.Load() || i.boundary.Stopped() || !i.started.CompareAndSwap(false, true) {
 		return errors.New("isolate: instance already started or revoked")
 	}
 	ready := make(chan struct{})
@@ -166,6 +187,17 @@ func (i *Isolate) Start() error {
 func (i *Isolate) complete(err error) {
 	i.completeOnce.Do(func() {
 		i.err = err
+		close(i.done)
+	})
+}
+
+func (i *Isolate) completeExit(code int) {
+	i.exitRequested.Store(true)
+	i.completeOnce.Do(func() {
+		i.exitErr.Code = code
+		if code != 0 {
+			i.err = &i.exitErr
+		}
 		close(i.done)
 	})
 }

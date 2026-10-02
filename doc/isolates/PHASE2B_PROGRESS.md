@@ -774,3 +774,23 @@ process-state APIs.
 The focused guard test passed 10 race-detector runs, the complete `isolate`
 race suite passed 10 runs, a Plan 9/amd64 runtime test binary compiled, and
 `src/all.bash` passed, including race and `../test`.
+
+## Process exit guards
+
+`os.Exit` and direct `syscall.Exit` now call a runtime exit hook when an
+isolate group is active. The group invokes its trusted bridge callback, which
+revokes admission, closes the `Call` stop channel, scans registered runtime
+waiters, and publishes the exit status to the host. The caller is then hard
+discarded without user defers. `Wait` returns nil for status zero or an
+`ExitError` for nonzero status; `New` returns `ExitError` if a package
+initializer exits. A child may request whole-isolate exit. Focused race tests
+cover all of these paths and verify that the host process continues. This
+remains a trusted POC: uninterrupted code may outlive the exit request until
+its next supported runtime boundary, and other process-control routes remain
+open.
+
+The focused source-level cases passed 100 race-detector runs, the complete
+`isolate` race suite passed 10 runs, and a Plan 9/amd64 runtime test binary
+compiled. `src/all.bash` passed, including race and `../test`. The static
+multi-program script then built a configured `package main` that calls
+`os.Exit(42)` and verified that its host receives status 42 and continues.

@@ -49,6 +49,11 @@ func isolateNewGroup() unsafe.Pointer {
 	return unsafe.Pointer(new(isolateRevocationGroup))
 }
 
+//go:linkname isolateSetGroupExit
+func isolateSetGroupExit(p unsafe.Pointer, fn func(int)) {
+	(*isolateRevocationGroup)(p).exit = fn
+}
+
 //go:linkname isolateSetGroup
 func isolateSetGroup(p unsafe.Pointer) unsafe.Pointer {
 	gp := getg()

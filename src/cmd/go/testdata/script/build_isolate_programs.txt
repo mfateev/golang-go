@@ -21,6 +21,11 @@ stderr -count=3 '^shared init$'
 [cgo] [race] stdout '^json options isolated$'
 [cgo] [race] stdout '^time local isolated$'
 
+go build -isolate-dir=./exitprog -o exitworker$GOEXE ./host_exit
+exec ./exitworker$GOEXE
+stdout '^isolate exit status 42$'
+stdout '^host alive$'
+
 ! go build -isolate-dir=./orders -isolate-dir=./orders -o duplicate$GOEXE ./host
 stderr 'duplicate isolate directory'
 
@@ -214,6 +219,36 @@ func main() {
     <-instance.Done()
     fmt.Println("host after", shared.Next())
 }
+-- host_exit/main.go --
+package main
+
+import (
+    "context"
+    "errors"
+    "fmt"
+    "isolate"
+)
+
+func main() {
+    program, ok := isolate.LookupProgram("exitprog")
+    if !ok { panic("missing exit program") }
+    instance, err := isolate.New(isolate.Config{Program: program})
+    if err != nil { panic(err) }
+    if err := instance.Start(); err != nil { panic(err) }
+    var exitErr *isolate.ExitError
+    if err := instance.Wait(); !errors.As(err, &exitErr) || exitErr.Code != 42 { panic("wrong isolate exit status") }
+    if err := instance.Kill(context.Background()); err != nil { panic(err) }
+    fmt.Println("isolate exit status", exitErr.Code)
+    fmt.Println("host alive")
+}
+-- exitprog/isolate.json --
+{"name":"exitprog"}
+-- exitprog/main.go --
+package main
+
+import "os"
+
+func main() { os.Exit(42) }
 -- orders/isolate.json --
 {"name":"orders"}
 -- orders/main.go --

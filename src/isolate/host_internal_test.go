@@ -8,10 +8,12 @@ import (
 	"context"
 	"errors"
 	"internal/isolatebridge"
+	"os"
 	"reflect"
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -94,6 +96,134 @@ func TestKillStopsCallWaiter(t *testing.T) {
 	}
 	if err := i.Kill(ctx); err != nil {
 		t.Fatalf("repeated Kill = %v", err)
+	}
+}
+
+func TestProcessExitStopsOnlyIsolate(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		code int
+		exit func()
+	}{
+		{"os zero", 0, func() { os.Exit(0) }},
+		{"os nonzero", 37, func() { os.Exit(37) }},
+		{"syscall", 38, func() { syscall.Exit(38) }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var deferred, resumed atomic.Bool
+			program := Program{entry: isolatebridge.ProgramEntry{
+				NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+				Main: func() {
+					defer deferred.Store(true)
+					tt.exit()
+					resumed.Store(true)
+				},
+			}}
+			i, err := New(Config{Program: program})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := i.Start(); err != nil {
+				t.Fatal(err)
+			}
+			err = i.Wait()
+			if tt.code == 0 {
+				if err != nil {
+					t.Fatalf("Wait after Exit(0) = %v", err)
+				}
+			} else {
+				var exitErr *ExitError
+				if !errors.As(err, &exitErr) || exitErr.Code != tt.code {
+					t.Fatalf("Wait after Exit(%d) = %v, want exit status", tt.code, err)
+				}
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if err := i.Kill(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if deferred.Load() || resumed.Load() {
+				t.Fatalf("Exit ran user code: deferred=%t resumed=%t", deferred.Load(), resumed.Load())
+			}
+		})
+	}
+}
+
+func TestProcessExitDuringInitialization(t *testing.T) {
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) {
+			os.Exit(39)
+			return nil, nil
+		},
+		Main: func() { t.Error("main ran after initializer Exit") },
+	}}
+	i, err := New(Config{Program: program})
+	if i != nil {
+		t.Fatal("New returned an instance after initializer Exit")
+	}
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 39 {
+		t.Fatalf("New after initializer Exit = %v, want status 39", err)
+	}
+}
+
+func TestChildExitDuringInitialization(t *testing.T) {
+	var deferred atomic.Bool
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) {
+			defer deferred.Store(true)
+			go func() { os.Exit(41) }()
+			var never chan struct{}
+			<-never
+			return nil, nil
+		},
+		Main: func() { t.Error("main ran after initializer child Exit") },
+	}}
+	i, err := New(Config{Program: program})
+	if i != nil {
+		t.Fatal("New returned an instance after initializer child Exit")
+	}
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 41 {
+		t.Fatalf("New after initializer child Exit = %v, want status 41", err)
+	}
+	if deferred.Load() {
+		t.Fatal("initializer ran a defer after child Exit")
+	}
+}
+
+func TestChildExitRevokesMain(t *testing.T) {
+	var mainResumed, mainDeferred, childDeferred atomic.Bool
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main: func() {
+			defer mainDeferred.Store(true)
+			go func() {
+				defer childDeferred.Store(true)
+				os.Exit(40)
+			}()
+			_, _ = isolatebridge.Current().Call(1, nil)
+			mainResumed.Store(true)
+		},
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	var exitErr *ExitError
+	if err := i.Wait(); !errors.As(err, &exitErr) || exitErr.Code != 40 {
+		t.Fatalf("Wait after child Exit = %v, want status 40", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := i.Kill(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if mainResumed.Load() || mainDeferred.Load() || childDeferred.Load() {
+		t.Fatalf("child Exit ran user code: main resumed=%t, main deferred=%t, child deferred=%t", mainResumed.Load(), mainDeferred.Load(), childDeferred.Load())
 	}
 }
 

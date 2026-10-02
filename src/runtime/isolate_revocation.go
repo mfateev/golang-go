@@ -103,6 +103,25 @@ func isolateDiscard0(gp *g) {
 	throw("isolate: schedule returned after discard")
 }
 
+// isolateExit revokes the current instance and ends this G without running
+// user defers. The trusted host callback closes Call and publishes the exit
+// status before the G is destroyed.
+//
+//go:linkname isolateExit
+func isolateExit(code int) {
+	group := getg().isolateGroup
+	if group == nil {
+		panic("isolate: Exit without a runtime group")
+	}
+	if group.exit != nil {
+		group.exit(code)
+	} else {
+		group.revoke()
+	}
+	isolateDiscardIfRevoked()
+	throw("isolate: Exit returned after revocation")
+}
+
 //go:linkname sync_runtime_isolateExitIfRevoked sync.runtime_isolateExitIfRevoked
 func sync_runtime_isolateExitIfRevoked() {
 	isolateExitIfRevoked()

@@ -29,6 +29,7 @@ type Boundary struct {
 	wake       sync.Once
 	wakeNeeded bool
 	stopped    atomic.Bool
+	onExit     func(int)
 }
 
 var nextOwner atomic.Uintptr
@@ -62,7 +63,24 @@ func New() *Boundary {
 		calls: make(chan *Command),
 		halt:  make(chan struct{}),
 	}
+	setGroupExit(b.group, b.exit)
 	return b
+}
+
+// SetExitHandler installs the host lifecycle callback before an instance
+// starts. Exit from a program or initializer reports its status here.
+func (b *Boundary) SetExitHandler(fn func(int)) {
+	if b.onExit != nil || fn == nil {
+		panic("isolate: invalid exit handler")
+	}
+	b.onExit = fn
+}
+
+func (b *Boundary) exit(code int) {
+	b.Stop()
+	if b.onExit != nil {
+		b.onExit(code)
+	}
 }
 
 // Run binds b to the current goroutine for fn. Ordinary child goroutines
@@ -261,6 +279,9 @@ func setOwner(uintptr) uintptr
 
 //go:linkname newGroup runtime.isolateNewGroup
 func newGroup() unsafe.Pointer
+
+//go:linkname setGroupExit runtime.isolateSetGroupExit
+func setGroupExit(unsafe.Pointer, func(int))
 
 //go:linkname setGroup runtime.isolateSetGroup
 func setGroup(unsafe.Pointer) unsafe.Pointer

@@ -196,7 +196,7 @@ import denylist; the rest trap at their entry points.
 
 | Package | Why |
 |---|---|
-| `os` | File IO, ambient state, and `os.Exit` would kill the whole process |
+| `os` | File IO and ambient state require host mediation; `os.Exit` is redirected to whole-isolate termination |
 | `net`, `net/http` | Network access; workflow code must not do IO |
 | `syscall`, `golang.org/x/sys` | Direct kernel access |
 | `os/exec`, `os/signal` | Process control |
@@ -223,13 +223,21 @@ enforces the current restriction while owner-aware cleanup remains pending.
 - `runtime.LockOSThread` — breaks the isolate↔thread model
 - `runtime.NumCPU`, `NumGoroutine`, `GOMAXPROCS`, `ReadMemStats` — observable
   process state; either banned or virtualized per isolate
-- `os.Exit` — must not be reachable at all
+- `os.Exit` and `syscall.Exit` — terminate the current isolate without ending
+  the host process or running user defers; nonzero status is reported to the
+  host
 
 The provisional runtime now rejects `LockOSThread`, `UnlockOSThread`,
 `NumCPU`, `NumCgoCall`, `NumGoroutine`, `GOMAXPROCS`,
 `SetDefaultGOMAXPROCS`, and `ReadMemStats` before reading or changing process
 state. These guards currently panic, like the provisional cleanup guards;
 isolate-fatal handling and an audit of other process-state APIs remain open.
+`os.Exit` and the direct `syscall.Exit` runtime entry now route an active
+isolate through its lifecycle callback. The callback revokes the whole group,
+wakes `Call` and registered runtime waits, publishes the exit code, and hard
+discards the caller before process exit hooks. An active CPU loop may still
+leave teardown pending, as with host `Kill(ctx)`. Other process-control paths
+still need the planned Tier 1 audit and build gate.
 
 ## D. Virtualized — allowed, but redirected by the runtime
 

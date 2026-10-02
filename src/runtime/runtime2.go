@@ -27,6 +27,7 @@ type isolateRevocationGroup struct {
 	live      atomic.Int32
 	running   atomic.Int32 // Goroutines associated with an M, including syscalls.
 	runnable  atomic.Int32 // Conservative count of group Gs in or entering _Grunnable.
+	exit      func(int)    // Trusted host callback, installed before instance execution.
 	pollLock  mutex
 	pollWaits *g
 	parkLock  mutex
