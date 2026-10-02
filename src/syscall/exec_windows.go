@@ -305,6 +305,7 @@ var zeroProcAttr ProcAttr
 var zeroSysProcAttr SysProcAttr
 
 func StartProcess(argv0 string, argv []string, attr *ProcAttr) (pid int, handle uintptr, err error) {
+	rejectIsolateProcessControl("StartProcess")
 	if len(argv0) == 0 {
 		return 0, 0, EWINDOWS
 	}
@@ -451,5 +452,6 @@ func StartProcess(argv0 string, argv []string, attr *ProcAttr) (pid int, handle 
 }
 
 func Exec(argv0 string, argv []string, envv []string) (err error) {
+	rejectIsolateProcessControl("Exec")
 	return EWINDOWS
 }

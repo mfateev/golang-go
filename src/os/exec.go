@@ -269,6 +269,7 @@ func FindProcess(pid int) (*Process, error) {
 //
 // If there is an error, it will be of type [*PathError].
 func StartProcess(name string, argv []string, attr *ProcAttr) (*Process, error) {
+	rejectIsolateProcessStart()
 	testlog.Open(name)
 	return startProcess(name, argv, attr)
 }

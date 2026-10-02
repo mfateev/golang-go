@@ -11,3 +11,9 @@ func runtime_isolateActive() bool
 
 //go:linkname runtime_isolateExit runtime.isolateExit
 func runtime_isolateExit(int)
+
+func rejectIsolateProcessStart() {
+	if runtime_isolateActive() {
+		panic("os.StartProcess is unavailable in an isolate")
+	}
+}

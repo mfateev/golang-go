@@ -250,11 +250,13 @@ func forkExec(argv0 string, argv []string, attr *ProcAttr) (pid int, err error) 
 
 // Combination of fork and exec, careful to be thread safe.
 func ForkExec(argv0 string, argv []string, attr *ProcAttr) (pid int, err error) {
+	rejectIsolateProcessControl("ForkExec")
 	return forkExec(argv0, argv, attr)
 }
 
 // StartProcess wraps [ForkExec] for package os.
 func StartProcess(argv0 string, argv []string, attr *ProcAttr) (pid int, handle uintptr, err error) {
+	rejectIsolateProcessControl("StartProcess")
 	pid, err = forkExec(argv0, argv, attr)
 	return pid, 0, err
 }
@@ -269,6 +271,7 @@ var execveLibc func(path *byte, argv **byte, envp **byte) error
 
 // Exec invokes the execve(2) system call.
 func Exec(argv0 string, argv []string, envv []string) (err error) {
+	rejectIsolateProcessControl("Exec")
 	argv0p, err := BytePtrFromString(argv0)
 	if err != nil {
 		return err

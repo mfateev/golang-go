@@ -246,6 +246,13 @@ build information before those operations run. `ParseBuildInfo` remains a
 pure parser. These guards also currently panic; the isolate-fatal path and
 other effectful standard-library packages still need work.
 
+The provisional process-launch guards reject `os/exec.Cmd.Start`,
+`os.StartProcess`, and direct `syscall.ForkExec`, `StartProcess`, and `Exec`
+before launching or replacing a process. `os/exec` needs its own early guard
+because it can touch process-wide file finalizers while preparing child pipes.
+These entry guards do not close direct raw-syscall paths; the static subset
+gate and broader Tier 1 audit remain necessary.
+
 ## D. Virtualized — allowed, but redirected by the runtime
 
 These stay available because banning them would make ordinary Go unwritable.

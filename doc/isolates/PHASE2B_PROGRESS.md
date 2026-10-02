@@ -807,3 +807,17 @@ temporary enforcement mechanism.
 
 The focused test passed 10 race-detector runs, the complete isolate package
 passed 10 race-detector runs, and `src/all.bash` passed.
+
+## Process launch guards
+
+`os/exec.Cmd.Start`, `os.StartProcess`, and the direct `syscall.ForkExec`,
+`StartProcess`, and `Exec` entry points now reject active isolates. The
+`os/exec` guard precedes its child-pipe preparation, which otherwise reached
+`runtime.SetFinalizer` before `os.StartProcess`. The direct entry points are
+covered by a focused test. These recoverable-panic guards are provisional;
+raw syscalls and other process effects still need the static subset gate and
+Tier 1 audit.
+
+The focused launch tests passed 100 race-detector runs, the complete isolate
+package passed 10 race-detector runs, Plan 9/amd64 and Windows/amd64 isolate
+test binaries compiled, and `src/all.bash` passed.

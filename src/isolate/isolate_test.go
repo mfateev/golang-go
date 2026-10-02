@@ -14,6 +14,8 @@ import (
 	"iter"
 	"maps"
 	"net/netip"
+	"os"
+	"os/exec"
 	"reflect"
 	"runtime"
 	rdebug "runtime/debug"
@@ -21,6 +23,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 	"unicode"
@@ -983,6 +986,39 @@ func TestProcessDebugAPIsRejectIsolate(t *testing.T) {
 					want := "runtime/debug." + tt.name + " is unavailable in an isolate"
 					if !ok || got != want {
 						t.Errorf("%s panic = %q, want %q", tt.name, got, want)
+					}
+				}()
+				tt.call()
+			}()
+		}
+	})
+}
+
+func TestProcessLaunchAPIsRejectIsolate(t *testing.T) {
+	b := isolatebridge.New()
+	b.Run(func() {
+		for _, tt := range []struct {
+			name string
+			want string
+			call func()
+		}{
+			{"os.StartProcess", "os.StartProcess is unavailable in an isolate", func() {
+				_, _ = os.StartProcess("/nonexistent", []string{"/nonexistent"}, nil)
+			}},
+			{"os/exec.Cmd.Start", "os/exec.Cmd.Start is unavailable in an isolate", func() {
+				_ = exec.Command("/nonexistent").Start()
+			}},
+			{"syscall.StartProcess", "syscall.StartProcess is unavailable in an isolate", func() {
+				_, _, _ = syscall.StartProcess("/nonexistent", []string{"/nonexistent"}, nil)
+			}},
+			{"syscall.Exec", "syscall.Exec is unavailable in an isolate", func() {
+				_ = syscall.Exec("/nonexistent", []string{"/nonexistent"}, nil)
+			}},
+		} {
+			func() {
+				defer func() {
+					if got := recover(); got != tt.want {
+						t.Errorf("%s panic = %v, want %q", tt.name, got, tt.want)
 					}
 				}()
 				tt.call()

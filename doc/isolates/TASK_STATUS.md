@@ -277,6 +277,10 @@ ordinary-Go execution remains unproved.**
       settings, including heap dump and traceback runtime entries. Its pure
       `ParseBuildInfo` parser remains usable; other effectful packages and
       isolate-fatal enforcement remain open
+- [x] Provisional guards reject `os/exec.Cmd.Start`, `os.StartProcess`, and
+      direct `syscall.ForkExec`, `StartProcess`, and `Exec` before launch.
+      Raw syscalls and other process effects remain open pending the static
+      subset gate and Tier 1 audit
 - [x] Runtime `g` carries a monotonic numeric instance owner ID through
       initializer replay, the generated state runner, `main`, and native
       children. A race test checks distinct instance IDs and restored host

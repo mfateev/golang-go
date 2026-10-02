@@ -650,6 +650,9 @@ func (c *Cmd) Run() error {
 // After a successful call to Start the [Cmd.Wait] method must be called in
 // order to release associated system resources.
 func (c *Cmd) Start() error {
+	if isolateActive() {
+		panic("os/exec.Cmd.Start is unavailable in an isolate")
+	}
 	// Check for doubled Start calls before we defer failure cleanup. If the prior
 	// call to Start succeeded, we don't want to spuriously close its pipes.
 	// It is an error to call Start twice even if the first call did not create a process.

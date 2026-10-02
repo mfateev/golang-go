@@ -525,17 +525,20 @@ func startProcess(argv0 string, argv []string, attr *ProcAttr) (pid int, err err
 
 // Combination of fork and exec, careful to be thread safe.
 func ForkExec(argv0 string, argv []string, attr *ProcAttr) (pid int, err error) {
+	rejectIsolateProcessControl("ForkExec")
 	return startProcess(argv0, argv, attr)
 }
 
 // StartProcess wraps [ForkExec] for package os.
 func StartProcess(argv0 string, argv []string, attr *ProcAttr) (pid int, handle uintptr, err error) {
+	rejectIsolateProcessControl("StartProcess")
 	pid, err = startProcess(argv0, argv, attr)
 	return pid, 0, err
 }
 
 // Ordinary exec.
 func Exec(argv0 string, argv []string, envv []string) (err error) {
+	rejectIsolateProcessControl("Exec")
 	if envv != nil {
 		r1, _, _ := RawSyscall(SYS_RFORK, RFCENVG, 0, 0)
 		if int32(r1) == -1 {
