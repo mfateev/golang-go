@@ -146,6 +146,23 @@ does not make trusted runtime assembly, such as large `memmove`, immediately
 preemptible. The Phase 0 arm64 probe failed its 100 ms acknowledgment test
 for that case, so it is not the MVP termination mechanism.
 
+User-visible synchronization objects are confined to one isolate. An isolate
+cannot share a `sync.Mutex`, `RWMutex`, `Cond`, `WaitGroup`, or the mutable state
+they protect with the host or another isolate. A `Cond` and its associated
+locker have the same owner; its embedded notification tickets and waiter
+queue belong to that owner as well. Whole-isolate teardown may discard these
+objects and goroutines holding them, without unlocking or running their
+defers. It must first remove runtime waiter records and stack references from
+process-owned scheduler structures. The runtime's semaphore hash table and
+its internal locks remain process-owned even when an entry refers to an
+isolate-owned synchronization object.
+
+`isolate.Call` is a separate boundary operation. Its host command and reply
+records are process-owned, and stopping the isolate must wake a goroutine
+waiting in `Call` independently of synchronization-object teardown. The
+current channel-based bridge provides that wake with a stop channel; native
+boundary queues will need the same property.
+
 ## Consequences and tensions
 
 **The memory floor is the cost to watch.** Decision 7 keeps a per-isolate

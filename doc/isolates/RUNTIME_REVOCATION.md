@@ -35,6 +35,16 @@ must also own or enumerate every registration created on its behalf. A scan of
 G status alone cannot find the queue node, lock, or timer that must be
 unlinked.
 
+Synchronization objects used by an isolate, including `sync.Cond` and its
+associated locker, belong to that isolate alone. No other isolate or host
+goroutine may use them. A `Cond`'s ticket counters and notification queue are
+embedded in the `Cond`, so they have the same owner. The `sudog` records in
+that queue still belong to runtime machinery and must be detached before the
+isolate's stacks or memory can be reclaimed. The hashed semaphore roots are
+process-owned and may contain waiters for different owners; teardown removes
+only the target isolate's records under the root lock. `Call` uses separate
+process-owned command records and must remain independently wakeable.
+
 The exported `runtime.Gosched` path checks revocation before and after its
 yield, allowing a yielding loop to exit. Runtime-internal yields use an
 unchecked helper in paths that cannot run `Goexit`; this does not constitute
@@ -47,8 +57,8 @@ the general scheduler execution fence required above.
 | Channel send/receive | One `sudog` in `hchan.sendq` or `recvq`, also on `gp.waiting` | A blocking operation registers its channel with the group before taking the channel lock. Revocation removes a queued `sudog` under that lock and wakes the G; a peer that already dequeued it remains responsible for the wake. The resumed G unregisters, clears its wait state, and releases the `sudog` before exiting. Multi-case `select` uses its own wake token path. |
 | Nil channel send/receive or an empty/all-nil `select` | No channel, timer, or other external wait record | The G registers a permanent park with its group before parking. Revocation cancels an uncommitted park or wakes a committed one; the G unregisters and exits. |
 | `select` | One `sudog` per case, linked through `gp.waiting` and several channel queues | The G registers before taking channel locks. Revocation claims `selectDone` against peer wakes, then either cancels an uncommitted park or readies the parked G. The resumed G locks all cases, removes every queue record, updates timer wait counts, and exits before user code. |
-| `sync.Mutex`, `WaitGroup`, and related semaphores | `sudog` in a hashed `semaRoot` queue | `sema.go` releases the record after wakeup; non-head queue removal must preserve other waiters. `WaitGroup.Wait` now checks revocation on entry and after semaphore cleanup, race-state restoration, and the reuse check. It still needs an ordinary `Done` to wake a parked waiter. Mutex and other semaphore users remain open. |
-| `sync.Cond` | Ticketed `sudog` in `notifyList`, also in `gp.waiting` | `sema.go` clears the G waiting pointer and releases the record. Removing an earlier ticket must preserve later `Signal` behavior. |
+| `sync.Mutex`, `WaitGroup`, and related semaphores | `sudog` in a process-owned hashed `semaRoot` queue, keyed by an isolate-owned semaphore address | `sema.go` releases the record after an ordinary wakeup. Whole-isolate teardown must remove all of the target's records, including non-head entries, without disturbing other owners in the same root. `WaitGroup.Wait` currently checks revocation after ordinary `Done` wakeup; immediate teardown remains open. |
+| `sync.Cond` | Ticketed `sudog` in the isolate-owned `notifyList`, also in `gp.waiting` | `sema.go` clears the G waiting pointer and releases the record after ordinary notification. Whole-isolate teardown must detach every waiter, including a waiter already removed by `Signal` or `Broadcast` but not yet readied. No later `Signal` in the revoked isolate needs to run. |
 | `time.Sleep` and timer channels | Per-G timer or channel timer linked into runtime timer machinery | Real `time.Sleep` waits register with the group. Revocation stops pending timers and wakes their Gs; if a callback has started, it performs the wake. The resumed G unregisters before exiting. Fake synctest timers still wait for their normal wakeup. Direct and selected timer-channel receives use channel/select cleanup. |
 | Network poll | `pollDesc.rg` or `wg` and deadline timers | `poll_runtime_pollReset` checks before preparing I/O. A normal poll wait registers its descriptor with the isolate group after entering `pdWait`. Revocation clears registered poll semaphores and readies parked Gs; each G then completes normal cleanup and exits at the post-wait fence. This does not yet discard a waiter without scheduling it. `poll_runtime_pollWaitCanceled` remains separate. |
 | Current `isolate.Call` | Channel send and reply receive on the provisional bridge | The trusted bridge selects each wait against a stop channel and exits the waiting G with `Goexit`. A late host reply uses a buffered channel. Ordinary channel wait detachment also exists, but bridge waits still use their own stop path; the bridge is not yet a native owned command queue. |
@@ -63,8 +73,11 @@ Mutex and `sync.Cond` waiters need more than a generic post-wakeup
 `Goexit` check. A mutex semaphore may have already transferred lock ownership
 to the waking G. Conversely, `sync.Cond.Wait` releases the caller's lock
 before parking and reacquires it only after `notifyListWait` returns; exiting
-inside `notifyListWait` can make a caller's deferred unlock fail. Their
-revocation paths must preserve those lock obligations.
+inside `notifyListWait` can make a caller's deferred unlock fail. Since these
+objects and their users are confined to the revoked isolate, teardown can
+discard their Go-level lock state and skip user defers. This requires a
+runtime path that detaches queue records and destroys parked goroutines
+without resuming Go code; the current `Goexit` path does not provide it.
 
 ## Acceptance cases
 
@@ -72,15 +85,16 @@ revocation paths must preserve those lock obligations.
   tagged first-dispatch test covers this narrow case.
 - A previously parked G cannot resume isolate code after revocation, even if
   channel send, `select`, timer, netpoll, or semaphore wakeup races with it.
-- Detaching a non-head mutex waiter leaves the other waiters working.
-- Removing an earlier `sync.Cond` ticket does not consume a later waiter's
-  `Signal`; repeated waits after removal still work.
+- Detaching a non-head semaphore waiter leaves waiters for other owners in
+  the process-owned root working.
+- Revoking a `sync.Cond` removes all its queued waiter records; a racing
+  `Signal` or `Broadcast` cannot retain or ready a destroyed G.
 - A G whose wait has been signaled but whose Go cleanup has not run does not
   leave a `sudog`, timer count, or stack pointer in a process queue.
 - `Kill(ctx)` returns pending while any G remains executing or in a syscall;
   a later nil result is stable against every scheduler entry path.
 
-The `phase0_e5a_acceptance` tagged tests already contain non-head mutex and
-multiple `sync.Cond` scenarios. Some deliberately fail for the old hard-kill
-probe, so they are specifications to adapt to group revocation, not a gate for
-the current trusted POC.
+The `phase0_e5a_acceptance` tagged tests contain non-head mutex and multiple
+`sync.Cond` scenarios from an earlier per-goroutine kill probe. They must be
+adapted to whole-isolate revocation and owner separation before use as a gate
+for the current trusted POC.
