@@ -1027,6 +1027,42 @@ func TestProcessLaunchAPIsRejectIsolate(t *testing.T) {
 	})
 }
 
+func TestEnvironmentAPIsRejectIsolate(t *testing.T) {
+	const key = "GO_ISOLATE_ENV_GUARD_TEST"
+	t.Setenv(key, "host")
+	b := isolatebridge.New()
+	b.Run(func() {
+		for _, tt := range []struct {
+			want string
+			call func()
+		}{
+			{"os.Getenv is unavailable in an isolate", func() { _ = os.Getenv(key) }},
+			{"os.LookupEnv is unavailable in an isolate", func() { _, _ = os.LookupEnv(key) }},
+			{"os.Setenv is unavailable in an isolate", func() { _ = os.Setenv(key, "isolate") }},
+			{"os.Unsetenv is unavailable in an isolate", func() { _ = os.Unsetenv(key) }},
+			{"os.Clearenv is unavailable in an isolate", os.Clearenv},
+			{"os.Environ is unavailable in an isolate", func() { _ = os.Environ() }},
+			{"syscall.Getenv is unavailable in an isolate", func() { _, _ = syscall.Getenv(key) }},
+			{"syscall.Setenv is unavailable in an isolate", func() { _ = syscall.Setenv(key, "isolate") }},
+			{"syscall.Unsetenv is unavailable in an isolate", func() { _ = syscall.Unsetenv(key) }},
+			{"syscall.Clearenv is unavailable in an isolate", syscall.Clearenv},
+			{"syscall.Environ is unavailable in an isolate", func() { _ = syscall.Environ() }},
+		} {
+			func() {
+				defer func() {
+					if got := recover(); got != tt.want {
+						t.Errorf("environment panic = %v, want %q", got, tt.want)
+					}
+				}()
+				tt.call()
+			}()
+		}
+	})
+	if got := os.Getenv(key); got != "host" {
+		t.Fatalf("host environment changed to %q", got)
+	}
+}
+
 func TestAfterFuncRejectsUnownedCallback(t *testing.T) {
 	b := isolatebridge.New()
 	b.Run(func() {

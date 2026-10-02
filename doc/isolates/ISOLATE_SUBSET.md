@@ -253,6 +253,12 @@ because it can touch process-wide file finalizers while preparing child pipes.
 These entry guards do not close direct raw-syscall paths; the static subset
 gate and broader Tier 1 audit remain necessary.
 
+The provisional environment guards reject `os` and `syscall` reads and
+mutations of the process environment before touching it. Pure `os.Expand`
+remains usable with a caller-supplied mapping; `os.ExpandEnv` reaches the
+guarded `os.Getenv`. Per-isolate environment values and `os.Args` routing are
+still open.
+
 ## D. Virtualized — allowed, but redirected by the runtime
 
 These stay available because banning them would make ordinary Go unwritable.

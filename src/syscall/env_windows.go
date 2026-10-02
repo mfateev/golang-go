@@ -11,6 +11,7 @@ import (
 )
 
 func Getenv(key string) (value string, found bool) {
+	rejectIsolateEnvironment("Getenv")
 	keyp, err := UTF16PtrFromString(key)
 	if err != nil {
 		return "", false
@@ -29,6 +30,7 @@ func Getenv(key string) (value string, found bool) {
 }
 
 func Setenv(key, value string) error {
+	rejectIsolateEnvironment("Setenv")
 	v, err := UTF16PtrFromString(value)
 	if err != nil {
 		return err
@@ -46,6 +48,7 @@ func Setenv(key, value string) error {
 }
 
 func Unsetenv(key string) error {
+	rejectIsolateEnvironment("Unsetenv")
 	keyp, err := UTF16PtrFromString(key)
 	if err != nil {
 		return err
@@ -59,6 +62,7 @@ func Unsetenv(key string) error {
 }
 
 func Clearenv() {
+	rejectIsolateEnvironment("Clearenv")
 	for _, s := range Environ() {
 		// Environment variables can begin with =
 		// so start looking for the separator = at j=1.
@@ -73,6 +77,7 @@ func Clearenv() {
 }
 
 func Environ() []string {
+	rejectIsolateEnvironment("Environ")
 	envp, e := GetEnvironmentStrings()
 	if e != nil {
 		return nil

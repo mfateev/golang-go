@@ -17,3 +17,9 @@ func rejectIsolateProcessStart() {
 		panic("os.StartProcess is unavailable in an isolate")
 	}
 }
+
+func rejectIsolateEnvironment(name string) {
+	if runtime_isolateActive() {
+		panic("os." + name + " is unavailable in an isolate")
+	}
+}

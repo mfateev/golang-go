@@ -14,3 +14,9 @@ func rejectIsolateProcessControl(name string) {
 		panic("syscall." + name + " is unavailable in an isolate")
 	}
 }
+
+func rejectIsolateEnvironment(name string) {
+	if isolateActive() {
+		panic("syscall." + name + " is unavailable in an isolate")
+	}
+}

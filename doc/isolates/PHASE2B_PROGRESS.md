@@ -821,3 +821,16 @@ Tier 1 audit.
 The focused launch tests passed 100 race-detector runs, the complete isolate
 package passed 10 race-detector runs, Plan 9/amd64 and Windows/amd64 isolate
 test binaries compiled, and `src/all.bash` passed.
+
+## Process environment guards
+
+`os` and `syscall` environment reads and mutations now reject active isolates
+before reading or changing host environment state. A focused test covers
+`Getenv`, `LookupEnv`, `Setenv`, `Unsetenv`, `Clearenv`, and `Environ` as
+available in each package, and verifies that the host value remains intact.
+This is a provisional denial; per-isolate environment values, `os.Args`, raw
+syscalls, and the static subset gate remain open.
+
+The focused environment test passed 100 race-detector runs, the complete
+isolate package passed 10 race-detector runs, Plan 9/amd64 and Windows/amd64
+isolate test binaries compiled, and `src/all.bash` passed.

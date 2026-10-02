@@ -50,6 +50,7 @@ var copyenv = sync.OnceFunc(func() {
 })
 
 func Unsetenv(key string) error {
+	rejectIsolateEnvironment("Unsetenv")
 	copyenv()
 
 	envLock.Lock()
@@ -64,6 +65,7 @@ func Unsetenv(key string) error {
 }
 
 func Getenv(key string) (value string, found bool) {
+	rejectIsolateEnvironment("Getenv")
 	copyenv()
 	if len(key) == 0 {
 		return "", false
@@ -86,6 +88,7 @@ func Getenv(key string) (value string, found bool) {
 }
 
 func Setenv(key, value string) error {
+	rejectIsolateEnvironment("Setenv")
 	copyenv()
 	if len(key) == 0 {
 		return EINVAL
@@ -121,6 +124,7 @@ func Setenv(key, value string) error {
 }
 
 func Clearenv() {
+	rejectIsolateEnvironment("Clearenv")
 	copyenv()
 
 	envLock.Lock()
@@ -133,6 +137,7 @@ func Clearenv() {
 }
 
 func Environ() []string {
+	rejectIsolateEnvironment("Environ")
 	copyenv()
 	envLock.RLock()
 	defer envLock.RUnlock()

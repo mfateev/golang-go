@@ -281,6 +281,9 @@ ordinary-Go execution remains unproved.**
       direct `syscall.ForkExec`, `StartProcess`, and `Exec` before launch.
       Raw syscalls and other process effects remain open pending the static
       subset gate and Tier 1 audit
+- [x] Provisional guards reject `os` and `syscall` process environment reads
+      and mutations before host state is accessed. Per-isolate environment
+      values and `os.Args` routing remain open
 - [x] Runtime `g` carries a monotonic numeric instance owner ID through
       initializer replay, the generated state runner, `main`, and native
       children. A race test checks distinct instance IDs and restored host

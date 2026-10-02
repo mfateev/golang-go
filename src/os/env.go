@@ -99,6 +99,7 @@ func getShellName(s string) (string, int) {
 // It returns the value, which will be empty if the variable is not present.
 // To distinguish between an empty value and an unset value, use [LookupEnv].
 func Getenv(key string) string {
+	rejectIsolateEnvironment("Getenv")
 	testlog.Getenv(key)
 	v, _ := syscall.Getenv(key)
 	return v
@@ -110,6 +111,7 @@ func Getenv(key string) string {
 // Otherwise the returned value will be empty and the boolean will
 // be false.
 func LookupEnv(key string) (string, bool) {
+	rejectIsolateEnvironment("LookupEnv")
 	testlog.Getenv(key)
 	return syscall.Getenv(key)
 }
@@ -117,6 +119,7 @@ func LookupEnv(key string) (string, bool) {
 // Setenv sets the value of the environment variable named by the key.
 // It returns an error, if any.
 func Setenv(key, value string) error {
+	rejectIsolateEnvironment("Setenv")
 	err := syscall.Setenv(key, value)
 	if err != nil {
 		return NewSyscallError("setenv", err)
@@ -126,16 +129,19 @@ func Setenv(key, value string) error {
 
 // Unsetenv unsets a single environment variable.
 func Unsetenv(key string) error {
+	rejectIsolateEnvironment("Unsetenv")
 	return syscall.Unsetenv(key)
 }
 
 // Clearenv deletes all environment variables.
 func Clearenv() {
+	rejectIsolateEnvironment("Clearenv")
 	syscall.Clearenv()
 }
 
 // Environ returns a copy of strings representing the environment,
 // in the form "key=value".
 func Environ() []string {
+	rejectIsolateEnvironment("Environ")
 	return syscall.Environ()
 }
