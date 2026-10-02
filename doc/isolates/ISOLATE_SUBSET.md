@@ -259,6 +259,12 @@ remains usable with a caller-supplied mapping; `os.ExpandEnv` reaches the
 guarded `os.Getenv`. Per-isolate environment values and `os.Args` routing are
 still open.
 
+The selected-package compiler mode now rejects references to the mutable
+process globals `os.Args`, `os.Stdin`, `os.Stdout`, `os.Stderr`, and
+`flag.CommandLine`. This catches aliases as well as direct writes. A future
+per-isolate `os.Args` value can replace the current rejection; other
+process-owned globals and indirect calls remain to be classified.
+
 The provisional `os/signal` guards reject signal registration, ignoring,
 resetting, deregistration, and process signal-state reads from active isolates.
 They run before the package's process-wide handler table is accessed.

@@ -250,6 +250,10 @@ ordinary-Go execution remains unproved.**
       and channel close targeting an unselected imported global. Writes
       through aliases, ordinary calls, and unsafe pointers remain outside
       this gate
+- [x] The compiler also rejects references to known mutable process globals
+      `os.Args`, `os.Stdin`, `os.Stdout`, `os.Stderr`, and `flag.CommandLine`
+      from selected packages, including aliases. Other process globals and
+      indirect effects remain to be classified
 - [ ] Classify ownership and effects across the broad standard library;
       implement required library and runtime hooks and reject unclassified
       paths before claiming general standard-library support

@@ -247,6 +247,10 @@ func checkIsolateGlobalWrites(fn *ir.Func) {
 		if name == nil || name.Class != ir.PEXTERN {
 			return
 		}
+		if isolateProcessGlobal(name) {
+			// The reference check below reports both reads and writes.
+			return
+		}
 		pkg := name.Sym().Pkg
 		if pkg != nil && pkg != types.LocalPkg && !base.IsolateImportSelected(pkg.Path) {
 			base.ErrorfAt(stmt.Pos(), 0, "isolate: code writes unselected imported global %s.%s", pkg.Path, name.Sym().Name)
@@ -254,6 +258,9 @@ func checkIsolateGlobalWrites(fn *ir.Func) {
 	}
 	// Every closure has its own entry in Target.Funcs.
 	ir.VisitList(fn.Body, func(n ir.Node) {
+		if name, ok := n.(*ir.Name); ok && isolateProcessGlobal(name) {
+			base.ErrorfAt(fn.Pos(), 0, "isolate: code references process-owned global %s.%s", name.Sym().Pkg.Path, name.Sym().Name)
+		}
 		switch n := n.(type) {
 		case *ir.AssignStmt:
 			check(n.X, n)
@@ -279,6 +286,25 @@ func checkIsolateGlobalWrites(fn *ir.Func) {
 			check(n.Chan, n)
 		}
 	})
+}
+
+// isolateProcessGlobal identifies exported mutable process state whose value
+// cannot safely be borrowed by selected isolate code. Even a read can hand
+// out an alias that bypasses the direct-write check above.
+func isolateProcessGlobal(name *ir.Name) bool {
+	if name.Class != ir.PEXTERN || name.Sym().Pkg == nil {
+		return false
+	}
+	switch name.Sym().Pkg.Path {
+	case "os":
+		switch name.Sym().Name {
+		case "Args", "Stdin", "Stdout", "Stderr":
+			return true
+		}
+	case "flag":
+		return name.Sym().Name == "CommandLine"
+	}
+	return false
 }
 
 // isolateGlobalRoot follows the assignable part of an expression. Index

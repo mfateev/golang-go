@@ -36,11 +36,16 @@ stderr '-isolate-report requires at least one -isolate-dir'
 stderr '-isolate-report must differ from executable output'
 
 ! go build -isolate-dir=./badglobal -o reject$GOEXE ./host
-stderr -count=2 'isolate: code writes unselected imported global os.Stdout'
-stderr -count=3 'isolate: code writes unselected imported global os.Args'
-stderr 'isolate: code writes unselected imported global flag.CommandLine'
-stderr 'isolate: code writes unselected imported global os.Stderr'
-stderr 'isolate: code writes unselected imported global os.Stdin'
+stderr 'isolate: code references process-owned global os.Stdout'
+stderr 'isolate: code references process-owned global os.Args'
+stderr 'isolate: code references process-owned global flag.CommandLine'
+stderr 'isolate: code references process-owned global os.Stderr'
+stderr 'isolate: code references process-owned global os.Stdin'
+
+! go build -isolate-dir=./badread -o rejectread$GOEXE ./host
+stderr 'isolate: code references process-owned global os.Args'
+stderr 'isolate: code references process-owned global os.Stdout'
+stderr 'isolate: code references process-owned global flag.CommandLine'
 
 ! go build -gcflags=all=-d=isolatepackages=encoding/json encoding/json
 stderr 'isolate: code writes unselected imported global encoding/json/internal.TransformMarshalError'
@@ -364,6 +369,24 @@ func main() {
 	os.Args[0] += "bad"
 	os.Args[:][0] = "bad"
 	func() { os.Stdin = nil }()
+}
+-- badread/isolate.json --
+{"name":"badread"}
+-- badread/main.go --
+package main
+
+import (
+	"flag"
+	"os"
+)
+
+func main() {
+	args := os.Args
+	if len(args) != 0 { args[0] = "bad" }
+	out := os.Stdout
+	_, _ = out.Write([]byte("bad"))
+	flags := flag.CommandLine
+	_ = flags.Set("bad", "value")
 }
 -- billing/main.go --
 package main

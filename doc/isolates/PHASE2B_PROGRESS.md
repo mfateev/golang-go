@@ -895,3 +895,16 @@ test mutates the isolate's copy and verifies the host description is intact;
 it passed 100 race-detector runs, the complete isolate package passed 10
 race-detector runs, the ordinary metrics short suite passed, and Plan 9/amd64
 and Windows/amd64 isolate test binaries compiled.
+
+## Process-global reference gate
+
+The selected-package compiler check now rejects references to `os.Args`,
+`os.Stdin`, `os.Stdout`, `os.Stderr`, and `flag.CommandLine`, including a
+read that introduces a mutable alias. Diagnostics point to the selected
+function rather than the imported declaration. The static multi-program
+build script verifies both existing direct writes and new alias reads; it
+passed after rebuilding the compiler. This is a narrow ownership check, not
+a complete process-global read audit.
+
+The complete `src/all.bash` suite passed, including the static build script,
+race detector, and `../test`.
