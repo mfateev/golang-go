@@ -265,6 +265,11 @@ process globals `os.Args`, `os.Stdin`, `os.Stdout`, `os.Stderr`, and
 per-isolate `os.Args` value can replace the current rejection; other
 process-owned globals and indirect calls remain to be classified.
 
+The provisional `log` guard rejects output and configuration access through
+the process-wide standard logger. An explicitly created logger can still
+write to a caller-provided writer. Standard `log.Fatal` skips the host sink
+and requests isolate exit with status 1.
+
 The provisional `os/signal` guards reject signal registration, ignoring,
 resetting, deregistration, and process signal-state reads from active isolates.
 They run before the package's process-wide handler table is accessed.

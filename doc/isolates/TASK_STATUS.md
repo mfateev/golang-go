@@ -254,6 +254,9 @@ ordinary-Go execution remains unproved.**
       `os.Args`, `os.Stdin`, `os.Stdout`, `os.Stderr`, and `flag.CommandLine`
       from selected packages, including aliases. Other process globals and
       indirect effects remain to be classified
+- [x] The process-wide standard `log` logger rejects isolate output and
+      configuration access; explicit loggers with caller-provided writers
+      remain usable. Standard `log.Fatal` exits only its isolate with status 1
 - [ ] Classify ownership and effects across the broad standard library;
       implement required library and runtime hooks and reject unclassified
       paths before claiming general standard-library support

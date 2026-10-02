@@ -15,6 +15,7 @@ import (
 	"io"
 	"isolate"
 	"iter"
+	"log"
 	"maps"
 	"net/netip"
 	"os"
@@ -1147,6 +1148,44 @@ func TestEntropyAndMetricsRejectIsolate(t *testing.T) {
 	})
 	if got := metrics.All()[0].Name; got != firstName {
 		t.Fatalf("isolate changed host metric name to %q", got)
+	}
+}
+
+func TestStandardLoggerRejectsIsolate(t *testing.T) {
+	oldWriter := log.Writer()
+	defer log.SetOutput(oldWriter)
+	var hostOutput bytes.Buffer
+	log.SetOutput(&hostOutput)
+	b := isolatebridge.New()
+	b.Run(func() {
+		var isolateOutput bytes.Buffer
+		local := log.New(&isolateOutput, "", 0)
+		local.Print("local")
+		if got := isolateOutput.String(); got != "local\n" {
+			t.Errorf("local logger output = %q", got)
+		}
+		for _, tt := range []struct {
+			want string
+			call func()
+		}{
+			{"log.Output is unavailable in an isolate", func() { log.Print("host") }},
+			{"log.Default is unavailable in an isolate", func() { _ = log.Default() }},
+			{"log.SetOutput is unavailable in an isolate", func() { log.SetOutput(io.Discard) }},
+			{"log.Flags is unavailable in an isolate", func() { _ = log.Flags() }},
+			{"log.Writer is unavailable in an isolate", func() { _ = log.Writer() }},
+		} {
+			func() {
+				defer func() {
+					if got := recover(); got != tt.want {
+						t.Errorf("panic = %v, want %q", got, tt.want)
+					}
+				}()
+				tt.call()
+			}()
+		}
+	})
+	if got := hostOutput.String(); got != "" {
+		t.Fatalf("standard logger wrote %q", got)
 	}
 }
 

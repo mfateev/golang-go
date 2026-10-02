@@ -908,3 +908,14 @@ a complete process-global read audit.
 
 The complete `src/all.bash` suite passed, including the static build script,
 race detector, and `../test`.
+
+## Standard logger boundary
+
+The process-wide standard `log` logger now rejects output, configuration
+changes, and reads from active isolates. Explicit `log.New` instances with
+caller-provided writers remain usable. Standard `log.Fatal` skips the host
+output and routes `os.Exit(1)` to whole-isolate termination. Focused tests
+passed 100 race-detector runs, the complete isolate package passed 10
+race-detector runs, the ordinary `log` short suite passed, and Plan 9/amd64
+and Windows/amd64 isolate test binaries compiled. Other logging packages and
+writer ownership remain unaudited.

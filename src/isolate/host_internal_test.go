@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"internal/isolatebridge"
+	"log"
 	"os"
 	"reflect"
 	"runtime"
@@ -164,6 +165,24 @@ func TestProcessExitDuringInitialization(t *testing.T) {
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != 39 {
 		t.Fatalf("New after initializer Exit = %v, want status 39", err)
+	}
+}
+
+func TestStandardLogFatalExitsOnlyIsolate(t *testing.T) {
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main:     func() { log.Fatal("isolate fatal") },
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	var exitErr *ExitError
+	if err := i.Wait(); !errors.As(err, &exitErr) || exitErr.Code != 1 {
+		t.Fatalf("Wait after log.Fatal = %v, want exit status 1", err)
 	}
 }
 

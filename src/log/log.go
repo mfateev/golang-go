@@ -78,6 +78,7 @@ func New(out io.Writer, prefix string, flag int) *Logger {
 
 // SetOutput sets the output destination for the logger.
 func (l *Logger) SetOutput(w io.Writer) {
+	l.rejectIsolateStandard("SetOutput")
 	l.outMu.Lock()
 	defer l.outMu.Unlock()
 	l.out = w
@@ -87,7 +88,12 @@ func (l *Logger) SetOutput(w io.Writer) {
 var std = New(os.Stderr, "", LstdFlags)
 
 // Default returns the standard logger used by the package-level output functions.
-func Default() *Logger { return std }
+func Default() *Logger {
+	if isolateActive() {
+		panic("log.Default is unavailable in an isolate")
+	}
+	return std
+}
 
 // Cheap integer to fixed-width decimal ASCII. Give a negative width to avoid zero-padding.
 func itoa(buf *[]byte, i int, wid int) {
@@ -199,6 +205,7 @@ func (l *Logger) Output(calldepth int, s string) error {
 // output can take either a calldepth or a pc to get source line information.
 // It uses the pc if it is non-zero.
 func (l *Logger) output(pc uintptr, calldepth int, appendOutput func([]byte) []byte) error {
+	l.rejectIsolateStandard("Output")
 	if l.isDiscard.Load() {
 		return nil
 	}
@@ -279,6 +286,9 @@ func (l *Logger) Println(v ...any) {
 
 // Fatal is equivalent to l.Print() followed by a call to [os.Exit](1).
 func (l *Logger) Fatal(v ...any) {
+	if l == std && isolateActive() {
+		os.Exit(1)
+	}
 	l.output(0, 2, func(b []byte) []byte {
 		return fmt.Append(b, v...)
 	})
@@ -287,6 +297,9 @@ func (l *Logger) Fatal(v ...any) {
 
 // Fatalf is equivalent to l.Printf() followed by a call to [os.Exit](1).
 func (l *Logger) Fatalf(format string, v ...any) {
+	if l == std && isolateActive() {
+		os.Exit(1)
+	}
 	l.output(0, 2, func(b []byte) []byte {
 		return fmt.Appendf(b, format, v...)
 	})
@@ -295,6 +308,9 @@ func (l *Logger) Fatalf(format string, v ...any) {
 
 // Fatalln is equivalent to l.Println() followed by a call to [os.Exit](1).
 func (l *Logger) Fatalln(v ...any) {
+	if l == std && isolateActive() {
+		os.Exit(1)
+	}
 	l.output(0, 2, func(b []byte) []byte {
 		return fmt.Appendln(b, v...)
 	})
@@ -331,17 +347,20 @@ func (l *Logger) Panicln(v ...any) {
 // Flags returns the output flags for the logger.
 // The flag bits are [Ldate], [Ltime], and so on.
 func (l *Logger) Flags() int {
+	l.rejectIsolateStandard("Flags")
 	return int(l.flag.Load())
 }
 
 // SetFlags sets the output flags for the logger.
 // The flag bits are [Ldate], [Ltime], and so on.
 func (l *Logger) SetFlags(flag int) {
+	l.rejectIsolateStandard("SetFlags")
 	l.flag.Store(int32(flag))
 }
 
 // Prefix returns the output prefix for the logger.
 func (l *Logger) Prefix() string {
+	l.rejectIsolateStandard("Prefix")
 	if p := l.prefix.Load(); p != nil {
 		return *p
 	}
@@ -350,11 +369,13 @@ func (l *Logger) Prefix() string {
 
 // SetPrefix sets the output prefix for the logger.
 func (l *Logger) SetPrefix(prefix string) {
+	l.rejectIsolateStandard("SetPrefix")
 	l.prefix.Store(&prefix)
 }
 
 // Writer returns the output destination for the logger.
 func (l *Logger) Writer() io.Writer {
+	l.rejectIsolateStandard("Writer")
 	l.outMu.Lock()
 	defer l.outMu.Unlock()
 	return l.out
@@ -420,6 +441,9 @@ func Println(v ...any) {
 
 // Fatal is equivalent to [Print] followed by a call to [os.Exit](1).
 func Fatal(v ...any) {
+	if isolateActive() {
+		os.Exit(1)
+	}
 	std.output(0, 2, func(b []byte) []byte {
 		return fmt.Append(b, v...)
 	})
@@ -428,6 +452,9 @@ func Fatal(v ...any) {
 
 // Fatalf is equivalent to [Printf] followed by a call to [os.Exit](1).
 func Fatalf(format string, v ...any) {
+	if isolateActive() {
+		os.Exit(1)
+	}
 	std.output(0, 2, func(b []byte) []byte {
 		return fmt.Appendf(b, format, v...)
 	})
@@ -436,6 +463,9 @@ func Fatalf(format string, v ...any) {
 
 // Fatalln is equivalent to [Println] followed by a call to [os.Exit](1).
 func Fatalln(v ...any) {
+	if isolateActive() {
+		os.Exit(1)
+	}
 	std.output(0, 2, func(b []byte) []byte {
 		return fmt.Appendln(b, v...)
 	})
