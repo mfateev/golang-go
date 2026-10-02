@@ -342,6 +342,7 @@ const (
 	isolateChanSend
 	isolateChanReceive
 	isolateChanReady
+	isolateSelectRegistered
 )
 
 func (group *isolateRevocationGroup) registerPark(gp *g, state uint8, c *hchan) bool {
@@ -391,8 +392,8 @@ func (group *isolateRevocationGroup) unregisterPark(gp *g) {
 }
 
 // isolateRevokeParkWaiters claims armed sleepers before their timers fire
-// and wakes permanent parks. If a timer callback has already started, it
-// performs the sleep wake instead.
+// and wakes permanent, channel, and select parks. If a timer callback or
+// channel operation has already claimed a wake, it performs that wake.
 func isolateRevokeParkWaiters(group *isolateRevocationGroup) {
 	var ready gList
 	lockWithRank(&group.parkLock, lockRankIsolatePark)
@@ -411,6 +412,10 @@ func isolateRevokeParkWaiters(group *isolateRevocationGroup) {
 		case isolateChanSend, isolateChanReceive:
 			if isolateRevokeChannelPark(gp) {
 				gp.isolateParkState = isolateChanReady
+				ready.push(gp)
+			}
+		case isolateSelectRegistered:
+			if isolateRevokeSelectPark(gp) {
 				ready.push(gp)
 			}
 		}

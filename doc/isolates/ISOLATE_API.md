@@ -518,9 +518,9 @@ stops `Call` waiters and unstarted children, then waits for the runtime group's
 live count. Real `time.Sleep` waits wake early on revocation and unregister
 their timers before exiting. Nil channel and empty/all-nil `select` waits
 also wake early. Direct channel send and receive waits wake early and clean
-their queue records. Multi-case `select` also exits after it removes its channel
-wait records on normal wakeup. A goroutine parked in another unsupported wait
-can still resume while Kill is pending. A loop that calls `runtime.Gosched`
+their queue records. Multi-case `select` wakes early and removes every
+channel wait record before exiting. A goroutine parked in another unsupported
+wait can still resume while Kill is pending. A loop that calls `runtime.Gosched`
 can stop at that explicit yield point. Its pending error reports counts but
 has no stack or thread sample. The complete revocation contract above remains
 unimplemented.

@@ -651,3 +651,18 @@ receive, close racing Stop, and a process waiter using the channel after the
 isolate waiter is detached. Focused tests passed 100 race-detector runs with
 `GOGC=1` and static lock ranking; the full isolate race suite passed 10 runs.
 The 32-bit G size was confirmed from the compiled runtime's DWARF record.
+
+## Multi-case select wakeup
+
+Blocking multi-case `select` now registers before taking channel locks.
+Revocation claims `gp.selectDone` before marking the park revoked, so a peer
+cannot also wake the G. If `selparkcommit` has not completed, it cancels the
+park after unlocking the channels. Otherwise revocation readies the parked
+G. The resumed G removes every case's `sudog`, adjusts timer-channel wait
+counts, and exits before user code. A channel operation that had already
+claimed `selectDone` remains responsible for the wake. The no-case and
+all-nil paths continue to use the permanent-park registry.
+
+Tests cover received and sent cases, a timer-channel case, and close racing
+revocation. The focused cases passed 100 race-detector runs with `GOGC=1`
+and static lock ranking. The 32-bit G layout was verified from DWARF.

@@ -4557,6 +4557,9 @@ func gdestroy(gp *g) {
 	if gp.isolateParkState != isolateParkNone || gp.isolateParkPrev != nil || gp.isolateParkNext != nil || gp.isolateParkChan != nil {
 		throw("isolate: exiting goroutine still registered in park wait list")
 	}
+	if gp.isolateSelectWake.Load() != 0 {
+		throw("isolate: exiting goroutine still owns select wake state")
+	}
 
 	casgstatus(gp, _Grunning, _Gdead)
 	// Phase 0 kill probe: discard preemption and waiter records only after

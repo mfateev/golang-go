@@ -698,20 +698,73 @@ func TestRevokedSelectWaitDoesNotResumeUserCode(t *testing.T) {
 				t.Fatalf("select did not park: live=%d running=%d", b.LiveGoroutines(), b.RunningGoroutines())
 			}
 			b.Stop()
-			if name == "receive" {
-				close(ch)
-			} else {
-				<-ch
-			}
 			select {
 			case <-exited:
 			case <-time.After(5 * time.Second):
-				t.Fatal("select waiter did not exit after wakeup")
+				t.Fatal("select waiter did not exit after revocation")
+			}
+			if name == "receive" {
+				for _, candidate := range []chan int{ch, other} {
+					select {
+					case candidate <- 1:
+						t.Fatal("revoked select receive remained queued")
+					default:
+					}
+				}
+			} else {
+				if got := <-ch; got != 0 {
+					t.Fatalf("buffered value = %d, want 0", got)
+				}
+				for _, candidate := range []chan int{ch, other} {
+					select {
+					case <-candidate:
+						t.Fatal("revoked select send remained queued")
+					default:
+					}
+				}
 			}
 			if resumed.Load() {
 				t.Fatal("select returned to user code after revocation")
 			}
 		})
+	}
+}
+
+func TestSelectRevocationCloseRace(t *testing.T) {
+	for n := 0; n < 200; n++ {
+		b := isolatebridge.New()
+		ch := make(chan int)
+		other := make(chan int)
+		entered := make(chan struct{})
+		exited := make(chan struct{})
+		go func() {
+			defer close(exited)
+			b.Run(func() {
+				close(entered)
+				select {
+				case <-ch:
+				case <-other:
+				}
+			})
+		}()
+		<-entered
+		closed := make(chan struct{})
+		go func() {
+			close(ch)
+			close(closed)
+		}()
+		b.Stop()
+		<-closed
+		select {
+		case <-exited:
+		case <-time.After(5 * time.Second):
+			t.Fatal("select waiter did not exit after close or revocation")
+		}
+		select {
+		case other <- 1:
+			t.Fatal("losing select case remained queued")
+		default:
+		}
 	}
 }
 

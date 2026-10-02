@@ -61,6 +61,12 @@ func selunlock(scases []scase, lockorder []uint16) {
 }
 
 func selparkcommit(gp *g, _ unsafe.Pointer) bool {
+	park := true
+	if gp.isolateGroup != nil {
+		// Revocation claims selectDone before changing isolateSelectWake.
+		// If it won before this commit, return to selectgo for cleanup.
+		park = gp.isolateSelectWake.CompareAndSwap(0, 1)
+	}
 	// There are unlocked sudogs that point into gp's stack. Stack
 	// copying must lock the channels of those sudogs.
 	// Set activeStackChans here instead of before we try parking
@@ -97,7 +103,41 @@ func selparkcommit(gp *g, _ unsafe.Pointer) bool {
 	if lastc != nil {
 		unlock(&lastc.lock)
 	}
-	return true
+	return park
+}
+
+// isolateRevokeSelectPark is called under the group park lock. selectDone
+// arbitrates with channel send and receive before either side can ready gp.
+// Claim it before changing isolateSelectWake: a commit that sees revocation
+// may unlock channels and resume immediately without waiting for goready.
+func isolateRevokeSelectPark(gp *g) bool {
+	assertLockHeld(&gp.isolateGroup.parkLock)
+	if !gp.selectDone.CompareAndSwap(0, 1) {
+		return false // A channel operation already owns the wake.
+	}
+	for {
+		switch gp.isolateSelectWake.Load() {
+		case 0:
+			if gp.isolateSelectWake.CompareAndSwap(0, 2) {
+				return false // The park callback will cancel the park.
+			}
+		case 1:
+			if gp.isolateSelectWake.CompareAndSwap(1, 2) {
+				return true
+			}
+		default:
+			throw("isolate: select wake in wrong state")
+		}
+	}
+}
+
+func isolateSelectUnregister(group **isolateRevocationGroup, gp *g) {
+	if *group != nil {
+		owner := *group
+		*group = nil
+		owner.unregisterPark(gp)
+		gp.isolateSelectWake.Store(0)
+	}
 }
 
 func block() {
@@ -206,6 +246,15 @@ func selectgo(cas0 *scase, order0 *uint16, pc0 *uintptr, nsends, nrecvs int, blo
 	}
 	if norder == 0 && block {
 		isolateParkForever(waitReason, traceBlockSelect, 1)
+	}
+	var selectGroup *isolateRevocationGroup
+	if block && gp.isolateGroup != nil {
+		selectGroup = gp.isolateGroup
+		gp.isolateSelectWake.Store(0)
+		if !selectGroup.registerPark(gp, isolateSelectRegistered, nil) {
+			isolateExitIfRevoked()
+			throw("isolate: rejected select without revocation")
+		}
 	}
 
 	// sort the cases by Hchan address to get the locking order.
@@ -354,6 +403,7 @@ func selectgo(cas0 *scase, order0 *uint16, pc0 *uintptr, nsends, nrecvs int, blo
 	// stack shrinking.
 	gp.parkingOnChan.Store(true)
 	gopark(selparkcommit, nil, waitReason, traceBlockSelect, 1)
+	isolateSelectUnregister(&selectGroup, gp)
 	gp.activeStackChans = false
 
 	sellock(scases, lockorder)
@@ -406,6 +456,8 @@ func selectgo(cas0 *scase, order0 *uint16, pc0 *uintptr, nsends, nrecvs int, blo
 	}
 
 	if cas == nil {
+		selunlock(scases, lockorder)
+		isolateExitIfRevoked()
 		throw("selectgo: bad wakeup")
 	}
 
@@ -539,6 +591,10 @@ retc:
 	if caseReleaseTime > 0 {
 		blockevent(caseReleaseTime-t0, 1)
 	}
+	if selectGroup != nil {
+		isolateSelectUnregister(&selectGroup, gp)
+		gp.selectDone.Store(0)
+	}
 	// A parked select may have owned sudogs on several channels. Only exit
 	// after pass 3 has removed every losing case and released those sudogs.
 	isolateExitIfRevoked()
@@ -547,6 +603,10 @@ retc:
 sclose:
 	// send on closed channel
 	selunlock(scases, lockorder)
+	if selectGroup != nil {
+		isolateSelectUnregister(&selectGroup, gp)
+		gp.selectDone.Store(0)
+	}
 	isolateExitIfRevoked()
 	panic(plainError("send on closed channel"))
 }
