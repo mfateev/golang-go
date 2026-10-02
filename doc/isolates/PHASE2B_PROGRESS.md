@@ -847,3 +847,16 @@ recoverable panics, pending isolate-fatal enforcement.
 An existing child-accounting test occasionally sampled `RunningGoroutines`
 after its child had signaled readiness but before that child parked. It now
 waits for the parked count and passed 1,000 race-detector runs.
+
+## Process profiling guards
+
+The provisional runtime now rejects `GC`, profile sampling rates, and direct
+process profile snapshots in an active isolate. `runtime/pprof` rejects
+process-wide profile registry, mutation, output, and CPU profiling operations
+before accessing global state. Its context label helpers remain available.
+The focused tests passed 100 race-detector runs, the complete isolate package
+passed 10 race-detector runs, and Plan 9/amd64 and Windows/amd64 isolate test
+binaries compiled. Recoverable panics and other profiling entry points remain
+open work.
+
+The ordinary `runtime` and `runtime/pprof` short package suites passed.

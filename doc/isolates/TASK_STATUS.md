@@ -287,6 +287,10 @@ ordinary-Go execution remains unproved.**
 - [x] Provisional `os/signal` guards reject process-wide signal
       registration, handler changes, and signal-state reads before accessing
       the handler table
+- [x] Provisional guards reject direct runtime GC requests and process
+      profile rates/snapshots, plus `runtime/pprof` process-wide registry,
+      mutation, output, and CPU profiling. Goroutine context labels remain
+      available; other profiling entry points still need audit
 - [x] Runtime `g` carries a monotonic numeric instance owner ID through
       initializer replay, the generated state runner, `main`, and native
       children. A race test checks distinct instance IDs and restored host

@@ -278,6 +278,7 @@ func unlockProfiles() {
 // For compatibility with various tools that read pprof data,
 // profile names should not contain spaces.
 func NewProfile(name string) *Profile {
+	rejectIsolate("NewProfile")
 	lockProfiles()
 	defer unlockProfiles()
 	if name == "" {
@@ -296,6 +297,7 @@ func NewProfile(name string) *Profile {
 
 // Lookup returns the profile with the given name, or nil if no such profile exists.
 func Lookup(name string) *Profile {
+	rejectIsolate("Lookup")
 	lockProfiles()
 	defer unlockProfiles()
 	return profiles.m[name]
@@ -303,6 +305,7 @@ func Lookup(name string) *Profile {
 
 // Profiles returns a slice of all the known profiles, sorted by name.
 func Profiles() []*Profile {
+	rejectIsolate("Profiles")
 	lockProfiles()
 	defer unlockProfiles()
 
@@ -325,6 +328,7 @@ func (p *Profile) Name() string {
 
 // Count returns the number of execution stacks currently in the profile.
 func (p *Profile) Count() int {
+	rejectIsolate("Profile.Count")
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.count != nil {
@@ -351,6 +355,7 @@ func (p *Profile) Count() int {
 // Passing skip=0 begins the stack trace at the call to Add inside rpc.NewClient.
 // Passing skip=1 begins the stack trace at the call to NewClient inside mypkg.Run.
 func (p *Profile) Add(value any, skip int) {
+	rejectIsolate("Profile.Add")
 	if p.name == "" {
 		panic("pprof: use of uninitialized Profile")
 	}
@@ -377,6 +382,7 @@ func (p *Profile) Add(value any, skip int) {
 // Remove removes the execution stack associated with value from the profile.
 // It is a no-op if the value is not in the profile.
 func (p *Profile) Remove(value any) {
+	rejectIsolate("Profile.Remove")
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	delete(p.m, value)
@@ -398,6 +404,7 @@ func (p *Profile) Remove(value any) {
 // print the goroutine stacks in the same form that a Go program uses
 // when dying due to an unrecovered panic.
 func (p *Profile) WriteTo(w io.Writer, debug int) error {
+	rejectIsolate("Profile.WriteTo")
 	if p.name == "" {
 		panic("pprof: use of zero Profile")
 	}
@@ -605,6 +612,7 @@ func printStackRecord(w io.Writer, stk []uintptr, allFrames bool) {
 // WriteHeapProfile is shorthand for [Lookup]("heap").WriteTo(w, 0).
 // It is preserved for backwards compatibility.
 func WriteHeapProfile(w io.Writer) error {
+	rejectIsolate("WriteHeapProfile")
 	return writeHeap(w, 0)
 }
 
@@ -883,6 +891,7 @@ var cpu struct {
 // for [syscall.SIGPROF], but note that doing so may break any profiling
 // being done by the main program.
 func StartCPUProfile(w io.Writer) error {
+	rejectIsolate("StartCPUProfile")
 	// The runtime routines allow a variable profiling rate,
 	// but in practice operating systems cannot trigger signals
 	// at more than about 500 Hz, and our processing of the
@@ -945,6 +954,7 @@ func profileWriter(w io.Writer) {
 // StopCPUProfile only returns after all the writes for the
 // profile have completed.
 func StopCPUProfile() {
+	rejectIsolate("StopCPUProfile")
 	cpu.Lock()
 	defer cpu.Unlock()
 

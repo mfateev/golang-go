@@ -520,6 +520,7 @@ type workType struct {
 // garbage collection is complete. It may also block the entire
 // program.
 func GC() {
+	isolateRejectProcessAPI("GC")
 	// We consider a cycle to be: sweep termination, mark, mark
 	// termination, and sweep. This function shouldn't return
 	// until a full cycle has been completed, from beginning to

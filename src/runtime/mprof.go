@@ -481,6 +481,7 @@ var blockprofilerate uint64 // in CPU ticks
 // To include every blocking event in the profile, pass rate = 1.
 // To turn off profiling entirely, pass rate <= 0.
 func SetBlockProfileRate(rate int) {
+	isolateRejectProcessAPI("SetBlockProfileRate")
 	var r int64
 	if rate <= 0 {
 		r = 0 // disable profiling
@@ -817,6 +818,7 @@ var mutexprofilerate uint64 // fraction sampled
 // To just read the current rate, pass rate < 0.
 // (For n>1 the details of sampling may change.)
 func SetMutexProfileFraction(rate int) int {
+	isolateRejectProcessAPI("SetMutexProfileFraction")
 	if rate < 0 {
 		return int(mutexprofilerate)
 	}
@@ -924,6 +926,7 @@ func (r *MemProfileRecord) Stack() []uintptr {
 // the testing package's -test.memprofile flag instead
 // of calling MemProfile directly.
 func MemProfile(p []MemProfileRecord, inuseZero bool) (n int, ok bool) {
+	isolateRejectProcessAPI("MemProfile")
 	return memProfileInternal(len(p), inuseZero, func(r profilerecord.MemProfileRecord) {
 		copyMemProfileRecord(&p[0], r)
 		p = p[1:]
@@ -1051,6 +1054,7 @@ type BlockProfileRecord struct {
 // the [testing] package's -test.blockprofile flag instead
 // of calling BlockProfile directly.
 func BlockProfile(p []BlockProfileRecord) (n int, ok bool) {
+	isolateRejectProcessAPI("BlockProfile")
 	var m int
 	n, ok = blockProfileInternal(len(p), func(r profilerecord.BlockProfileRecord) {
 		copyBlockProfileRecord(&p[m], r)
@@ -1150,6 +1154,7 @@ func pprof_blockProfileInternal(p []profilerecord.BlockProfileRecord) (n int, ok
 // Most clients should use the [runtime/pprof] package
 // instead of calling MutexProfile directly.
 func MutexProfile(p []BlockProfileRecord) (n int, ok bool) {
+	isolateRejectProcessAPI("MutexProfile")
 	var m int
 	n, ok = mutexProfileInternal(len(p), func(r profilerecord.BlockProfileRecord) {
 		copyBlockProfileRecord(&p[m], r)
@@ -1201,6 +1206,7 @@ func pprof_mutexProfileInternal(p []profilerecord.BlockProfileRecord) (n int, ok
 // Most clients should use the runtime/pprof package instead
 // of calling ThreadCreateProfile directly.
 func ThreadCreateProfile(p []StackRecord) (n int, ok bool) {
+	isolateRejectProcessAPI("ThreadCreateProfile")
 	return threadCreateProfileInternal(len(p), func(r profilerecord.StackRecord) {
 		i := copy(p[0].Stack0[:], r.Stack)
 		clear(p[0].Stack0[i:])
@@ -1645,6 +1651,7 @@ func goroutineProfileWithLabelsSync(p []profilerecord.StackRecord, labels []unsa
 // Most clients should use the [runtime/pprof] package instead
 // of calling GoroutineProfile directly.
 func GoroutineProfile(p []StackRecord) (n int, ok bool) {
+	isolateRejectProcessAPI("GoroutineProfile")
 	records := make([]profilerecord.StackRecord, len(p))
 	n, ok = goroutineProfileInternal(records)
 	if !ok {

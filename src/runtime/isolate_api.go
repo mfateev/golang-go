@@ -28,6 +28,12 @@ func isolateActive() bool {
 	return gp.isolateOwner != 0 || gp.isolateBoundary != nil || gp.isolateE4Bases != nil
 }
 
+func isolateRejectProcessAPI(name string) {
+	if isolateActive() {
+		panic("runtime." + name + " is unavailable in an isolate")
+	}
+}
+
 //go:linkname isolateGetOwner
 func isolateGetOwner() uintptr {
 	return getg().isolateOwner

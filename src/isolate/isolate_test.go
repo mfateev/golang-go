@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"internal/isolatebridge"
+	"io"
 	"isolate"
 	"iter"
 	"maps"
@@ -20,6 +21,7 @@ import (
 	"reflect"
 	"runtime"
 	rdebug "runtime/debug"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -936,6 +938,15 @@ func TestProcessRuntimeAPIsRejectIsolate(t *testing.T) {
 		checkPanic("NumCgoCall", func() { runtime.NumCgoCall() })
 		checkPanic("NumGoroutine", func() { runtime.NumGoroutine() })
 		checkPanic("ReadMemStats", func() { runtime.ReadMemStats(new(runtime.MemStats)) })
+		checkPanic("GC", runtime.GC)
+		checkPanic("SetCPUProfileRate", func() { runtime.SetCPUProfileRate(0) })
+		checkPanic("SetBlockProfileRate", func() { runtime.SetBlockProfileRate(0) })
+		checkPanic("SetMutexProfileFraction", func() { runtime.SetMutexProfileFraction(-1) })
+		checkPanic("MemProfile", func() { runtime.MemProfile(nil, false) })
+		checkPanic("BlockProfile", func() { runtime.BlockProfile(nil) })
+		checkPanic("MutexProfile", func() { runtime.MutexProfile(nil) })
+		checkPanic("ThreadCreateProfile", func() { runtime.ThreadCreateProfile(nil) })
+		checkPanic("GoroutineProfile", func() { runtime.GoroutineProfile(nil) })
 		checkPanic("LockOSThread", func() {
 			runtime.LockOSThread()
 			runtime.UnlockOSThread()
@@ -991,6 +1002,44 @@ func TestProcessDebugAPIsRejectIsolate(t *testing.T) {
 					want := "runtime/debug." + tt.name + " is unavailable in an isolate"
 					if !ok || got != want {
 						t.Errorf("%s panic = %q, want %q", tt.name, got, want)
+					}
+				}()
+				tt.call()
+			}()
+		}
+	})
+}
+
+func TestProcessProfilesRejectIsolate(t *testing.T) {
+	profile := pprof.Lookup("heap")
+	defer pprof.StopCPUProfile()
+	b := isolatebridge.New()
+	b.Run(func() {
+		pprof.Do(context.Background(), pprof.Labels("key", "value"), func(ctx context.Context) {
+			if got, ok := pprof.Label(ctx, "key"); !ok || got != "value" {
+				t.Errorf("goroutine label = %q, %v", got, ok)
+			}
+		})
+		for _, tt := range []struct {
+			name string
+			call func()
+		}{
+			{"NewProfile", func() { pprof.NewProfile("isolate.test") }},
+			{"Lookup", func() { pprof.Lookup("heap") }},
+			{"Profiles", func() { pprof.Profiles() }},
+			{"Profile.Count", func() { profile.Count() }},
+			{"Profile.Add", func() { profile.Add(new(int), 0) }},
+			{"Profile.Remove", func() { profile.Remove(new(int)) }},
+			{"Profile.WriteTo", func() { _ = profile.WriteTo(io.Discard, 0) }},
+			{"WriteHeapProfile", func() { _ = pprof.WriteHeapProfile(io.Discard) }},
+			{"StartCPUProfile", func() { _ = pprof.StartCPUProfile(io.Discard) }},
+			{"StopCPUProfile", pprof.StopCPUProfile},
+		} {
+			func() {
+				defer func() {
+					want := "runtime/pprof." + tt.name + " is unavailable in an isolate"
+					if got := recover(); got != want {
+						t.Errorf("%s panic = %v, want %q", tt.name, got, want)
 					}
 				}()
 				tt.call()

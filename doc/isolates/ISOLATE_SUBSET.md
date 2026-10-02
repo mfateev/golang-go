@@ -263,6 +263,12 @@ The provisional `os/signal` guards reject signal registration, ignoring,
 resetting, deregistration, and process signal-state reads from active isolates.
 They run before the package's process-wide handler table is accessed.
 
+The provisional runtime profiling guards reject direct GC requests, process
+profile rates and snapshots, and `runtime/pprof` profile registry, mutation,
+output, and CPU profiling entry points. `runtime/pprof` context label helpers
+remain usable because their labels belong to the current goroutine. These
+guards still use recoverable panics pending isolate-fatal enforcement.
+
 ## D. Virtualized — allowed, but redirected by the runtime
 
 These stay available because banning them would make ordinary Go unwritable.

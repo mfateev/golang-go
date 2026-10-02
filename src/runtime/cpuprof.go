@@ -66,6 +66,7 @@ var cpuprof cpuProfile
 // the [testing] package's -test.cpuprofile flag instead of calling
 // SetCPUProfileRate directly.
 func SetCPUProfileRate(hz int) {
+	isolateRejectProcessAPI("SetCPUProfileRate")
 	setCPUProfileRate(hz, true)
 }
 
