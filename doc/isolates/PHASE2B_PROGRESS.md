@@ -619,6 +619,16 @@ Focused tests cover host Kill of one and two hour-long sleepers, direct
 bridge Stop, and short timer expiry racing revocation. The race tests passed
 100 runs with `GOGC=1`; static lock ranking and the 32-bit G layout passed.
 
+Revoked `time.Sleep` callers now hard discard after unregistering from the
+group, so their user defers do not run. The entry and rejected-registration
+paths have no timer wait record to release. Exported `runtime.Gosched` also
+hard discards before or after its yield if it sees revocation; internal
+runtime yields keep their separate path. Focused sleep, timer race, host Kill,
+and yield tests passed 100 race-detector runs with `GOGC=1` and static lock
+ranking. These are explicit runtime boundaries, not a fence for uninterrupted
+user computation. The full isolate race suite passed 10 runs, and Linux/386
+and Plan 9 runtime test binaries compiled.
+
 ## Permanent channel and select parks
 
 Nil channel send and receive, an empty `select`, and a blocking `select` with
@@ -678,7 +688,8 @@ also lets a `Call` caller that sees revocation inside the runtime `select`
 path skip user defers without a special G marker. Focused channel, select,
 permanent-park, and Call cases passed 100 race-detector runs with `GOGC=1`
 and static lock ranking; the full isolate race suite passed 10 runs. Linux/386
-and Plan 9 runtime test binaries compiled.
+and Plan 9 runtime test binaries compiled. The complete `src/all.bash` suite
+passed after this change, including `../test`.
 
 ## Isolate-owned Cond waits
 

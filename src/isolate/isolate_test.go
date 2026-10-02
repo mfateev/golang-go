@@ -451,10 +451,9 @@ func TestBoundaryStopWakesCallWaiters(t *testing.T) {
 func TestRevokedSleepDoesNotResumeUserCode(t *testing.T) {
 	b := isolatebridge.New()
 	entered := make(chan struct{})
-	exited := make(chan struct{})
-	var resumed atomic.Bool
+	var resumed, deferred atomic.Bool
 	go b.Run(func() {
-		defer close(exited)
+		defer deferred.Store(true)
 		close(entered)
 		time.Sleep(time.Hour)
 		resumed.Store(true)
@@ -468,13 +467,9 @@ func TestRevokedSleepDoesNotResumeUserCode(t *testing.T) {
 		t.Fatalf("sleep did not park: live=%d running=%d", b.LiveGoroutines(), b.RunningGoroutines())
 	}
 	b.Stop()
-	select {
-	case <-exited:
-	case <-time.After(5 * time.Second):
-		t.Fatal("sleeping goroutine did not exit after revocation")
-	}
-	if resumed.Load() {
-		t.Fatal("sleep returned to user code after revocation")
+	waitBoundaryExit(t, b)
+	if resumed.Load() || deferred.Load() {
+		t.Fatalf("sleep returned=%t, deferred=%t", resumed.Load(), deferred.Load())
 	}
 }
 
@@ -482,9 +477,7 @@ func TestSleepRevocationTimerRace(t *testing.T) {
 	for n := 0; n < 200; n++ {
 		b := isolatebridge.New()
 		entered := make(chan struct{})
-		exited := make(chan struct{})
 		go func() {
-			defer close(exited)
 			b.Run(func() {
 				close(entered)
 				time.Sleep(time.Millisecond)
@@ -500,11 +493,7 @@ func TestSleepRevocationTimerRace(t *testing.T) {
 		}
 		time.Sleep(time.Duration(n%4) * 250 * time.Microsecond)
 		b.Stop()
-		select {
-		case <-exited:
-		case <-time.After(5 * time.Second):
-			t.Fatal("short sleeper did not exit after timer or revocation")
-		}
+		waitBoundaryExit(t, b)
 	}
 }
 
@@ -752,9 +741,9 @@ func TestSelectRevocationCloseRace(t *testing.T) {
 func TestRevokedGoschedLoopExits(t *testing.T) {
 	b := isolatebridge.New()
 	started := make(chan struct{})
-	exited := make(chan struct{})
+	var deferred atomic.Bool
 	go b.Run(func() {
-		defer close(exited)
+		defer deferred.Store(true)
 		close(started)
 		for {
 			runtime.Gosched()
@@ -762,10 +751,9 @@ func TestRevokedGoschedLoopExits(t *testing.T) {
 	})
 	<-started
 	b.Stop()
-	select {
-	case <-exited:
-	case <-time.After(5 * time.Second):
-		t.Fatal("revoked Gosched loop did not exit")
+	waitBoundaryExit(t, b)
+	if deferred.Load() {
+		t.Fatal("revoked Gosched loop ran user defer")
 	}
 }
 

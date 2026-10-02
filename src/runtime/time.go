@@ -448,7 +448,7 @@ func isolateRevokeParkWaiters(group *isolateRevocationGroup) {
 //
 //go:linkname timeSleep time.Sleep
 func timeSleep(ns int64) {
-	isolateExitIfRevoked()
+	isolateDiscardIfRevoked()
 	if ns <= 0 {
 		return
 	}
@@ -482,7 +482,7 @@ func timeSleep(ns int64) {
 		gopark(nil, nil, waitReasonSleep, traceBlockSleep, 1)
 	} else {
 		if group := gp.isolateGroup; group != nil && !group.registerPark(gp, isolateSleepRegistered, nil) {
-			isolateExitIfRevoked()
+			isolateDiscardIfRevoked()
 			throw("isolate: rejected sleep without revocation")
 		}
 		gopark(resetForSleep, nil, waitReasonSleep, traceBlockSleep, 1)
@@ -490,7 +490,7 @@ func timeSleep(ns int64) {
 			group.unregisterPark(gp)
 		}
 	}
-	isolateExitIfRevoked()
+	isolateDiscardIfRevoked()
 }
 
 // resetForSleep is called after the goroutine is parked for timeSleep.

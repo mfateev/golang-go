@@ -47,9 +47,9 @@ only the target isolate's records under the root lock. `Call` uses separate
 process-owned command records and must remain independently wakeable.
 
 The exported `runtime.Gosched` path checks revocation before and after its
-yield, allowing a yielding loop to exit. Runtime-internal yields use an
-unchecked helper in paths that cannot run `Goexit`; this does not constitute
-the general scheduler execution fence required above.
+yield, discarding a revoked yielding G without user defers. Runtime-internal
+yields use an unchecked helper in paths that cannot terminate a G. This does
+not constitute the general scheduler execution fence required above.
 
 ## Wait records to handle
 
@@ -60,7 +60,7 @@ the general scheduler execution fence required above.
 | `select` | One `sudog` per case, linked through `gp.waiting` and several channel queues | The G registers before taking channel locks. Revocation claims `selectDone` against peer wakes, then either cancels an uncommitted park or readies the parked G. The resumed G locks all cases, removes every queue record, updates timer wait counts, and is discarded without user defers. |
 | `sync.Mutex`, `RWMutex`, `WaitGroup`, and related semaphores | `sudog` in a process-owned hashed `semaRoot` queue, keyed by an isolate-owned semaphore address | A blocking sync wait registers its semaphore address with the group before taking the root lock. Revocation unlinks its `sudog` under that lock, including a non-head waitlink entry, and wakes the G; a concurrent semaphore release that already dequeued it owns the wake. The resumed G unregisters, releases its `sudog`, and is discarded without Go defers. Immediate teardown for the synctest WaitGroup path and generic process-owned semaphores remains open. |
 | `sync.Cond` | Ticketed `sudog` in the isolate-owned `notifyList`, also in `gp.waiting` | A wait registers its list with the group before taking the list lock. Revocation removes a queued record under that lock and wakes the G; a concurrent `Signal` or `Broadcast` that already removed it owns the wake. The resumed G unregisters, releases its `sudog`, and is discarded without Go defers before `Cond.Wait` can reacquire its locker. A prequeue wait sees revocation and does not park. |
-| `time.Sleep` and timer channels | Per-G timer or channel timer linked into runtime timer machinery | Real `time.Sleep` waits register with the group. Revocation stops pending timers and wakes their Gs; if a callback has started, it performs the wake. The resumed G unregisters before exiting. Fake synctest timers still wait for their normal wakeup. Direct and selected timer-channel receives use channel/select cleanup. |
+| `time.Sleep` and timer channels | Per-G timer or channel timer linked into runtime timer machinery | Real `time.Sleep` waits register with the group. Revocation stops pending timers and wakes their Gs; if a callback has started, it performs the wake. The resumed G unregisters before hard discard without user defers. Fake synctest timers still wait for their normal wakeup. Direct and selected timer-channel receives use channel/select cleanup. |
 | Network poll | `pollDesc.rg` or `wg` and deadline timers | `poll_runtime_pollReset` checks before preparing I/O. A normal poll wait registers its descriptor with the isolate group after entering `pdWait`. Revocation clears registered poll semaphores and readies parked Gs; each G then completes normal cleanup and exits at the post-wait fence. This does not yet discard a waiter without scheduling it. `poll_runtime_pollWaitCanceled` remains separate. |
 | Current `isolate.Call` | Channel send and reply receive on the provisional bridge | The trusted bridge selects each wait against a stop channel and discards the caller without user defers. Runtime `select` cleanup uses the same discard path after cleaning its queue records. `Stop` publishes the group admission fence, closes the stop channel, then scans runtime waiters; Call does not wait for the scan to finish before waking. A late host reply uses a buffered channel. The bridge is not yet a native owned command queue. |
 

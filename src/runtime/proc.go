@@ -399,10 +399,10 @@ func forcegchelper() {
 //
 //go:nosplit
 func Gosched() {
-	isolateExitIfRevoked()
+	isolateDiscardIfRevoked()
 	checkTimeouts()
 	mcall(gosched_m)
-	isolateExitIfRevoked()
+	isolateDiscardIfRevoked()
 }
 
 // gosched is also used by runtime paths that cannot run user defers.
