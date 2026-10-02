@@ -586,12 +586,34 @@ func notifyListAdd(l *notifyList) uint32 {
 //
 //go:linkname notifyListWait sync.runtime_notifyListWait
 func notifyListWait(l *notifyList, t uint32) {
+	gp := getg()
+	group := gp.isolateGroup
+	if group != nil {
+		// Publish the list before registering the G. The revoker takes the
+		// group lock before l.lock and must never inspect a recycled sudog.
+		gp.isolateParkNotify = l
+		if !group.registerPark(gp, isolateCondRegistered, nil) {
+			gp.isolateParkNotify = nil
+			isolateDiscardIfRevoked()
+			throw("isolate: rejected Cond park without revocation")
+		}
+	}
 	lockWithRank(&l.lock, lockRankNotifyList)
 
 	// Return right away if this ticket has already been notified.
 	if less(t, l.notify) {
 		unlock(&l.lock)
+		if group != nil {
+			group.unregisterPark(gp)
+			isolateDiscardIfRevoked()
+		}
 		return
+	}
+	if group != nil && (gp.isolateParkState == isolateCondCancelled || group.admission.Load()&isolateRevokedBit != 0) {
+		unlock(&l.lock)
+		group.unregisterPark(gp)
+		isolateDiscardIfRevoked()
+		throw("isolate: revoked Cond park resumed")
 	}
 
 	// Enqueue itself.
@@ -614,7 +636,13 @@ func notifyListWait(l *notifyList, t uint32) {
 		l.tail.next = s
 	}
 	l.tail = s
+	if group != nil {
+		gp.isolateParkState = isolateCondQueued
+	}
 	goparkunlock(&l.lock, waitReasonSyncCondWait, traceBlockCondWait, 3)
+	if group != nil {
+		group.unregisterPark(gp)
+	}
 	if t0 != 0 {
 		blockevent(s.releasetime-t0, 2)
 	}
@@ -623,6 +651,46 @@ func notifyListWait(l *notifyList, t uint32) {
 	s.g.waiting = nil
 	s.elem.set(nil)
 	releaseSudog(s)
+	if group != nil {
+		isolateDiscardIfRevoked()
+	}
+}
+
+// isolateRevokeCondPark is called with the group park lock held. A notifier
+// that already removed the sudog owns its wake; otherwise remove it while
+// holding the notification list lock and ready its G after both locks drop.
+func isolateRevokeCondPark(gp *g) bool {
+	assertLockHeld(&gp.isolateGroup.parkLock)
+	l := gp.isolateParkNotify
+	if l == nil {
+		throw("isolate: Cond park missing notification list")
+	}
+	lockWithRank(&l.lock, lockRankNotifyList)
+	if gp.isolateParkState == isolateCondRegistered {
+		gp.isolateParkState = isolateCondCancelled
+		unlock(&l.lock)
+		return false
+	}
+	for prev, s := (*sudog)(nil), l.head; s != nil; prev, s = s, s.next {
+		if s.g != gp {
+			continue
+		}
+		if prev == nil {
+			l.head = s.next
+		} else {
+			prev.next = s.next
+		}
+		if l.tail == s {
+			l.tail = prev
+		}
+		s.next = nil
+		gp.isolateParkState = isolateCondReady
+		unlock(&l.lock)
+		return true
+	}
+	// Signal or Broadcast has already removed the record and will ready it.
+	unlock(&l.lock)
+	return false
 }
 
 // notifyListNotifyAll notifies all entries in the list.

@@ -58,7 +58,7 @@ the general scheduler execution fence required above.
 | Nil channel send/receive or an empty/all-nil `select` | No channel, timer, or other external wait record | The G registers a permanent park with its group before parking. Revocation cancels an uncommitted park or wakes a committed one; the G unregisters and exits. |
 | `select` | One `sudog` per case, linked through `gp.waiting` and several channel queues | The G registers before taking channel locks. Revocation claims `selectDone` against peer wakes, then either cancels an uncommitted park or readies the parked G. The resumed G locks all cases, removes every queue record, updates timer wait counts, and exits before user code. |
 | `sync.Mutex`, `WaitGroup`, and related semaphores | `sudog` in a process-owned hashed `semaRoot` queue, keyed by an isolate-owned semaphore address | `sema.go` releases the record after an ordinary wakeup. Whole-isolate teardown must remove all of the target's records, including non-head entries, without disturbing other owners in the same root. `WaitGroup.Wait` currently checks revocation after ordinary `Done` wakeup; immediate teardown remains open. |
-| `sync.Cond` | Ticketed `sudog` in the isolate-owned `notifyList`, also in `gp.waiting` | `sema.go` clears the G waiting pointer and releases the record after ordinary notification. Whole-isolate teardown must detach every waiter, including a waiter already removed by `Signal` or `Broadcast` but not yet readied. No later `Signal` in the revoked isolate needs to run. |
+| `sync.Cond` | Ticketed `sudog` in the isolate-owned `notifyList`, also in `gp.waiting` | A wait registers its list with the group before taking the list lock. Revocation removes a queued record under that lock and wakes the G; a concurrent `Signal` or `Broadcast` that already removed it owns the wake. The resumed G unregisters, releases its `sudog`, and is discarded without Go defers before `Cond.Wait` can reacquire its locker. A prequeue wait sees revocation and does not park. |
 | `time.Sleep` and timer channels | Per-G timer or channel timer linked into runtime timer machinery | Real `time.Sleep` waits register with the group. Revocation stops pending timers and wakes their Gs; if a callback has started, it performs the wake. The resumed G unregisters before exiting. Fake synctest timers still wait for their normal wakeup. Direct and selected timer-channel receives use channel/select cleanup. |
 | Network poll | `pollDesc.rg` or `wg` and deadline timers | `poll_runtime_pollReset` checks before preparing I/O. A normal poll wait registers its descriptor with the isolate group after entering `pdWait`. Revocation clears registered poll semaphores and readies parked Gs; each G then completes normal cleanup and exits at the post-wait fence. This does not yet discard a waiter without scheduling it. `poll_runtime_pollWaitCanceled` remains separate. |
 | Current `isolate.Call` | Channel send and reply receive on the provisional bridge | The trusted bridge selects each wait against a stop channel and exits the waiting G with `Goexit`. A late host reply uses a buffered channel. Ordinary channel wait detachment also exists, but bridge waits still use their own stop path; the bridge is not yet a native owned command queue. |
@@ -75,9 +75,10 @@ to the waking G. Conversely, `sync.Cond.Wait` releases the caller's lock
 before parking and reacquires it only after `notifyListWait` returns; exiting
 inside `notifyListWait` can make a caller's deferred unlock fail. Since these
 objects and their users are confined to the revoked isolate, teardown can
-discard their Go-level lock state and skip user defers. This requires a
-runtime path that detaches queue records and destroys parked goroutines
-without resuming Go code; the current `Goexit` path does not provide it.
+discard their Go-level lock state and skip user defers. The `Cond` path now
+detaches its queue record, briefly resumes the G for runtime cleanup, and
+discards it without running defers. A final scheduler path that destroys a
+parked G without resuming it remains open, as do mutex and WaitGroup queues.
 
 ## Acceptance cases
 

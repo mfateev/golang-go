@@ -56,6 +56,36 @@ func isolateExitIfRevoked() {
 	}
 }
 
+// isolateDiscardIfRevoked ends the current G without running Go defers. It is
+// for waits on isolate-owned synchronization objects after their runtime wait
+// records have been removed. Running defers can touch a lock abandoned by
+// another goroutine in the same revoked isolate.
+func isolateDiscardIfRevoked() {
+	group := getg().isolateGroup
+	if group == nil || group.admission.Load()&isolateRevokedBit == 0 {
+		return
+	}
+	gp := getg()
+	if raceenabled {
+		if gp.bubble != nil {
+			racereleasemergeg(gp, gp.bubble.raceaddr())
+		}
+		racectxend(gp.racectx)
+	}
+	trace := traceAcquire()
+	if trace.ok() {
+		trace.GoEnd()
+		traceRelease(trace)
+	}
+	mcall(isolateDiscard0)
+}
+
+func isolateDiscard0(gp *g) {
+	gdestroy(gp)
+	schedule()
+	throw("isolate: schedule returned after discard")
+}
+
 //go:linkname sync_runtime_isolateExitIfRevoked sync.runtime_isolateExitIfRevoked
 func sync_runtime_isolateExitIfRevoked() {
 	isolateExitIfRevoked()

@@ -19,8 +19,9 @@ import (
 // admitted at first dispatch and not yet destroyed. A complete isolate also
 // needs ownership of every parked waiter and a dispatch fence before Kill can
 // report that no goroutine can resume execution. pollWaits and parkWaits
-// cover network poll, time.Sleep, ordinary channel/select waits, and
-// permanent parks; their cleanup still runs on the resumed goroutine.
+// cover network poll, time.Sleep, ordinary channel/select waits, Cond waits,
+// and permanent parks; their runtime cleanup still runs on the resumed
+// goroutine.
 type isolateRevocationGroup struct {
 	admission atomic.Uint64
 	live      atomic.Int32
@@ -592,6 +593,7 @@ type g struct {
 	isolateParkPrev   *g
 	isolateParkNext   *g
 	isolateParkChan   *hchan
+	isolateParkNotify *notifyList
 	isolateParkState  uint8
 	isolateStarted    bool
 	isolateAdmitted   bool

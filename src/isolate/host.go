@@ -43,14 +43,16 @@ type Command = isolatebridge.Command
 // Isolate is a trusted instance of one statically linked program. This POC
 // uses the ordinary Go heap and scheduler; it does not provide containment.
 type Isolate struct {
-	entry       func()
-	runState    func(func())
-	boundary    *isolatebridge.Boundary
-	started     atomic.Bool
-	lifecycleMu sync.Mutex
-	killed      bool
-	done        chan struct{}
-	err         error // published by closing done
+	entry        func()
+	runState     func(func())
+	boundary     *isolatebridge.Boundary
+	started      atomic.Bool
+	lifecycleMu  sync.Mutex
+	killed       bool
+	done         chan struct{}
+	completeOnce sync.Once
+	watchOnce    sync.Once
+	err          error // published by closing done
 }
 
 var errMainPanicked = errors.New("isolate: main panicked")
@@ -135,20 +137,21 @@ func (i *Isolate) Start() error {
 	}
 	ready := make(chan struct{})
 	go func() {
-		defer close(i.done)
 		defer i.boundary.Stop()
 		i.boundary.RunOwner(func() {
 			close(ready) // group membership is visible before Start returns
 			returned := false
 			defer func() {
 				if recover() != nil {
-					i.err = errMainPanicked
+					i.complete(errMainPanicked)
 				} else if !returned {
 					if i.boundary.Stopped() {
-						i.err = errMainRevoked
+						i.complete(errMainRevoked)
 					} else {
-						i.err = errMainExited
+						i.complete(errMainExited)
 					}
+				} else {
+					i.complete(nil)
 				}
 			}()
 			i.runState(func() { i.boundary.Run(i.entry) })
@@ -157,6 +160,31 @@ func (i *Isolate) Start() error {
 	}()
 	<-ready
 	return nil
+}
+
+func (i *Isolate) complete(err error) {
+	i.completeOnce.Do(func() {
+		i.err = err
+		close(i.done)
+	})
+}
+
+// A revoked main may be discarded by the runtime without running Go defers.
+// Observe group destruction from the host so Wait and Done still complete.
+func (i *Isolate) watchRevokedCompletion() {
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if i.boundary.LiveGoroutines() == 0 {
+			i.complete(errMainRevoked)
+			return
+		}
+		select {
+		case <-i.done:
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 // Commands returns host requests from the program. The host must reply to
@@ -177,8 +205,8 @@ func (i *Isolate) Wait() error {
 }
 
 // Kill revokes unstarted children, wakes Call, registered network poll,
-// real time.Sleep, channel, and select waiters, then waits for every attached
-// goroutine to exit.
+// real time.Sleep, channel, select, and Cond waiters, then waits for every
+// attached goroutine to exit.
 // Other runtime waits are not yet interrupted. If ctx expires while one
 // remains, Kill returns a pending error. This is a provisional lifecycle,
 // not safe heap teardown.
@@ -189,6 +217,9 @@ func (i *Isolate) Kill(ctx context.Context) error {
 	i.lifecycleMu.Lock()
 	i.killed = true
 	i.boundary.Stop()
+	if i.started.Load() {
+		i.watchOnce.Do(func() { go i.watchRevokedCompletion() })
+	}
 	i.lifecycleMu.Unlock()
 
 	ticker := time.NewTicker(time.Millisecond)

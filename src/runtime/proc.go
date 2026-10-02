@@ -4554,7 +4554,7 @@ func gdestroy(gp *g) {
 	if gp.isolatePollDesc != nil || gp.isolatePollPrev != nil || gp.isolatePollNext != nil {
 		throw("isolate: exiting goroutine still registered in poll wait list")
 	}
-	if gp.isolateParkState != isolateParkNone || gp.isolateParkPrev != nil || gp.isolateParkNext != nil || gp.isolateParkChan != nil {
+	if gp.isolateParkState != isolateParkNone || gp.isolateParkPrev != nil || gp.isolateParkNext != nil || gp.isolateParkChan != nil || gp.isolateParkNotify != nil {
 		throw("isolate: exiting goroutine still registered in park wait list")
 	}
 	if gp.isolateSelectWake.Load() != 0 {

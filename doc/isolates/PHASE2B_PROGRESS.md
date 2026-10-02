@@ -666,3 +666,24 @@ all-nil paths continue to use the permanent-park registry.
 Tests cover received and sent cases, a timer-channel case, and close racing
 revocation. The focused cases passed 100 race-detector runs with `GOGC=1`
 and static lock ranking. The 32-bit G layout was verified from DWARF.
+The complete `src/all.bash` suite passed for this select change.
+
+## Isolate-owned Cond waits
+
+An isolate-owned `sync.Cond` now registers its notification list with the
+runtime group before entering the list lock. Revocation removes each queued
+waiter under that lock and wakes its G; a racing `Signal` or `Broadcast` that
+already removed a waiter remains responsible for waking it. A waiter that
+has not queued yet sees revocation and skips the park. After wakeup, the G
+unregisters, clears and releases its `sudog`, then the runtime destroys it
+without running Go defers or reacquiring the `Cond` locker. This is valid only
+under the new rule that the `Cond`, its locker, and their users belong to one
+isolate. The current POC has not yet enforced that rule in the allocator.
+
+The provisional host now has an independent completion observer for a
+revoked main G, since hard discard skips the Go defers that normally close
+`Done`. One and two waiter tests, plus a concurrent `Signal` test, passed 100
+race-detector runs with `GOGC=1` and static lock ranking. The full isolate
+race suite passed 10 runs. Mutex, RWMutex, and WaitGroup semaphore queues
+still need immediate teardown, and the general scheduler execution fence
+remains open.

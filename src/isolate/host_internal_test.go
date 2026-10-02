@@ -93,6 +93,136 @@ func TestKillStopsCallWaiter(t *testing.T) {
 	}
 }
 
+func TestKillWakesCondWait(t *testing.T) {
+	entered := make(chan struct{})
+	var resumed, deferred atomic.Bool
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main: func() {
+			var mu sync.Mutex
+			cond := sync.NewCond(&mu)
+			mu.Lock()
+			defer func() { deferred.Store(true); mu.Unlock() }()
+			close(entered)
+			cond.Wait()
+			resumed.Store(true)
+		},
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	deadline := time.Now().Add(time.Second)
+	for i.boundary.RunningGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if i.boundary.RunningGoroutines() != 0 {
+		t.Fatal("Cond waiter did not park")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := i.Kill(ctx); err != nil {
+		t.Fatalf("Kill on Cond wait = %v", err)
+	}
+	if err := i.Wait(); err != errMainRevoked {
+		t.Fatalf("Wait after Cond revocation = %v, want %v", err, errMainRevoked)
+	}
+	if resumed.Load() || deferred.Load() {
+		t.Fatalf("revoked Cond returned=%t, ran defer=%t", resumed.Load(), deferred.Load())
+	}
+}
+
+func TestKillWakesMultipleCondWaiters(t *testing.T) {
+	entered := make(chan struct{}, 2)
+	var resumed atomic.Bool
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main: func() {
+			var mu sync.Mutex
+			cond := sync.NewCond(&mu)
+			wait := func() {
+				mu.Lock()
+				defer mu.Unlock()
+				entered <- struct{}{}
+				cond.Wait()
+				resumed.Store(true)
+			}
+			go wait()
+			wait()
+		},
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	<-entered
+	deadline := time.Now().Add(time.Second)
+	for i.boundary.RunningGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if i.boundary.RunningGoroutines() != 0 || i.boundary.LiveGoroutines() != 2 {
+		t.Fatal("both Cond waiters did not park")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := i.Kill(ctx); err != nil {
+		t.Fatalf("Kill with two Cond waiters = %v", err)
+	}
+	if err := i.Wait(); err != errMainRevoked {
+		t.Fatalf("Wait after Cond revocation = %v, want %v", err, errMainRevoked)
+	}
+	if resumed.Load() {
+		t.Fatal("Cond waiter returned after revocation")
+	}
+}
+
+func TestKillRacesCondSignal(t *testing.T) {
+	entered := make(chan struct{})
+	var signal atomic.Bool
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main: func() {
+			var mu sync.Mutex
+			cond := sync.NewCond(&mu)
+			go func() {
+				for !signal.Load() {
+					runtime.Gosched()
+				}
+				cond.Signal()
+			}()
+			mu.Lock()
+			defer mu.Unlock()
+			close(entered)
+			cond.Wait()
+		},
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	signal.Store(true)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := i.Kill(ctx); err != nil {
+		t.Fatalf("Kill racing Cond.Signal = %v", err)
+	}
+	if err := i.Wait(); err != nil && err != errMainRevoked {
+		t.Fatalf("Wait after Cond.Signal race = %v", err)
+	}
+}
+
 func TestKillWakesChannelWait(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})

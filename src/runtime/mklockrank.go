@@ -89,7 +89,7 @@ allocmR, execR, hchan < sched;
 sched < allg, allp;
 
 # Channels
-NONE < notifyList;
+isolatePark < notifyList;
 hchan, notifyList < sudog;
 
 hchan, isolatePark, pollDesc, wakeableSleep < timers;
