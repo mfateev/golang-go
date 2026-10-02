@@ -129,8 +129,13 @@ func (b *Boundary) RevokeUnstarted() { revokeUnstarted(b.group) }
 func (b *Boundary) Stop() {
 	b.stop.Do(func() {
 		b.stopped.Store(true)
-		b.RevokeUnstarted()
+		// Fence new isolate execution before Call resumes. Call's halt
+		// channel is independent of the scan of runtime wait queues.
+		wake := markRevoked(b.group)
 		close(b.halt)
+		if wake {
+			wakeRevoked(b.group)
+		}
 	})
 }
 
@@ -198,6 +203,12 @@ func (b *Boundary) stopIfRevoked() {
 	default:
 	}
 }
+
+//go:linkname markRevoked runtime.isolateMarkRevoked
+func markRevoked(unsafe.Pointer) bool
+
+//go:linkname wakeRevoked runtime.isolateWakeRevoked
+func wakeRevoked(unsafe.Pointer)
 
 //go:noinline
 func newHostCommand(id uint64, op uint32, payload []byte) *Command {

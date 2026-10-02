@@ -687,3 +687,10 @@ race-detector runs with `GOGC=1` and static lock ranking. The full isolate
 race suite passed 10 runs. Mutex, RWMutex, and WaitGroup semaphore queues
 still need immediate teardown, and the general scheduler execution fence
 remains open.
+
+The provisional bridge now publishes the group's atomic revocation fence
+before closing the `Call` stop channel, then scans runtime poll and park
+waiters. This preserves first-dispatch rejection while letting `Call` wake
+independently of a long waiter scan. The direct group revocation hook retains
+its combined fence-and-scan behavior. Focused Call and Cond cases passed 100
+race-detector runs with `GOGC=1` and static lock ranking after the split.

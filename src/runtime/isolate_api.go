@@ -92,6 +92,16 @@ func isolateRevokeUnstarted(p unsafe.Pointer) {
 	(*isolateRevocationGroup)(p).revoke()
 }
 
+//go:linkname isolateMarkRevoked
+func isolateMarkRevoked(p unsafe.Pointer) bool {
+	return (*isolateRevocationGroup)(p).markRevoked()
+}
+
+//go:linkname isolateWakeRevoked
+func isolateWakeRevoked(p unsafe.Pointer) {
+	(*isolateRevocationGroup)(p).wakeRevoked()
+}
+
 // isolateLargeAllocOrigin is a diagnostic for live large heap objects. Small
 // object spans still mix allocation contexts and cannot report an owner.
 //

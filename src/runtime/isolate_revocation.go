@@ -33,17 +33,31 @@ func isolateFirstDispatchRevoked(gp *g) bool {
 }
 
 func (group *isolateRevocationGroup) revoke() {
+	if group.markRevoked() {
+		group.wakeRevoked()
+	}
+}
+
+// markRevoked publishes the durable admission fence. The caller that wins
+// the CAS owns the one waiter scan; other callers may already see revocation.
+func (group *isolateRevocationGroup) markRevoked() bool {
 	for {
 		state := group.admission.Load()
 		if state&isolateRevokedBit != 0 {
-			return
+			return false
 		}
 		if group.admission.CompareAndSwap(state, state|isolateRevokedBit) {
-			isolateRevokePollWaiters(group)
-			isolateRevokeParkWaiters(group)
-			return
+			return true
 		}
 	}
+}
+
+func (group *isolateRevocationGroup) wakeRevoked() {
+	if group.admission.Load()&isolateRevokedBit == 0 {
+		throw("isolate: waking group before revocation")
+	}
+	isolateRevokePollWaiters(group)
+	isolateRevokeParkWaiters(group)
 }
 
 // isolateExitIfRevoked is a provisional boundary fence. After a blocking
