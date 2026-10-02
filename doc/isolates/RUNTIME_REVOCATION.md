@@ -1,8 +1,11 @@
 # Runtime revocation audit
 
 This is the implementation checklist for the trusted MVP's whole-isolate
-`Kill(ctx)`. The provisional host method stops `Call` waits and waits for the
-runtime group's live count; unrelated waits can resume while it is pending.
+`Kill(ctx)`. The provisional host method fences admission and stops `Call`
+waits immediately, starts the runtime waiter scan on a process goroutine,
+then waits for the runtime group's live count. Its context can expire while
+the scan waits for a runtime lock. Unhandled waits can resume while Kill is
+pending.
 The group has a first-dispatch admission bit, a live goroutine count, a
 conservative runnable count, a count of goroutines associated with an M, and
 a provisional registry of network poll waits.
@@ -62,7 +65,7 @@ not constitute the general scheduler execution fence required above.
 | `sync.Cond` | Ticketed `sudog` in the isolate-owned `notifyList`, also in `gp.waiting` | A wait registers its list with the group before taking the list lock. Revocation removes a queued record under that lock and wakes the G; a concurrent `Signal` or `Broadcast` that already removed it owns the wake. The resumed G unregisters, releases its `sudog`, and is discarded without Go defers before `Cond.Wait` can reacquire its locker. A prequeue wait sees revocation and does not park. |
 | `time.Sleep` and timer channels | Per-G timer or channel timer linked into runtime timer machinery | Real `time.Sleep` waits register with the group. Revocation stops pending timers and wakes their Gs; if a callback has started, it performs the wake. The resumed G unregisters before hard discard without user defers. Fake synctest timers still wait for their normal wakeup. Direct and selected timer-channel receives use channel/select cleanup. |
 | Network poll | `pollDesc.rg` or `wg` and deadline timers | `poll_runtime_pollReset` checks before preparing I/O. A normal poll wait registers its descriptor with the isolate group after entering `pdWait`. Revocation clears registered poll semaphores and readies parked Gs; each G then completes normal cleanup and exits at the post-wait fence. This does not yet discard a waiter without scheduling it. `poll_runtime_pollWaitCanceled` remains separate. |
-| Current `isolate.Call` | Channel send and reply receive on the provisional bridge | The trusted bridge selects each wait against a stop channel and discards the caller without user defers. Runtime `select` cleanup uses the same discard path after cleaning its queue records. `Stop` publishes the group admission fence, closes the stop channel, then scans runtime waiters; Call does not wait for the scan to finish before waking. A late host reply uses a buffered channel. The bridge is not yet a native owned command queue. |
+| Current `isolate.Call` | Channel send and reply receive on the provisional bridge | The trusted bridge selects each wait against a stop channel and discards the caller without user defers. Runtime `select` cleanup uses the same discard path after cleaning its queue records. `Stop` publishes the group admission fence, closes the stop channel, then scans runtime waiters; `Kill(ctx)` runs that scan on a process goroutine so its caller can observe the deadline. Call does not wait for the scan to finish before waking. A late host reply uses a buffered channel. The bridge is not yet a native owned command queue. |
 
 The table is an initial inventory, not a complete scheduler proof. Runtime
 coroutines switch Gs without `execute`/`dropg`; group accounting covers those

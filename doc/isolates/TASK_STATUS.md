@@ -97,13 +97,18 @@ ordinary-Go execution remains unproved.**
       cannot start a new grandchild after revocation; started children and
       waiter cleanup remain outside this fence
 - [x] The provisional `Call` bridge stops command-send and reply-receive
-      waiters when main exits or preparation fails. They exit through `Goexit`;
+      waiters when main exits or preparation fails. Revoked callers now discard
+      without running Go defers after their channel records are cleaned;
       two 100-run race tests and the static program script pass. Other runtime
       waiters and complete native `Kill(ctx)` revocation remain open
 - [x] A provisional source-level `Kill(ctx)` fences startup, stops the Call
       bridge, and waits for zero live group members. It returns pending counts
       for unsupported runtime waits; those goroutines can still resume, so
       whole-isolate revocation and safe teardown remain open
+- [x] `Kill(ctx)` now publishes the admission fence and wakes Call before
+      starting the runtime waiter scan on a process goroutine. The caller can
+      observe its deadline even if that scan waits for a runtime queue lock;
+      the scan itself and running code have no forced completion bound
 - [x] Real `time.Sleep` waits register with the runtime group. Kill stops
       pending sleep timers and wakes their Gs early; a callback already in
       progress wakes its own G. Each G unregisters before exiting without
@@ -127,10 +132,11 @@ ordinary-Go execution remains unproved.**
       The group registers normal poll waits and revocation now wakes them
       without host I/O; each resumed G finishes poll cleanup before exiting.
       Direct waiter discard and canceled-I/O waits remain open
-- [x] `sync.WaitGroup.Wait` checks revocation at entry and after its semaphore
-      wait, race-detector restoration, and reuse check. A pending Kill can
-      finish after `Done` wakes it; early waiter detachment and other
-      semaphore users remain open
+- [x] Contended `sync.WaitGroup.Wait`, `Mutex`, and `RWMutex` waits register
+      their semaphore queues with the runtime group. Kill unlinks their
+      queued waiters under the process semaphore root lock, then the resumed
+      G releases its runtime record and discards without Go defers. The
+      synctest WaitGroup path and other process semaphore users remain open
 - [x] Exported `runtime.Gosched` checks revocation before yielding and after
       resuming, so a goroutine that repeatedly yields can exit after Kill.
       Internal runtime yields remain separate; arbitrary preemption and

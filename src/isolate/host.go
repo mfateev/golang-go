@@ -52,6 +52,7 @@ type Isolate struct {
 	done         chan struct{}
 	completeOnce sync.Once
 	watchOnce    sync.Once
+	scanOnce     sync.Once
 	err          error // published by closing done
 }
 
@@ -216,7 +217,11 @@ func (i *Isolate) Kill(ctx context.Context) error {
 	}
 	i.lifecycleMu.Lock()
 	i.killed = true
-	i.boundary.Stop()
+	// Publish the fence and wake Call before waiting on any runtime queue
+	// lock. The scan runs on a process goroutine, so a blocked scan cannot
+	// prevent this call from observing ctx's deadline.
+	i.boundary.BeginStop()
+	i.scanOnce.Do(func() { go i.boundary.WakeStoppedWaiters() })
 	if i.started.Load() {
 		i.watchOnce.Do(func() { go i.watchRevokedCompletion() })
 	}

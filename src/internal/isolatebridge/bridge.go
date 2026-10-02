@@ -20,13 +20,15 @@ import (
 // Boundary is one host command transport. Its channel is
 // infrastructure for the Phase 2B API probe, not a contained isolate heap.
 type Boundary struct {
-	owner   uintptr
-	group   unsafe.Pointer
-	calls   chan *Command
-	next    atomic.Uint64
-	halt    chan struct{}
-	stop    sync.Once
-	stopped atomic.Bool
+	owner      uintptr
+	group      unsafe.Pointer
+	calls      chan *Command
+	next       atomic.Uint64
+	halt       chan struct{}
+	stop       sync.Once
+	wake       sync.Once
+	wakeNeeded bool
+	stopped    atomic.Bool
 }
 
 var nextOwner atomic.Uintptr
@@ -121,22 +123,35 @@ func (b *Boundary) RunnableGoroutines() int32 { return groupRunnable(b.group) }
 // goroutines are not stopped by this method alone.
 func (b *Boundary) RevokeUnstarted() { revokeUnstarted(b.group) }
 
-// Stop fences unstarted children and wakes goroutines parked in Call, a
-// registered network poll wait, a real time.Sleep wait, or a channel, select,
-// Cond, or sync semaphore wait.
-// A reply that wins just before Stop may leave its caller active. Other
-// runtime waiters and active code still require native revocation.
-func (b *Boundary) Stop() {
+// BeginStop publishes the revocation fence and wakes Call without waiting for
+// the runtime's scan of other wait queues. It is safe to call more than once.
+func (b *Boundary) BeginStop() {
 	b.stop.Do(func() {
 		b.stopped.Store(true)
 		// Fence new isolate execution before Call resumes. Call's halt
 		// channel is independent of the scan of runtime wait queues.
-		wake := markRevoked(b.group)
+		b.wakeNeeded = markRevoked(b.group)
 		close(b.halt)
-		if wake {
+	})
+}
+
+// WakeStoppedWaiters performs the runtime wait-queue scan once. A host may run
+// it on a separate process goroutine so that Kill can observe its deadline
+// even if the scan waits for a runtime lock.
+func (b *Boundary) WakeStoppedWaiters() {
+	b.BeginStop()
+	b.wake.Do(func() {
+		if b.wakeNeeded {
 			wakeRevoked(b.group)
 		}
 	})
+}
+
+// Stop fences new execution, wakes Call, and scans runtime wait queues.
+// A reply that wins just before Stop may leave its caller active. Other
+// runtime waiters and active code still require native revocation.
+func (b *Boundary) Stop() {
+	b.WakeStoppedWaiters()
 }
 
 // Stopped reports whether the host has requested this boundary to stop.

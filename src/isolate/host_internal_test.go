@@ -97,6 +97,46 @@ func TestKillStopsCallWaiter(t *testing.T) {
 	}
 }
 
+func TestBeginStopDefersWaiterScan(t *testing.T) {
+	entered := make(chan struct{})
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main: func() {
+			close(entered)
+			time.Sleep(time.Hour)
+		},
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(i.boundary.WakeStoppedWaiters)
+	<-entered
+	deadline := time.Now().Add(time.Second)
+	for i.boundary.RunningGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if got := i.boundary.RunningGoroutines(); got != 0 {
+		t.Fatalf("main did not park: running=%d", got)
+	}
+	i.boundary.BeginStop()
+	if got := i.boundary.LiveGoroutines(); got != 1 {
+		t.Fatalf("BeginStop scanned waiters: live=%d, want 1", got)
+	}
+	i.boundary.WakeStoppedWaiters()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := i.Kill(ctx); err != nil {
+		t.Fatalf("Kill after waiter scan = %v", err)
+	}
+	if err := i.Wait(); err != errMainRevoked {
+		t.Fatalf("Wait after waiter scan = %v, want %v", err, errMainRevoked)
+	}
+}
+
 func TestKillWakesCondWait(t *testing.T) {
 	entered := make(chan struct{})
 	var resumed, deferred atomic.Bool

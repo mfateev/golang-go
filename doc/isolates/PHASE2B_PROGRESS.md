@@ -745,3 +745,16 @@ Focused tests park two waiters on a locked Mutex, a locked RWMutex, and an
 unfinished WaitGroup, then Kill without unlocking or calling `Done`. They
 passed 100 race-detector runs with `GOGC=1` and static lock ranking.
 The complete `src/all.bash` suite passed after the semaphore change.
+
+## Deadline-aware host revocation request
+
+The host `Kill(ctx)` now separates the immediate admission fence and `Call`
+stop-channel close from the runtime waiter scan. One process goroutine performs
+the scan, while the caller remains able to observe `ctx` even if the scan is
+waiting for a runtime queue lock. Concurrent or repeated `Stop` and `Kill`
+calls still run the scan at most once. A focused test parks a real `time.Sleep`
+waiter, verifies that publishing the fence alone leaves it parked, then runs
+the scan and checks that it exits. This only bounds the host's wait after the
+fence; it does not bound the runtime scan or force a running G to stop.
+The focused test passed 100 race-detector runs, the complete `isolate` race
+suite passed 10 runs, and `src/all.bash` passed, including race and `../test`.
