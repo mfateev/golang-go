@@ -537,5 +537,8 @@ func init() {
 
 // All returns a slice of containing metric descriptions for all supported metrics.
 func All() []Description {
+	if isolateActive() {
+		return append([]Description(nil), allDesc...)
+	}
 	return allDesc
 }

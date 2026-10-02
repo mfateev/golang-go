@@ -1109,11 +1109,15 @@ func TestTraceAPIsKeepHostTraceIsolated(t *testing.T) {
 }
 
 func TestEntropyAndMetricsRejectIsolate(t *testing.T) {
+	hostDescriptions := metrics.All()
+	if len(hostDescriptions) == 0 {
+		t.Fatal("runtime/metrics.All returned no descriptions")
+	}
+	firstName := hostDescriptions[0].Name
 	b := isolatebridge.New()
 	b.Run(func() {
-		if len(metrics.All()) == 0 {
-			t.Error("runtime/metrics.All returned no static descriptions")
-		}
+		descriptions := metrics.All()
+		descriptions[0].Name = "isolate-only"
 		for _, tt := range []struct {
 			want string
 			call func()
@@ -1141,6 +1145,9 @@ func TestEntropyAndMetricsRejectIsolate(t *testing.T) {
 			}()
 		}
 	})
+	if got := metrics.All()[0].Name; got != firstName {
+		t.Fatalf("isolate changed host metric name to %q", got)
+	}
 }
 
 func TestProcessLaunchAPIsRejectIsolate(t *testing.T) {

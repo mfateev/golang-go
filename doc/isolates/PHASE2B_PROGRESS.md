@@ -888,3 +888,10 @@ The focused test passed 100 race-detector runs, the complete isolate package
 passed 10 race-detector runs, the ordinary `crypto/rand`, `crypto/mlkem`, and
 `runtime/metrics` short suites passed, Plan 9/amd64 and Windows/amd64 isolate
 test binaries compiled, and `src/all.bash` passed.
+
+`runtime/metrics.All` initially exposed its process-owned backing slice even
+though the descriptions are static. Active isolates now receive a copy. A
+test mutates the isolate's copy and verifies the host description is intact;
+it passed 100 race-detector runs, the complete isolate package passed 10
+race-detector runs, the ordinary metrics short suite passed, and Plan 9/amd64
+and Windows/amd64 isolate test binaries compiled.

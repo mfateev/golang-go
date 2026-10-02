@@ -298,6 +298,8 @@ ordinary-Go execution remains unproved.**
       default `Reader`, internal DRBG reads, and OS entropy reads. A direct
       DRBG-backed ML-KEM path is covered; other cryptographic setup effects
       still need audit. `runtime/metrics.Read` rejects process metrics
+- [x] `runtime/metrics.All` copies static descriptions for an active isolate,
+      preventing writes through its returned slice from changing host data
 - [x] Runtime `g` carries a monotonic numeric instance owner ID through
       initializer replay, the generated state runner, `main`, and native
       children. A race test checks distinct instance IDs and restored host

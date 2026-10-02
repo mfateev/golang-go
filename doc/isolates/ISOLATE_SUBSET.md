@@ -280,7 +280,8 @@ The provisional entropy guards reject `crypto/rand.Read`, its default shared
 This covers direct default-reader and several internal crypto paths, but
 caller-supplied readers and other cryptographic setup effects still need the
 Tier 1 audit. `runtime/metrics.Read` also rejects process metrics, while
-`runtime/metrics.All` remains available as static metadata.
+`runtime/metrics.All` remains available as a copy of static metadata so an
+isolate cannot mutate the process-owned description slice.
 
 ## D. Virtualized — allowed, but redirected by the runtime
 
