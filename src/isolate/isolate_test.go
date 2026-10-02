@@ -907,6 +907,42 @@ func TestProcessCleanupPathsRejectIsolate(t *testing.T) {
 	})
 }
 
+func TestProcessRuntimeAPIsRejectIsolate(t *testing.T) {
+	checkPanic := func(name string, fn func()) {
+		t.Helper()
+		defer func() {
+			got, ok := recover().(string)
+			want := "runtime." + name + " is unavailable in an isolate"
+			if !ok || got != want {
+				t.Errorf("%s panic = %q, want %q", name, got, want)
+			}
+		}()
+		fn()
+	}
+	b := isolatebridge.New()
+	b.Run(func() {
+		checkPanic("GOMAXPROCS", func() { runtime.GOMAXPROCS(0) })
+		checkPanic("SetDefaultGOMAXPROCS", runtime.SetDefaultGOMAXPROCS)
+		checkPanic("NumCPU", func() { runtime.NumCPU() })
+		checkPanic("NumCgoCall", func() { runtime.NumCgoCall() })
+		checkPanic("NumGoroutine", func() { runtime.NumGoroutine() })
+		checkPanic("ReadMemStats", func() { runtime.ReadMemStats(new(runtime.MemStats)) })
+		checkPanic("LockOSThread", func() {
+			runtime.LockOSThread()
+			runtime.UnlockOSThread()
+		})
+		checkPanic("UnlockOSThread", runtime.UnlockOSThread)
+		child := make(chan bool, 1)
+		go func() {
+			defer func() { child <- recover() != nil }()
+			runtime.NumCPU()
+		}()
+		if !<-child {
+			t.Error("child goroutine read process CPU count")
+		}
+	})
+}
+
 func TestAfterFuncRejectsUnownedCallback(t *testing.T) {
 	b := isolatebridge.New()
 	b.Run(func() {

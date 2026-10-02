@@ -5745,6 +5745,9 @@ func dolockOSThread() {
 //
 //go:nosplit
 func LockOSThread() {
+	if isolateActive() {
+		panic("runtime.LockOSThread is unavailable in an isolate")
+	}
 	if atomic.Load(&newmHandoff.haveTemplateThread) == 0 && GOOS != "plan9" {
 		// If we need to start a new thread from the locked
 		// thread, we need the template thread. Start it now
@@ -5798,6 +5801,9 @@ func dounlockOSThread() {
 //
 //go:nosplit
 func UnlockOSThread() {
+	if isolateActive() {
+		panic("runtime.UnlockOSThread is unavailable in an isolate")
+	}
 	gp := getg()
 	if gp.m.lockedExt == 0 {
 		return

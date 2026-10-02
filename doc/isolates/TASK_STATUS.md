@@ -265,6 +265,10 @@ ordinary-Go execution remains unproved.**
       `unique.Make` inside an active isolate; `unique.Make` rejects before
       touching its process map. Tests cover direct calls, `net/netip.WithZone`,
       and a child goroutine. Owner-aware callbacks remain pending
+- [x] Provisional runtime guards reject `LockOSThread`, `UnlockOSThread`,
+      `NumCPU`, `NumCgoCall`, `NumGoroutine`, `GOMAXPROCS`,
+      `SetDefaultGOMAXPROCS`, and `ReadMemStats` before accessing process
+      state. Other process-state APIs and isolate-fatal handling remain open
 - [x] Runtime `g` carries a monotonic numeric instance owner ID through
       initializer replay, the generated state runner, `main`, and native
       children. A race test checks distinct instance IDs and restored host

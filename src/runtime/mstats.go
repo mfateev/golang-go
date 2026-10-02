@@ -354,6 +354,9 @@ func init() {
 // which is a snapshot as of the most recently completed garbage
 // collection cycle.
 func ReadMemStats(m *MemStats) {
+	if isolateActive() {
+		panic("runtime.ReadMemStats is unavailable in an isolate")
+	}
 	_ = m.Alloc // nil check test before we switch stacks, see issue 61158
 	stw := stopTheWorld(stwReadMemStats)
 

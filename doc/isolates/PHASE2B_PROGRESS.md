@@ -756,5 +756,21 @@ calls still run the scan at most once. A focused test parks a real `time.Sleep`
 waiter, verifies that publishing the fence alone leaves it parked, then runs
 the scan and checks that it exits. This only bounds the host's wait after the
 fence; it does not bound the runtime scan or force a running G to stop.
+
 The focused test passed 100 race-detector runs, the complete `isolate` race
 suite passed 10 runs, and `src/all.bash` passed, including race and `../test`.
+
+## Process runtime API guards
+
+Eight public runtime entry points now reject use from an active isolate before
+exposing process-wide CPU, goroutine, cgo-call, or memory statistics, changing
+`GOMAXPROCS`, or changing OS-thread affinity. The guard also covers
+`SetDefaultGOMAXPROCS` and `UnlockOSThread`, which could otherwise change the
+process or host thread after an isolate entry. A focused test checks every
+entry point and a native child. These are provisional recoverable panics;
+the subset still calls for isolate-fatal violations and an audit of other
+process-state APIs.
+
+The focused guard test passed 10 race-detector runs, the complete `isolate`
+race suite passed 10 runs, a Plan 9/amd64 runtime test binary compiled, and
+`src/all.bash` passed, including race and `../test`.

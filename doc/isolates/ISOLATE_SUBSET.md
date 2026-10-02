@@ -225,6 +225,12 @@ enforces the current restriction while owner-aware cleanup remains pending.
   process state; either banned or virtualized per isolate
 - `os.Exit` — must not be reachable at all
 
+The provisional runtime now rejects `LockOSThread`, `UnlockOSThread`,
+`NumCPU`, `NumCgoCall`, `NumGoroutine`, `GOMAXPROCS`,
+`SetDefaultGOMAXPROCS`, and `ReadMemStats` before reading or changing process
+state. These guards currently panic, like the provisional cleanup guards;
+isolate-fatal handling and an audit of other process-state APIs remain open.
+
 ## D. Virtualized — allowed, but redirected by the runtime
 
 These stay available because banning them would make ordinary Go unwritable.
