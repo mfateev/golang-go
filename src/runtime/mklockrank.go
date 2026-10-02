@@ -96,7 +96,7 @@ hchan, isolatePark, pollDesc, wakeableSleep < timers;
 timers, timerSend < timer < netpollInit;
 
 # Semaphores
-NONE < root;
+isolatePark < root;
 
 # Itabs
 NONE

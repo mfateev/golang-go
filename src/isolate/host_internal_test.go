@@ -223,6 +223,140 @@ func TestKillRacesCondSignal(t *testing.T) {
 	}
 }
 
+func TestKillWakesSemaphoreWaiters(t *testing.T) {
+	cases := []struct {
+		name string
+		main func(chan<- struct{}, *atomic.Bool)
+	}{
+		{"Mutex", func(entered chan<- struct{}, resumed *atomic.Bool) {
+			var mu sync.Mutex
+			mu.Lock()
+			for range 2 {
+				go func() {
+					entered <- struct{}{}
+					mu.Lock()
+					resumed.Store(true)
+					mu.Unlock()
+				}()
+			}
+			select {}
+		}},
+		{"RWMutex", func(entered chan<- struct{}, resumed *atomic.Bool) {
+			var rw sync.RWMutex
+			rw.Lock()
+			go func() {
+				entered <- struct{}{}
+				rw.RLock()
+				resumed.Store(true)
+				rw.RUnlock()
+			}()
+			go func() {
+				entered <- struct{}{}
+				rw.Lock()
+				resumed.Store(true)
+				rw.Unlock()
+			}()
+			select {}
+		}},
+		{"WaitGroup", func(entered chan<- struct{}, resumed *atomic.Bool) {
+			var wg sync.WaitGroup
+			wg.Add(1)
+			for range 2 {
+				go func() {
+					entered <- struct{}{}
+					wg.Wait()
+					resumed.Store(true)
+				}()
+			}
+			select {}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			entered := make(chan struct{}, 2)
+			var resumed atomic.Bool
+			program := Program{entry: isolatebridge.ProgramEntry{
+				NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+				Main:     func() { tc.main(entered, &resumed) },
+			}}
+			i, err := New(Config{Program: program})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := i.Start(); err != nil {
+				t.Fatal(err)
+			}
+			<-entered
+			<-entered
+			deadline := time.Now().Add(time.Second)
+			for i.boundary.RunningGoroutines() != 0 && time.Now().Before(deadline) {
+				runtime.Gosched()
+			}
+			if running, live := i.boundary.RunningGoroutines(), i.boundary.LiveGoroutines(); running != 0 || live != 3 {
+				t.Fatalf("semaphore waiters not parked: running=%d live=%d", running, live)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := i.Kill(ctx); err != nil {
+				t.Fatalf("Kill with semaphore waiters = %v", err)
+			}
+			if err := i.Wait(); err != errMainRevoked {
+				t.Fatalf("Wait after semaphore revocation = %v, want %v", err, errMainRevoked)
+			}
+			if resumed.Load() {
+				t.Fatal("semaphore waiter returned after revocation")
+			}
+		})
+	}
+}
+
+func TestKillRacesMutexUnlock(t *testing.T) {
+	entered := make(chan struct{})
+	var release atomic.Bool
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main: func() {
+			var mu sync.Mutex
+			mu.Lock()
+			go func() {
+				close(entered)
+				mu.Lock()
+				mu.Unlock()
+			}()
+			go func() {
+				for !release.Load() {
+				}
+				mu.Unlock()
+			}()
+			select {}
+		},
+	}}
+	i, err := New(Config{Program: program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	deadline := time.Now().Add(time.Second)
+	for i.boundary.RunningGoroutines() != 1 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if running, live := i.boundary.RunningGoroutines(), i.boundary.LiveGoroutines(); running != 1 || live != 3 {
+		t.Fatalf("mutex waiter not parked: running=%d live=%d", running, live)
+	}
+	release.Store(true)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := i.Kill(ctx); err != nil {
+		t.Fatalf("Kill racing Mutex.Unlock = %v", err)
+	}
+	if err := i.Wait(); err != errMainRevoked {
+		t.Fatalf("Wait after Mutex.Unlock race = %v, want %v", err, errMainRevoked)
+	}
+}
+
 func TestKillWakesChannelWait(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -452,14 +586,14 @@ func TestKillWakesTimerSelect(t *testing.T) {
 	}
 }
 
-func TestKillPendingOnWaitGroupWait(t *testing.T) {
-	var wg sync.WaitGroup
-	wg.Add(1)
+func TestKillWakesWaitGroupWait(t *testing.T) {
 	entered := make(chan struct{})
 	var resumed atomic.Bool
 	program := Program{entry: isolatebridge.ProgramEntry{
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
+			var wg sync.WaitGroup
+			wg.Add(1)
 			close(entered)
 			wg.Wait()
 			resumed.Store(true)
@@ -480,13 +614,11 @@ func TestKillPendingOnWaitGroupWait(t *testing.T) {
 	if i.boundary.RunningGoroutines() != 0 || i.boundary.LiveGoroutines() != 1 {
 		t.Fatal("main did not park in WaitGroup.Wait")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	var pending *KillPendingError
-	if err := i.Kill(ctx); !errors.As(err, &pending) || pending.LiveGoroutines == 0 {
-		t.Fatalf("Kill on WaitGroup.Wait = %v, want pending live goroutine", err)
+	if err := i.Kill(ctx); err != nil {
+		t.Fatalf("Kill on WaitGroup.Wait = %v", err)
 	}
-	wg.Done()
 	if err := i.Wait(); err != errMainRevoked {
 		t.Fatalf("Wait after revoked WaitGroup.Wait = %v, want %v", err, errMainRevoked)
 	}
@@ -499,13 +631,13 @@ func TestKillPendingOnWaitGroupWait(t *testing.T) {
 }
 
 func TestRevokedWaitGroupReadyPath(t *testing.T) {
-	var wg sync.WaitGroup
 	var release atomic.Bool
 	entered := make(chan struct{})
 	var resumed atomic.Bool
 	program := Program{entry: isolatebridge.ProgramEntry{
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
+			var wg sync.WaitGroup
 			close(entered)
 			for !release.Load() {
 			}

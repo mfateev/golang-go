@@ -148,9 +148,17 @@ func semacquire1(addr *uint32, lifo bool, profile semaProfileFlags, skipframes i
 	if gp != gp.m.curg {
 		throw("semacquire not on the G stack")
 	}
+	group := gp.isolateGroup
+	isolateWait := group != nil && isolateOwnedSemaWait(reason)
+	if isolateWait {
+		isolateDiscardIfRevoked()
+	}
 
 	// Easy case.
 	if cansemacquire(addr) {
+		if isolateWait {
+			isolateDiscardIfRevoked()
+		}
 		return
 	}
 
@@ -176,8 +184,21 @@ func semacquire1(addr *uint32, lifo bool, profile semaProfileFlags, skipframes i
 		}
 		s.acquiretime = t0
 	}
+	if isolateWait {
+		gp.isolateParkSema = addr
+		if !group.registerPark(gp, isolateSemaRegistered, nil) {
+			gp.isolateParkSema = nil
+			releaseSudog(s)
+			isolateDiscardIfRevoked()
+			throw("isolate: rejected semaphore park without revocation")
+		}
+	}
 	for {
 		lockWithRank(&root.lock, lockRankRoot)
+		if isolateWait && (gp.isolateParkState == isolateSemaCancelled || group.admission.Load()&isolateRevokedBit != 0) {
+			unlock(&root.lock)
+			break
+		}
 		// Add ourselves to nwait to disable "easy case" in semrelease.
 		root.nwait.Add(1)
 		// Check cansemacquire to avoid missed wakeup.
@@ -189,15 +210,36 @@ func semacquire1(addr *uint32, lifo bool, profile semaProfileFlags, skipframes i
 		// Any semrelease after the cansemacquire knows we're waiting
 		// (we set nwait above), so go to sleep.
 		root.queue(addr, s, lifo)
+		if isolateWait {
+			gp.isolateParkState = isolateSemaQueued
+		}
 		goparkunlock(&root.lock, reason, traceBlockSync, 4+skipframes)
+		if isolateWait && group.admission.Load()&isolateRevokedBit != 0 {
+			break
+		}
 		if s.ticket != 0 || cansemacquire(addr) {
 			break
 		}
+	}
+	if isolateWait {
+		group.unregisterPark(gp)
 	}
 	if s.releasetime > 0 {
 		blockevent(s.releasetime-t0, 3+skipframes)
 	}
 	releaseSudog(s)
+	if isolateWait {
+		isolateDiscardIfRevoked()
+	}
+}
+
+func isolateOwnedSemaWait(reason waitReason) bool {
+	switch reason {
+	case waitReasonSyncMutexLock, waitReasonSyncRWMutexRLock,
+		waitReasonSyncRWMutexLock, waitReasonSyncWaitGroupWait:
+		return true
+	}
+	return false
 }
 
 func semrelease(addr *uint32) {
@@ -483,6 +525,79 @@ Found:
 	s.prev = nil
 	s.ticket = 0
 	return s, now, tailtime
+}
+
+// removeIsolateWaiter removes one queued G without transferring a semaphore
+// token. The caller holds root.lock. Other addresses in this process-owned
+// root, and other waiters on the same address, remain queued.
+func (root *semaRoot) removeIsolateWaiter(addr *uint32, gp *g) bool {
+	key := uintptr(unsafe.Pointer(addr))
+	t := root.treap
+	for t != nil && t.elem.uintptr() != key {
+		if key < t.elem.uintptr() {
+			t = t.prev
+		} else {
+			t = t.next
+		}
+	}
+	if t == nil {
+		return false
+	}
+	if t.g == gp {
+		s, _, _ := root.dequeue(addr)
+		if s == nil || s.g != gp {
+			throw("isolate: semaphore head changed during removal")
+		}
+		return true
+	}
+	for prev, s := t, t.waitlink; s != nil; prev, s = s, s.waitlink {
+		if s.g != gp {
+			continue
+		}
+		prev.waitlink = s.waitlink
+		if t.waittail == s {
+			if prev == t {
+				t.waittail = nil
+			} else {
+				t.waittail = prev
+			}
+		}
+		if t.waiters > 0 {
+			t.waiters--
+		}
+		s.waitlink = nil
+		s.g.waiting = nil
+		s.elem.set(nil)
+		s.ticket = 0
+		return true
+	}
+	return false
+}
+
+// isolateRevokeSemaPark is called with the group park lock held. The root
+// lock synchronizes queue insertion, semaphore release, and revocation.
+func isolateRevokeSemaPark(gp *g) bool {
+	assertLockHeld(&gp.isolateGroup.parkLock)
+	addr := gp.isolateParkSema
+	if addr == nil {
+		throw("isolate: semaphore park missing address")
+	}
+	root := semtable.rootFor(addr)
+	lockWithRank(&root.lock, lockRankRoot)
+	if gp.isolateParkState == isolateSemaRegistered {
+		gp.isolateParkState = isolateSemaCancelled
+		unlock(&root.lock)
+		return false
+	}
+	if root.removeIsolateWaiter(addr, gp) {
+		root.nwait.Add(-1)
+		gp.isolateParkState = isolateSemaReady
+		unlock(&root.lock)
+		return true
+	}
+	// A semaphore release has dequeued the record and owns its wake.
+	unlock(&root.lock)
+	return false
 }
 
 // rotateLeft rotates the tree rooted at node x.

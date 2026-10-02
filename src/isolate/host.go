@@ -205,8 +205,8 @@ func (i *Isolate) Wait() error {
 }
 
 // Kill revokes unstarted children, wakes Call, registered network poll,
-// real time.Sleep, channel, select, and Cond waiters, then waits for every
-// attached goroutine to exit.
+// real time.Sleep, channel, select, Cond, and sync semaphore waiters, then
+// waits for every attached goroutine to exit.
 // Other runtime waits are not yet interrupted. If ctx expires while one
 // remains, Kill returns a pending error. This is a provisional lifecycle,
 // not safe heap teardown.

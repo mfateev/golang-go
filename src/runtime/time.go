@@ -347,6 +347,10 @@ const (
 	isolateCondQueued
 	isolateCondCancelled
 	isolateCondReady
+	isolateSemaRegistered
+	isolateSemaQueued
+	isolateSemaCancelled
+	isolateSemaReady
 )
 
 func (group *isolateRevocationGroup) registerPark(gp *g, state uint8, c *hchan) bool {
@@ -387,6 +391,7 @@ func (group *isolateRevocationGroup) removePark(gp *g) {
 	gp.isolateParkPrev, gp.isolateParkNext = nil, nil
 	gp.isolateParkChan = nil
 	gp.isolateParkNotify = nil
+	gp.isolateParkSema = nil
 	gp.isolateParkState = isolateParkNone
 }
 
@@ -425,6 +430,10 @@ func isolateRevokeParkWaiters(group *isolateRevocationGroup) {
 			}
 		case isolateCondRegistered, isolateCondQueued:
 			if isolateRevokeCondPark(gp) {
+				ready.push(gp)
+			}
+		case isolateSemaRegistered, isolateSemaQueued:
+			if isolateRevokeSemaPark(gp) {
 				ready.push(gp)
 			}
 		}

@@ -694,3 +694,21 @@ waiters. This preserves first-dispatch rejection while letting `Call` wake
 independently of a long waiter scan. The direct group revocation hook retains
 its combined fence-and-scan behavior. Focused Call and Cond cases passed 100
 race-detector runs with `GOGC=1` and static lock ranking after the split.
+
+## Isolate-owned semaphore waits
+
+Contended `sync.Mutex`, `RWMutex`, and `WaitGroup` waits now register their
+semaphore address with the runtime group. The revoker holds the group park
+lock and the process-owned semaphore root lock to unlink each queued `sudog`.
+Removal handles a tree head and a later waiter on the same address without
+changing unrelated queue entries. If a normal semaphore release has already
+dequeued a record, that release remains responsible for its wake. After the
+wait resumes, the G unregisters, releases the `sudog`, and is discarded
+without running user defers. This lets Kill finish even when another revoked
+goroutine still holds the isolate-owned lock or a WaitGroup never receives
+`Done`. It does not implement a general scheduler fence or cover process
+semaphore users and synctest's special WaitGroup reason.
+
+Focused tests park two waiters on a locked Mutex, a locked RWMutex, and an
+unfinished WaitGroup, then Kill without unlocking or calling `Done`. They
+passed 100 race-detector runs with `GOGC=1` and static lock ranking.
