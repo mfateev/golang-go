@@ -22,6 +22,7 @@ import (
 	"runtime"
 	rdebug "runtime/debug"
 	"runtime/pprof"
+	rtrace "runtime/trace"
 	"strconv"
 	"strings"
 	"sync"
@@ -1046,6 +1047,62 @@ func TestProcessProfilesRejectIsolate(t *testing.T) {
 			}()
 		}
 	})
+}
+
+func TestTraceAPIsKeepHostTraceIsolated(t *testing.T) {
+	var output bytes.Buffer
+	if err := rtrace.Start(&output); err != nil {
+		t.Fatal(err)
+	}
+	defer rtrace.Stop()
+	if !rtrace.IsEnabled() {
+		t.Fatal("host trace did not start")
+	}
+	b := isolatebridge.New()
+	b.Run(func() {
+		if rtrace.IsEnabled() {
+			t.Error("isolate observed host tracing")
+		}
+		ctx, task := rtrace.NewTask(context.Background(), "isolate-task")
+		if ctx == nil || task == nil {
+			t.Fatal("trace.NewTask returned a nil context or task")
+		}
+		rtrace.Log(ctx, "isolate", "message")
+		rtrace.Logf(ctx, "isolate", "message %d", 1)
+		called := false
+		rtrace.WithRegion(ctx, "isolate-region", func() { called = true })
+		if !called {
+			t.Error("trace.WithRegion did not call its function")
+		}
+		rtrace.StartRegion(ctx, "isolate-region").End()
+		task.End()
+
+		fr := rtrace.NewFlightRecorder(rtrace.FlightRecorderConfig{})
+		for _, tt := range []struct {
+			name string
+			call func()
+		}{
+			{"Start", func() { _ = rtrace.Start(io.Discard) }},
+			{"Stop", rtrace.Stop},
+			{"FlightRecorder.Start", func() { _ = fr.Start() }},
+			{"FlightRecorder.Stop", fr.Stop},
+			{"FlightRecorder.Enabled", func() { _ = fr.Enabled() }},
+			{"FlightRecorder.WriteTo", func() { _, _ = fr.WriteTo(io.Discard) }},
+		} {
+			func() {
+				defer func() {
+					want := "runtime/trace." + tt.name + " is unavailable in an isolate"
+					if got := recover(); got != want {
+						t.Errorf("%s panic = %v, want %q", tt.name, got, want)
+					}
+				}()
+				tt.call()
+			}()
+		}
+	})
+	if !rtrace.IsEnabled() {
+		t.Fatal("isolate stopped the host trace")
+	}
 }
 
 func TestProcessLaunchAPIsRejectIsolate(t *testing.T) {

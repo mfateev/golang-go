@@ -36,6 +36,10 @@ type traceContextKey struct{}
 //	    trace.WithRegion(ctx, "remainingWork", remainingWork)
 //	}()
 func NewTask(pctx context.Context, taskType string) (ctx context.Context, task *Task) {
+	if isolateActive() {
+		s := &Task{isolateNoop: true}
+		return context.WithValue(pctx, traceContextKey{}, s), s
+	}
 	pid := fromContext(pctx).id
 	id := newID()
 	userTaskCreate(id, pid, taskType)
@@ -71,12 +75,16 @@ func fromContext(ctx context.Context) *Task {
 
 // Task is a data type for tracing a user-defined, logical operation.
 type Task struct {
-	id uint64
+	id          uint64
+	isolateNoop bool
 	// TODO(hyangah): record parent id?
 }
 
 // End marks the end of the operation represented by the [Task].
 func (t *Task) End() {
+	if t.isolateNoop || isolateActive() {
+		return
+	}
 	userTaskEnd(t.id)
 }
 
@@ -93,12 +101,18 @@ var bgTask = Task{id: uint64(0)}
 // Category can be empty and the API assumes there are only a handful of
 // unique categories in the system.
 func Log(ctx context.Context, category, message string) {
+	if isolateActive() {
+		return
+	}
 	id := fromContext(ctx).id
 	userLog(id, category, message)
 }
 
 // Logf is like [Log], but the value is formatted using the specified format spec.
 func Logf(ctx context.Context, category, format string, args ...any) {
+	if isolateActive() {
+		return
+	}
 	if IsEnabled() {
 		// Ideally this should be just Log, but that will
 		// add one more frame in the stack trace.
@@ -120,6 +134,10 @@ const (
 // The regionType is used to classify regions, so there should be only a
 // handful of unique region types.
 func WithRegion(ctx context.Context, regionType string, fn func()) {
+	if isolateActive() {
+		fn()
+		return
+	}
 	// NOTE:
 	// WithRegion helps avoiding misuse of the API but in practice,
 	// this is very restrictive:
@@ -150,6 +168,9 @@ func WithRegion(ctx context.Context, regionType string, fn func()) {
 //
 //	defer trace.StartRegion(ctx, "myTracedRegion").End()
 func StartRegion(ctx context.Context, regionType string) *Region {
+	if isolateActive() {
+		return noopRegion
+	}
 	if !IsEnabled() {
 		return noopRegion
 	}
@@ -168,6 +189,9 @@ var noopRegion = &Region{}
 
 // End marks the end of the traced code region.
 func (r *Region) End() {
+	if isolateActive() {
+		return
+	}
 	if r == noopRegion {
 		return
 	}
@@ -178,6 +202,9 @@ func (r *Region) End() {
 // The information is advisory only. The tracing status
 // may have changed by the time this function returns.
 func IsEnabled() bool {
+	if isolateActive() {
+		return false
+	}
 	return tracing.enabled.Load()
 }
 

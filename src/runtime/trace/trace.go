@@ -116,11 +116,13 @@ import (
 // While tracing, the trace will be buffered and written to w.
 // Start returns an error if tracing is already enabled.
 func Start(w io.Writer) error {
+	rejectIsolate("Start")
 	return tracing.subscribeTraceStartWriter(w)
 }
 
 // Stop stops the current tracing, if any.
 // Stop only returns after all the writes for the trace have completed.
 func Stop() {
+	rejectIsolate("Stop")
 	tracing.unsubscribeTraceStartWriter()
 }

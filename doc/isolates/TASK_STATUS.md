@@ -291,6 +291,9 @@ ordinary-Go execution remains unproved.**
       profile rates/snapshots, plus `runtime/pprof` process-wide registry,
       mutation, output, and CPU profiling. Goroutine context labels remain
       available; other profiling entry points still need audit
+- [x] Provisional `runtime/trace` guards reject process trace and flight
+      recorder controls. Isolate annotations are inert while preserving
+      `WithRegion`'s function call; the host trace stays active
 - [x] Runtime `g` carries a monotonic numeric instance owner ID through
       initializer replay, the generated state runner, `main`, and native
       children. A race test checks distinct instance IDs and restored host

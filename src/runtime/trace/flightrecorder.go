@@ -66,6 +66,7 @@ func NewFlightRecorder(cfg FlightRecorderConfig) *FlightRecorder {
 // In addition, currently only one flight recorder may be active in the program.
 // Returns an error if the flight recorder cannot be started or is already started.
 func (fr *FlightRecorder) Start() error {
+	rejectIsolate("FlightRecorder.Start")
 	if fr.enabled {
 		return fmt.Errorf("cannot enable a enabled flight recorder")
 	}
@@ -86,6 +87,7 @@ func (fr *FlightRecorder) Start() error {
 
 // Stop ends recording of trace data. It blocks until any concurrent WriteTo calls complete.
 func (fr *FlightRecorder) Stop() {
+	rejectIsolate("FlightRecorder.Stop")
 	if !fr.enabled {
 		return
 	}
@@ -100,7 +102,10 @@ func (fr *FlightRecorder) Stop() {
 // Enabled returns true if the flight recorder is active.
 // Specifically, it will return true if Start did not return an error, and Stop has not yet been called.
 // It is safe to call from multiple goroutines simultaneously.
-func (fr *FlightRecorder) Enabled() bool { return fr.enabled }
+func (fr *FlightRecorder) Enabled() bool {
+	rejectIsolate("FlightRecorder.Enabled")
+	return fr.enabled
+}
 
 // WriteTo snapshots the moving window tracked by the flight recorder.
 // The snapshot is expected to contain data that is up-to-date as of when WriteTo is called,
@@ -109,6 +114,7 @@ func (fr *FlightRecorder) Enabled() bool { return fr.enabled }
 // An error is returned upon failure to write to w, if another WriteTo call is already in-progress,
 // or if the flight recorder is inactive.
 func (fr *FlightRecorder) WriteTo(w io.Writer) (n int64, err error) {
+	rejectIsolate("FlightRecorder.WriteTo")
 	if !fr.enabled {
 		return 0, fmt.Errorf("cannot snapshot a disabled flight recorder")
 	}

@@ -269,6 +269,12 @@ output, and CPU profiling entry points. `runtime/pprof` context label helpers
 remain usable because their labels belong to the current goroutine. These
 guards still use recoverable panics pending isolate-fatal enforcement.
 
+The provisional `runtime/trace` guards reject process trace and flight
+recorder controls. Inside an isolate, trace annotations emit no host events:
+`NewTask` returns an inert task, `Log` and `Logf` do nothing, regions are
+inert, and `WithRegion` still executes its function. `IsEnabled` reports
+false to the isolate even while the host is tracing.
+
 ## D. Virtualized — allowed, but redirected by the runtime
 
 These stay available because banning them would make ordinary Go unwritable.

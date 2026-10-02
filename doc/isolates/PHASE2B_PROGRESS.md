@@ -860,3 +860,15 @@ binaries compiled. Recoverable panics and other profiling entry points remain
 open work.
 
 The ordinary `runtime` and `runtime/pprof` short package suites passed.
+
+## Process trace controls and inert annotations
+
+`runtime/trace` now rejects active-isolate calls to process trace start/stop
+and flight recorder control or output. Its annotation APIs remain usable as
+inert operations: `NewTask` returns an inert task, logs and regions emit no
+host events, `WithRegion` still calls its function, and `IsEnabled` reports
+false. A host trace remains enabled through those isolate calls in the
+focused test. That test passed 100 race-detector runs; the complete isolate
+package passed 10 race-detector runs, the ordinary `runtime/trace` short
+suite passed, and Plan 9/amd64 and Windows/amd64 isolate test binaries
+compiled. Process tracing through other entry points remains unaudited.
