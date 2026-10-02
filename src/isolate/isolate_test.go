@@ -508,13 +508,22 @@ func TestSleepRevocationTimerRace(t *testing.T) {
 	}
 }
 
+func waitBoundaryExit(t *testing.T, b *isolatebridge.Boundary) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for b.LiveGoroutines() != 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if got := b.LiveGoroutines(); got != 0 {
+		t.Fatalf("revoked boundary still has %d live goroutines", got)
+	}
+}
+
 func TestPermanentParkRevocationRace(t *testing.T) {
 	for n := 0; n < 200; n++ {
 		b := isolatebridge.New()
 		entered := make(chan struct{})
-		exited := make(chan struct{})
 		go func() {
-			defer close(exited)
 			b.Run(func() {
 				close(entered)
 				if n%2 == 0 {
@@ -527,11 +536,7 @@ func TestPermanentParkRevocationRace(t *testing.T) {
 		}()
 		<-entered
 		b.Stop()
-		select {
-		case <-exited:
-		case <-time.After(5 * time.Second):
-			t.Fatal("permanent park did not exit after revocation")
-		}
+		waitBoundaryExit(t, b)
 	}
 }
 
@@ -541,10 +546,9 @@ func TestRevokedChannelWaitDoesNotResumeUserCode(t *testing.T) {
 			b := isolatebridge.New()
 			ch := make(chan int)
 			entered := make(chan struct{})
-			exited := make(chan struct{})
-			var resumed atomic.Bool
+			var resumed, deferred atomic.Bool
 			go b.Run(func() {
-				defer close(exited)
+				defer deferred.Store(true)
 				close(entered)
 				if name == "receive" {
 					<-ch
@@ -562,11 +566,7 @@ func TestRevokedChannelWaitDoesNotResumeUserCode(t *testing.T) {
 				t.Fatalf("channel operation did not park: live=%d running=%d", b.LiveGoroutines(), b.RunningGoroutines())
 			}
 			b.Stop()
-			select {
-			case <-exited:
-			case <-time.After(5 * time.Second):
-				t.Fatal("channel waiter did not exit after revocation")
-			}
+			waitBoundaryExit(t, b)
 			if name == "receive" {
 				select {
 				case ch <- 1:
@@ -580,8 +580,8 @@ func TestRevokedChannelWaitDoesNotResumeUserCode(t *testing.T) {
 				default:
 				}
 			}
-			if resumed.Load() {
-				t.Fatal("channel operation returned to user code after revocation")
+			if resumed.Load() || deferred.Load() {
+				t.Fatalf("channel operation returned=%t, deferred=%t", resumed.Load(), deferred.Load())
 			}
 		})
 	}
@@ -592,9 +592,7 @@ func TestChannelRevocationCloseRace(t *testing.T) {
 		b := isolatebridge.New()
 		ch := make(chan int)
 		entered := make(chan struct{})
-		exited := make(chan struct{})
 		go func() {
-			defer close(exited)
 			b.Run(func() {
 				close(entered)
 				<-ch
@@ -608,11 +606,7 @@ func TestChannelRevocationCloseRace(t *testing.T) {
 		}()
 		b.Stop()
 		<-closed
-		select {
-		case <-exited:
-		case <-time.After(5 * time.Second):
-			t.Fatal("channel waiter did not exit after close or revocation")
-		}
+		waitBoundaryExit(t, b)
 	}
 }
 
@@ -620,9 +614,7 @@ func TestChannelRevocationLeavesProcessWaiter(t *testing.T) {
 	b := isolatebridge.New()
 	ch := make(chan int)
 	entered := make(chan struct{})
-	exited := make(chan struct{})
 	go func() {
-		defer close(exited)
 		b.Run(func() {
 			close(entered)
 			<-ch
@@ -644,11 +636,7 @@ func TestChannelRevocationLeavesProcessWaiter(t *testing.T) {
 	}()
 	<-hostEntered
 	b.Stop()
-	select {
-	case <-exited:
-	case <-time.After(5 * time.Second):
-		t.Fatal("isolate waiter did not exit")
-	}
+	waitBoundaryExit(t, b)
 	select {
 	case ch <- 7:
 	case <-time.After(5 * time.Second):
@@ -675,10 +663,9 @@ func TestRevokedSelectWaitDoesNotResumeUserCode(t *testing.T) {
 			}
 			other := make(chan int)
 			entered := make(chan struct{})
-			exited := make(chan struct{})
-			var resumed atomic.Bool
+			var resumed, deferred atomic.Bool
 			go b.Run(func() {
-				defer close(exited)
+				defer deferred.Store(true)
 				close(entered)
 				if name == "receive" {
 					select {
@@ -702,11 +689,7 @@ func TestRevokedSelectWaitDoesNotResumeUserCode(t *testing.T) {
 				t.Fatalf("select did not park: live=%d running=%d", b.LiveGoroutines(), b.RunningGoroutines())
 			}
 			b.Stop()
-			select {
-			case <-exited:
-			case <-time.After(5 * time.Second):
-				t.Fatal("select waiter did not exit after revocation")
-			}
+			waitBoundaryExit(t, b)
 			if name == "receive" {
 				for _, candidate := range []chan int{ch, other} {
 					select {
@@ -727,8 +710,8 @@ func TestRevokedSelectWaitDoesNotResumeUserCode(t *testing.T) {
 					}
 				}
 			}
-			if resumed.Load() {
-				t.Fatal("select returned to user code after revocation")
+			if resumed.Load() || deferred.Load() {
+				t.Fatalf("select returned=%t, deferred=%t", resumed.Load(), deferred.Load())
 			}
 		})
 	}
@@ -740,9 +723,7 @@ func TestSelectRevocationCloseRace(t *testing.T) {
 		ch := make(chan int)
 		other := make(chan int)
 		entered := make(chan struct{})
-		exited := make(chan struct{})
 		go func() {
-			defer close(exited)
 			b.Run(func() {
 				close(entered)
 				select {
@@ -759,11 +740,7 @@ func TestSelectRevocationCloseRace(t *testing.T) {
 		}()
 		b.Stop()
 		<-closed
-		select {
-		case <-exited:
-		case <-time.After(5 * time.Second):
-			t.Fatal("select waiter did not exit after close or revocation")
-		}
+		waitBoundaryExit(t, b)
 		select {
 		case other <- 1:
 			t.Fatal("losing select case remained queued")

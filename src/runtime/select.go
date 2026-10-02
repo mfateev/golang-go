@@ -141,7 +141,7 @@ func isolateSelectUnregister(group **isolateRevocationGroup, gp *g) {
 }
 
 func block() {
-	isolateExitIfRevoked()
+	isolateDiscardIfRevoked()
 	isolateParkForever(waitReasonSelectNoCases, traceBlockForever, 1)
 }
 
@@ -161,7 +161,7 @@ func block() {
 // Also, if the chosen scase was a receive operation, it reports whether
 // a value was received.
 func selectgo(cas0 *scase, order0 *uint16, pc0 *uintptr, nsends, nrecvs int, block bool) (int, bool) {
-	isolateExitIfRevoked()
+	isolateDiscardIfRevoked()
 	gp := getg()
 	if debugSelect {
 		print("select: cas0=", cas0, "\n")
@@ -252,7 +252,7 @@ func selectgo(cas0 *scase, order0 *uint16, pc0 *uintptr, nsends, nrecvs int, blo
 		selectGroup = gp.isolateGroup
 		gp.isolateSelectWake.Store(0)
 		if !selectGroup.registerPark(gp, isolateSelectRegistered, nil) {
-			isolateExitIfRevoked()
+			isolateDiscardIfRevoked()
 			throw("isolate: rejected select without revocation")
 		}
 	}
@@ -457,7 +457,7 @@ func selectgo(cas0 *scase, order0 *uint16, pc0 *uintptr, nsends, nrecvs int, blo
 
 	if cas == nil {
 		selunlock(scases, lockorder)
-		isolateExitIfRevoked()
+		isolateDiscardIfRevoked()
 		throw("selectgo: bad wakeup")
 	}
 
@@ -597,7 +597,7 @@ retc:
 	}
 	// A parked select may have owned sudogs on several channels. Only exit
 	// after pass 3 has removed every losing case and released those sudogs.
-	isolateExitIfRevoked()
+	isolateDiscardIfRevoked()
 	return casi, recvOK
 
 sclose:
@@ -607,7 +607,7 @@ sclose:
 		isolateSelectUnregister(&selectGroup, gp)
 		gp.selectDone.Store(0)
 	}
-	isolateExitIfRevoked()
+	isolateDiscardIfRevoked()
 	panic(plainError("send on closed channel"))
 }
 

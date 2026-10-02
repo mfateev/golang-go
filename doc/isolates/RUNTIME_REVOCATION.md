@@ -35,10 +35,11 @@ must also own or enumerate every registration created on its behalf. A scan of
 G status alone cannot find the queue node, lock, or timer that must be
 unlinked.
 
-Synchronization objects used by an isolate, including `sync.Cond` and its
-associated locker, belong to that isolate alone. No other isolate or host
-goroutine may use them. A `Cond`'s ticket counters and notification queue are
-embedded in the `Cond`, so they have the same owner. The `sudog` records in
+Synchronization objects used by an isolate, including ordinary channels,
+`sync.Cond`, and its associated locker, belong to that isolate alone. No
+other isolate or host goroutine may use them. A `Cond`'s ticket counters and
+notification queue are embedded in the `Cond`, so they have the same owner.
+The `sudog` records in
 that queue still belong to runtime machinery and must be detached before the
 isolate's stacks or memory can be reclaimed. The hashed semaphore roots are
 process-owned and may contain waiters for different owners; teardown removes
@@ -54,14 +55,14 @@ the general scheduler execution fence required above.
 
 | Wait | Runtime record | Cleanup currently done by the resumed G |
 |---|---|---|
-| Channel send/receive | One `sudog` in `hchan.sendq` or `recvq`, also on `gp.waiting` | A blocking operation registers its channel with the group before taking the channel lock. Revocation removes a queued `sudog` under that lock and wakes the G; a peer that already dequeued it remains responsible for the wake. The resumed G unregisters, clears its wait state, and releases the `sudog` before exiting. Multi-case `select` uses its own wake token path. |
-| Nil channel send/receive or an empty/all-nil `select` | No channel, timer, or other external wait record | The G registers a permanent park with its group before parking. Revocation cancels an uncommitted park or wakes a committed one; the G unregisters and exits. |
-| `select` | One `sudog` per case, linked through `gp.waiting` and several channel queues | The G registers before taking channel locks. Revocation claims `selectDone` against peer wakes, then either cancels an uncommitted park or readies the parked G. The resumed G locks all cases, removes every queue record, updates timer wait counts, and exits before user code. |
+| Channel send/receive | One `sudog` in `hchan.sendq` or `recvq`, also on `gp.waiting` | A blocking operation registers its channel with the group before taking the channel lock. Revocation removes a queued `sudog` under that lock and wakes the G; a peer that already dequeued it remains responsible for the wake. The resumed G unregisters, clears its wait state, and releases the `sudog` before hard discard without user defers. Multi-case `select` uses its own wake token path. |
+| Nil channel send/receive or an empty/all-nil `select` | No channel, timer, or other external wait record | The G registers a permanent park with its group before parking. Revocation cancels an uncommitted park or wakes a committed one; the G unregisters and is discarded without user defers. |
+| `select` | One `sudog` per case, linked through `gp.waiting` and several channel queues | The G registers before taking channel locks. Revocation claims `selectDone` against peer wakes, then either cancels an uncommitted park or readies the parked G. The resumed G locks all cases, removes every queue record, updates timer wait counts, and is discarded without user defers. |
 | `sync.Mutex`, `RWMutex`, `WaitGroup`, and related semaphores | `sudog` in a process-owned hashed `semaRoot` queue, keyed by an isolate-owned semaphore address | A blocking sync wait registers its semaphore address with the group before taking the root lock. Revocation unlinks its `sudog` under that lock, including a non-head waitlink entry, and wakes the G; a concurrent semaphore release that already dequeued it owns the wake. The resumed G unregisters, releases its `sudog`, and is discarded without Go defers. Immediate teardown for the synctest WaitGroup path and generic process-owned semaphores remains open. |
 | `sync.Cond` | Ticketed `sudog` in the isolate-owned `notifyList`, also in `gp.waiting` | A wait registers its list with the group before taking the list lock. Revocation removes a queued record under that lock and wakes the G; a concurrent `Signal` or `Broadcast` that already removed it owns the wake. The resumed G unregisters, releases its `sudog`, and is discarded without Go defers before `Cond.Wait` can reacquire its locker. A prequeue wait sees revocation and does not park. |
 | `time.Sleep` and timer channels | Per-G timer or channel timer linked into runtime timer machinery | Real `time.Sleep` waits register with the group. Revocation stops pending timers and wakes their Gs; if a callback has started, it performs the wake. The resumed G unregisters before exiting. Fake synctest timers still wait for their normal wakeup. Direct and selected timer-channel receives use channel/select cleanup. |
 | Network poll | `pollDesc.rg` or `wg` and deadline timers | `poll_runtime_pollReset` checks before preparing I/O. A normal poll wait registers its descriptor with the isolate group after entering `pdWait`. Revocation clears registered poll semaphores and readies parked Gs; each G then completes normal cleanup and exits at the post-wait fence. This does not yet discard a waiter without scheduling it. `poll_runtime_pollWaitCanceled` remains separate. |
-| Current `isolate.Call` | Channel send and reply receive on the provisional bridge | The trusted bridge selects each wait against a stop channel and discards the caller without user defers. A call-wait marker makes the runtime's post-`select` revocation fence use the same discard path after cleaning its queue records. `Stop` publishes the group admission fence, closes the stop channel, then scans runtime waiters; Call does not wait for the scan to finish before waking. A late host reply uses a buffered channel. The bridge is not yet a native owned command queue. |
+| Current `isolate.Call` | Channel send and reply receive on the provisional bridge | The trusted bridge selects each wait against a stop channel and discards the caller without user defers. Runtime `select` cleanup uses the same discard path after cleaning its queue records. `Stop` publishes the group admission fence, closes the stop channel, then scans runtime waiters; Call does not wait for the scan to finish before waking. A late host reply uses a buffered channel. The bridge is not yet a native owned command queue. |
 
 The table is an initial inventory, not a complete scheduler proof. Runtime
 coroutines switch Gs without `execute`/`dropg`; group accounting covers those

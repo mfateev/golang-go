@@ -4585,7 +4585,6 @@ func gdestroy(gp *g) {
 	gp.isolateE4Bases = nil
 	gp.isolateOwner = 0
 	gp.isolateBoundary = nil
-	gp.isolateCallWait = false
 	gp.timer = nil
 	gp.bubble = nil
 	gp.fipsOnlyBypass = false
@@ -5457,7 +5456,6 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	newg.isolateE4Bases = nil
 	newg.isolateOwner = 0
 	newg.isolateBoundary = nil
-	newg.isolateCallWait = false
 	newg.isolateGroup = nil
 	newg.isolateStarted = false
 	newg.isolateAdmitted = false

@@ -643,11 +643,13 @@ already dequeued the record, that operation retains responsibility for the
 wake. The resumed G unregisters before clearing `gp.waiting` and releasing
 its `sudog`, so revocation cannot inspect a record being recycled. Direct
 timer-channel receives follow the same path and perform normal timer wait
-count cleanup. Multi-case `select` queue detachment remains open.
+count cleanup. Multi-case `select` queue detachment is described below.
 
 Tests cover send and receive, two waiters on one channel, direct timer-channel
 receive, close racing Stop, and a process waiter using the channel after the
-isolate waiter is detached. Focused tests passed 100 race-detector runs with
+isolate waiter is detached. The process-waiter case stress tests queue
+detachment; a shared channel is outside the supported ownership model.
+Focused tests passed 100 race-detector runs with
 `GOGC=1` and static lock ranking; the full isolate race suite passed 10 runs.
 The 32-bit G size was confirmed from the compiled runtime's DWARF record.
 
@@ -666,6 +668,17 @@ Tests cover received and sent cases, a timer-channel case, and close racing
 revocation. The focused cases passed 100 race-detector runs with `GOGC=1`
 and static lock ranking. The 32-bit G layout was verified from DWARF.
 The complete `src/all.bash` suite passed for this select change.
+
+Channel send, receive, multi-case `select`, and permanent parks now discard
+revoked goroutines without user defers. Channel operations explicitly
+unregister from the group before discarding when revocation is seen under a
+channel lock; resumed waits release all `sudog` records first. A `select`
+releases every case's queue record and timer wait count before discard. This
+also lets a `Call` caller that sees revocation inside the runtime `select`
+path skip user defers without a special G marker. Focused channel, select,
+permanent-park, and Call cases passed 100 race-detector runs with `GOGC=1`
+and static lock ranking; the full isolate race suite passed 10 runs. Linux/386
+and Plan 9 runtime test binaries compiled.
 
 ## Isolate-owned Cond waits
 
@@ -695,14 +708,13 @@ its combined fence-and-scan behavior. Focused Call and Cond cases passed 100
 race-detector runs with `GOGC=1` and static lock ranking after the split.
 
 The runtime's `select` cleanup can observe revocation before the bridge's
-stop case returns. A G inside `Call` now carries a call-wait marker; after
-`select` has removed all its queue records, the runtime uses hard discard
-instead of `Goexit` for that G. The bridge also discards a caller that sees
-the stop channel directly. Both paths skip user defers, which may use locks
-abandoned by the same revoked isolate. The marker is cleared on a normal
-reply and never inherited by child goroutines. Focused blocked-send,
-reply-wait, and main-child tests passed 100 race-detector runs with `GOGC=1`
-and static lock ranking.
+stop case returns. Channel and `select` paths now discard a revoked G after
+removing their wait records; the bridge also discards a caller that sees the
+stop channel directly. Both paths skip user defers, which may use locks
+abandoned by the same revoked isolate. The preceding `Call` marker probe
+passed focused blocked-send, reply-wait, and main-child tests for 100
+race-detector runs with `GOGC=1` and static lock ranking. The marker is
+removed now that channel and `select` cleanup provides the same guarantee.
 
 ## Isolate-owned semaphore waits
 

@@ -178,7 +178,6 @@ func (b *Boundary) Call(op uint32, payload []byte) ([]byte, error) {
 		panic("isolate: command ID exhausted")
 	}
 	c := newHostCommand(id, op, payload)
-	setCallWait(true)
 	select {
 	case <-b.halt:
 		stopCall()
@@ -190,7 +189,6 @@ func (b *Boundary) Call(op uint32, payload []byte) ([]byte, error) {
 		stopCall()
 	case r = <-c.reply:
 	}
-	setCallWait(false)
 	b.stopIfRevoked()
 	if r.hasErr {
 		return bytes.Clone(r.payload), errors.New(r.errText)
@@ -217,9 +215,6 @@ func stopCall() {
 
 //go:linkname discardIfRevoked runtime.isolateDiscardIfRevoked
 func discardIfRevoked()
-
-//go:linkname setCallWait runtime.isolateSetCallWait
-func setCallWait(bool)
 
 //go:linkname markRevoked runtime.isolateMarkRevoked
 func markRevoked(unsafe.Pointer) bool

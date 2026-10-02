@@ -166,7 +166,7 @@ func chansend1(c *hchan, elem unsafe.Pointer) {
 // If block == false and the send cannot proceed immediately, it returns false.
 // Otherwise, it waits as needed for the send to complete and returns true.
 func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
-	isolateExitIfRevoked()
+	isolateDiscardIfRevoked()
 	if c == nil {
 		if !block {
 			return false
@@ -182,7 +182,7 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 	if group != nil {
 		// Revocation takes the group park lock before the channel lock.
 		if !group.registerPark(gp, isolateChanSend, c) {
-			isolateExitIfRevoked()
+			isolateDiscardIfRevoked()
 			throw("isolate: rejected channel send without revocation")
 		}
 		defer func() {
@@ -232,7 +232,8 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 	lock(&c.lock)
 	if group != nil && group.admission.Load()&isolateRevokedBit != 0 {
 		unlock(&c.lock)
-		isolateExitIfRevoked()
+		isolateChannelUnregister(&group, gp)
+		isolateDiscardIfRevoked()
 	}
 
 	if c.closed != 0 {
@@ -317,7 +318,7 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 	}
 	mysg.c.set(nil)
 	releaseSudog(mysg)
-	isolateExitIfRevoked()
+	isolateDiscardIfRevoked()
 	if closed {
 		if c.closed == 0 {
 			throw("chansend: spurious wakeup")
@@ -540,7 +541,7 @@ func chanrecv2(c *hchan, elem unsafe.Pointer) (received bool) {
 // Otherwise, fills in *ep with an element and returns (true, true).
 // A non-nil ep must point to the heap or the caller's stack.
 func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool) {
-	isolateExitIfRevoked()
+	isolateDiscardIfRevoked()
 	// raceenabled: don't need to check ep, as it is always on the stack
 	// or is new memory allocated by reflect.
 
@@ -563,7 +564,7 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 	if group != nil {
 		// Revocation takes the group park lock before the channel lock.
 		if !group.registerPark(gp, isolateChanReceive, c) {
-			isolateExitIfRevoked()
+			isolateDiscardIfRevoked()
 			throw("isolate: rejected channel receive without revocation")
 		}
 		defer func() {
@@ -622,7 +623,8 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 	lock(&c.lock)
 	if group != nil && group.admission.Load()&isolateRevokedBit != 0 {
 		unlock(&c.lock)
-		isolateExitIfRevoked()
+		isolateChannelUnregister(&group, gp)
+		isolateDiscardIfRevoked()
 	}
 
 	if c.closed != 0 {
@@ -725,7 +727,7 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 	gp.param = nil
 	mysg.c.set(nil)
 	releaseSudog(mysg)
-	isolateExitIfRevoked()
+	isolateDiscardIfRevoked()
 	return true, success
 }
 
@@ -860,7 +862,7 @@ func isolateChannelUnregister(group **isolateRevocationGroup, gp *g) {
 func isolateChannelFinish(group **isolateRevocationGroup, gp *g) {
 	if *group != nil {
 		isolateChannelUnregister(group, gp)
-		isolateExitIfRevoked()
+		isolateDiscardIfRevoked()
 	}
 }
 

@@ -22,11 +22,6 @@ func isolateSetBoundary(p unsafe.Pointer) unsafe.Pointer {
 	return old
 }
 
-//go:linkname isolateSetCallWait
-func isolateSetCallWait(waiting bool) {
-	getg().isolateCallWait = waiting
-}
-
 //go:linkname isolateActive
 func isolateActive() bool {
 	gp := getg()

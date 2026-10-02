@@ -17,14 +17,14 @@ func isolateParkForever(reason waitReason, traceReason traceBlockReason, tracesk
 		throw("isolate: permanent park returned without a group")
 	}
 	if !group.registerPark(gp, isolateForeverRegistered, nil) {
-		isolateExitIfRevoked()
+		isolateDiscardIfRevoked()
 		throw("isolate: rejected permanent park without revocation")
 	}
 	gopark(isolateForeverCommit, nil, reason, traceReason, traceskip+1)
 	if gp.isolateParkState != isolateParkNone {
 		group.unregisterPark(gp)
 	}
-	isolateExitIfRevoked()
+	isolateDiscardIfRevoked()
 	throw("isolate: permanent park resumed without revocation")
 }
 
