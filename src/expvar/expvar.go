@@ -307,6 +307,7 @@ var vars Map
 // package's init function when it creates its Vars. If the name is already
 // registered then this will log.Panic.
 func Publish(name string, v Var) {
+	rejectIsolateRegistry("Publish")
 	if _, dup := vars.m.LoadOrStore(name, v); dup {
 		log.Panicln("Reuse of exported var name:", name)
 	}
@@ -319,30 +320,35 @@ func Publish(name string, v Var) {
 // Get retrieves a named exported variable. It returns nil if the name has
 // not been registered.
 func Get(name string) Var {
+	rejectIsolateRegistry("Get")
 	return vars.Get(name)
 }
 
 // Convenience functions for creating new exported variables.
 
 func NewInt(name string) *Int {
+	rejectIsolateRegistry("NewInt")
 	v := new(Int)
 	Publish(name, v)
 	return v
 }
 
 func NewFloat(name string) *Float {
+	rejectIsolateRegistry("NewFloat")
 	v := new(Float)
 	Publish(name, v)
 	return v
 }
 
 func NewMap(name string) *Map {
+	rejectIsolateRegistry("NewMap")
 	v := new(Map).Init()
 	Publish(name, v)
 	return v
 }
 
 func NewString(name string) *String {
+	rejectIsolateRegistry("NewString")
 	v := new(String)
 	Publish(name, v)
 	return v
@@ -352,10 +358,12 @@ func NewString(name string) *String {
 // The global variable map is locked during the iteration,
 // but existing entries may be concurrently updated.
 func Do(f func(KeyValue)) {
+	rejectIsolateRegistry("Do")
 	vars.Do(f)
 }
 
 func expvarHandler(w http.ResponseWriter, r *http.Request) {
+	rejectIsolateRegistry("Handler")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Write(vars.appendJSONMayExpand(nil, true))
 }
@@ -364,6 +372,7 @@ func expvarHandler(w http.ResponseWriter, r *http.Request) {
 //
 // This is only needed to install the handler in a non-standard location.
 func Handler() http.Handler {
+	rejectIsolateRegistry("Handler")
 	return http.HandlerFunc(expvarHandler)
 }
 
@@ -378,6 +387,9 @@ func memstats() any {
 }
 
 func init() {
+	if isolateActive() {
+		return // No process HTTP registration or built-in Vars in an isolate.
+	}
 	if godebug.New("httpmuxgo121").Value() == "1" {
 		http.HandleFunc("/debug/vars", expvarHandler)
 	} else {

@@ -261,6 +261,9 @@ ordinary-Go execution remains unproved.**
       default handler, and standard-log bridge from isolates. Explicit
       loggers with caller-provided handlers remain usable when their effects
       are allowed; lazy `time.Local` initialization remains an open boundary
+- [x] `expvar` rejects process registry publication, lookup, iteration, named
+      constructors, and HTTP handlers from isolates while allowing
+      caller-owned values; cross-owner aliases remain open
 - [ ] Classify ownership and effects across the broad standard library;
       implement required library and runtime hooks and reject unclassified
       paths before claiming general standard-library support

@@ -10,6 +10,7 @@ import (
 	"crypto/mlkem"
 	crand "crypto/rand"
 	"errors"
+	"expvar"
 	"fmt"
 	"internal/isolatebridge"
 	"io"
@@ -1257,6 +1258,47 @@ func TestSlogDefaultRejectsIsolate(t *testing.T) {
 	}
 	if got := slog.Default(); got != hostDefault {
 		t.Fatalf("isolate changed process slog default to %p", got)
+	}
+}
+
+func TestExpvarRegistryRejectsIsolate(t *testing.T) {
+	handler := expvar.Handler()
+	name := "isolate-unpublished-" + strconv.FormatUint(ownerTestSequence.Add(1), 10)
+	b := isolatebridge.New()
+	b.Run(func() {
+		var local expvar.Int
+		local.Add(3)
+		var localMap expvar.Map
+		localMap.Init().Set("count", &local)
+		if got := localMap.Get("count").(*expvar.Int).Value(); got != 3 {
+			t.Errorf("local expvar value = %d", got)
+		}
+		for _, tt := range []struct {
+			want string
+			call func()
+		}{
+			{"expvar.Publish is unavailable in an isolate", func() { expvar.Publish(name, &local) }},
+			{"expvar.Get is unavailable in an isolate", func() { _ = expvar.Get("cmdline") }},
+			{"expvar.NewInt is unavailable in an isolate", func() { _ = expvar.NewInt(name) }},
+			{"expvar.NewFloat is unavailable in an isolate", func() { _ = expvar.NewFloat(name) }},
+			{"expvar.NewMap is unavailable in an isolate", func() { _ = expvar.NewMap(name) }},
+			{"expvar.NewString is unavailable in an isolate", func() { _ = expvar.NewString(name) }},
+			{"expvar.Do is unavailable in an isolate", func() { expvar.Do(func(expvar.KeyValue) { t.Error("process registry callback ran") }) }},
+			{"expvar.Handler is unavailable in an isolate", func() { _ = expvar.Handler() }},
+			{"expvar.Handler is unavailable in an isolate", func() { handler.ServeHTTP(nil, nil) }},
+		} {
+			func() {
+				defer func() {
+					if got := recover(); got != tt.want {
+						t.Errorf("panic = %v, want %q", got, tt.want)
+					}
+				}()
+				tt.call()
+			}()
+		}
+	})
+	if got := expvar.Get(name); got != nil {
+		t.Fatalf("isolate published process expvar %q: %v", name, got)
 	}
 }
 

@@ -278,6 +278,11 @@ handler's own ownership and effects. For example, a fresh text handler that
 formats local timestamps can trigger `time.Local` initialization and a
 process environment read, which remains outside this guard.
 
+The provisional `expvar` guard rejects its process registry API and HTTP
+handler from isolates, including a handler obtained by the host before entry.
+Caller-owned `expvar` values remain available. An alias to a process-published
+`Var` still needs a general cross-owner pointer check.
+
 The provisional `os/signal` guards reject signal registration, ignoring,
 resetting, deregistration, and process signal-state reads from active isolates.
 They run before the package's process-wide handler table is accessed.

@@ -945,3 +945,16 @@ time initialization and handler/writer ownership still need a broader audit.
 The complete `src/all.bash` suite then passed, including the `cmd/go` script
 tests, race checks, and `../test`. This also verifies the preceding standard
 `log` guard in the full suite after its earlier test timeout.
+
+## Expvar registry boundary
+
+`expvar` now rejects access to its process registry from an active isolate:
+publication, lookup, iteration, named constructors, and both new and cached
+HTTP handlers. Its initializer skips process HTTP registration and built-in
+variables when replayed inside an isolate. Caller-owned `Int`, `Float`,
+`String`, and `Map` values remain usable. This is a provisional API guard;
+retained aliases to process-published `Var` values and direct access to the
+package's globals still need general cross-owner checks.
+The focused test passed 100 race-detector runs, the complete isolate package
+passed 10 race-detector runs, the ordinary `expvar` short suite passed, and
+Windows/amd64 and Plan 9/amd64 isolate test binaries compiled.
