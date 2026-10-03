@@ -264,6 +264,9 @@ ordinary-Go execution remains unproved.**
 - [x] `expvar` rejects process registry publication, lookup, iteration, named
       constructors, and HTTP handlers from isolates while allowing
       caller-owned values; cross-owner aliases remain open
+- [x] `flag` rejects top-level `CommandLine` operations and methods on its
+      current or original default set; explicit `FlagSet` values remain usable.
+      Exported pointer and value aliases still need cross-owner checks
 - [ ] Classify ownership and effects across the broad standard library;
       implement required library and runtime hooks and reject unclassified
       paths before claiming general standard-library support

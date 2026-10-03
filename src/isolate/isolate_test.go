@@ -11,6 +11,7 @@ import (
 	crand "crypto/rand"
 	"errors"
 	"expvar"
+	"flag"
 	"fmt"
 	"internal/isolatebridge"
 	"io"
@@ -1299,6 +1300,52 @@ func TestExpvarRegistryRejectsIsolate(t *testing.T) {
 	})
 	if got := expvar.Get(name); got != nil {
 		t.Fatalf("isolate published process expvar %q: %v", name, got)
+	}
+}
+
+func TestFlagCommandLineRejectsIsolate(t *testing.T) {
+	defaultSet := flag.CommandLine
+	all := flag.All()
+	name := "isolate-unregistered-" + strconv.FormatUint(ownerTestSequence.Add(1), 10)
+	hostBool := false
+	b := isolatebridge.New()
+	b.Run(func() {
+		local := flag.NewFlagSet("local", flag.ContinueOnError)
+		value := local.Int("count", 3, "local count")
+		if err := local.Parse([]string{"-count=5", "argument"}); err != nil {
+			t.Errorf("local Parse: %v", err)
+		}
+		if *value != 5 || local.Arg(0) != "argument" {
+			t.Errorf("local flag state = %d, %q", *value, local.Arg(0))
+		}
+		for _, call := range []func(){
+			func() { _ = flag.Bool(name, false, "host flag") },
+			func() { _ = flag.Lookup("test.v") },
+			func() { _ = flag.NArg() },
+			func() { _ = flag.Set("test.v", "true") },
+			func() { flag.Parse() },
+			func() { _ = flag.All() },
+			func() { all(func(*flag.Flag) bool { t.Error("process flag yielded"); return false }) },
+			func() { defaultSet.SetOutput(io.Discard) },
+			func() { defaultSet.BoolVar(&hostBool, name, true, "host flag") },
+			func() { _ = defaultSet.Args() },
+			func() { defaultSet.Init("changed", flag.ContinueOnError) },
+		} {
+			func() {
+				defer func() {
+					if got := recover(); got != "flag.CommandLine is unavailable in an isolate" {
+						t.Errorf("panic = %v, want flag.CommandLine rejection", got)
+					}
+				}()
+				call()
+			}()
+		}
+	})
+	if got := flag.Lookup(name); got != nil {
+		t.Fatalf("isolate registered process flag %q", name)
+	}
+	if hostBool {
+		t.Fatal("isolate changed host flag value before rejection")
 	}
 }
 

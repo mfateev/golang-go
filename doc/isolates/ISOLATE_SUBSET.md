@@ -283,6 +283,12 @@ handler from isolates, including a handler obtained by the host before entry.
 Caller-owned `expvar` values remain available. An alias to a process-published
 `Var` still needs a general cross-owner pointer check.
 
+The provisional `flag` guard rejects top-level `CommandLine` operations and
+methods on the current or original default set. An explicit `FlagSet` with
+caller-supplied arguments remains usable. Aliases to a host replacement of
+the exported `CommandLine` pointer, and returned `Flag` or `Usage` values,
+still need cross-owner checks.
+
 The provisional `os/signal` guards reject signal registration, ignoring,
 resetting, deregistration, and process signal-state reads from active isolates.
 They run before the package's process-wide handler table is accessed.

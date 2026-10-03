@@ -958,3 +958,20 @@ package's globals still need general cross-owner checks.
 The focused test passed 100 race-detector runs, the complete isolate package
 passed 10 race-detector runs, the ordinary `expvar` short suite passed, and
 Windows/amd64 and Plan 9/amd64 isolate test binaries compiled.
+
+## Command-line flag boundary
+
+`flag` now rejects its top-level `CommandLine` wrappers from active isolates.
+Methods on the current default set and the original default set also reject
+access, including a retained iterator when it is consumed later. Constructors
+that accept a caller pointer check before initializing that pointer. Explicit
+`flag.NewFlagSet` instances continue to parse caller-supplied arguments in an
+isolate. A host can replace the exported `CommandLine` pointer directly, so
+aliases to a formerly installed replacement and direct access to returned
+`Flag` or `Usage` function values still need general cross-owner checks.
+The focused test passed 100 race-detector runs and the ordinary `flag` short
+suite passed. A full `src/all.bash` run rebuilt the toolchain and passed the
+standard-library packages and runtime tests, but failed in
+`cmd/go`'s `TestScript/fips` during the larger command test run. That script
+passed alone before and after cleaning the build cache. The full suite is
+therefore not verified for this change.
