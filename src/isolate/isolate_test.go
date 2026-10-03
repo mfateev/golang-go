@@ -16,6 +16,7 @@ import (
 	"isolate"
 	"iter"
 	"log"
+	"log/slog"
 	"maps"
 	"net/netip"
 	"os"
@@ -1186,6 +1187,76 @@ func TestStandardLoggerRejectsIsolate(t *testing.T) {
 	})
 	if got := hostOutput.String(); got != "" {
 		t.Fatalf("standard logger wrote %q", got)
+	}
+}
+
+func TestSlogDefaultRejectsIsolate(t *testing.T) {
+	hostDefault := slog.Default()
+	hostHandler := hostDefault.Handler()
+	oldWriter, oldFlags := log.Writer(), log.Flags()
+	defer func() {
+		slog.SetDefault(hostDefault)
+		log.SetOutput(oldWriter)
+		log.SetFlags(oldFlags)
+	}()
+
+	var hostOutput bytes.Buffer
+	alias := slog.New(slog.NewTextHandler(&hostOutput, nil))
+	aliasClone := alias.With("before", "default")
+	slog.SetDefault(alias)
+	bridgeWriter := log.Writer()
+	slog.SetDefault(hostDefault)
+	log.SetOutput(&hostOutput)
+
+	b := isolatebridge.New()
+	b.Run(func() {
+		var localOutput bytes.Buffer
+		local := slog.New(slog.NewTextHandler(&localOutput, &slog.HandlerOptions{
+			ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
+				if a.Key == slog.TimeKey {
+					return slog.Attr{}
+				}
+				return a
+			},
+		}))
+		local.Info("local")
+		slog.NewLogLogger(local.Handler(), slog.LevelInfo).Print("bridge")
+		if got := localOutput.String(); !strings.Contains(got, "msg=local") || !strings.Contains(got, "msg=bridge") {
+			t.Errorf("local slog output = %q", got)
+		}
+
+		for _, tt := range []struct {
+			want string
+			call func()
+		}{
+			{"log/slog.Default is unavailable in an isolate", func() { _ = slog.Default() }},
+			{"log/slog.Default is unavailable in an isolate", func() { slog.Info("host") }},
+			{"log/slog.SetDefault is unavailable in an isolate", func() { slog.SetDefault(local) }},
+			{"log/slog.SetLogLoggerLevel is unavailable in an isolate", func() { slog.SetLogLoggerLevel(slog.LevelDebug) }},
+			{"log/slog default Logger is unavailable in an isolate", func() { hostDefault.Info("host") }},
+			{"log/slog default Logger is unavailable in an isolate", func() { _ = hostDefault.With() }},
+			{"log/slog default Logger is unavailable in an isolate", func() { alias.Info("host") }},
+			{"log/slog default Logger is unavailable in an isolate", func() { aliasClone.Info("host") }},
+			{"log/slog default Handler is unavailable in an isolate", func() { _ = hostHandler.Enabled(context.Background(), slog.LevelInfo) }},
+			{"log/slog default Handler is unavailable in an isolate", func() { _ = hostHandler.Handle(context.Background(), slog.Record{}) }},
+			{"log/slog default Handler is unavailable in an isolate", func() { slog.New(hostHandler).Info("host") }},
+			{"log/slog default bridge is unavailable in an isolate", func() { _, _ = bridgeWriter.Write([]byte("host")) }},
+		} {
+			func() {
+				defer func() {
+					if got := recover(); got != tt.want {
+						t.Errorf("panic = %v, want %q", got, tt.want)
+					}
+				}()
+				tt.call()
+			}()
+		}
+	})
+	if got := hostOutput.String(); got != "" {
+		t.Fatalf("process slog output = %q", got)
+	}
+	if got := slog.Default(); got != hostDefault {
+		t.Fatalf("isolate changed process slog default to %p", got)
 	}
 }
 

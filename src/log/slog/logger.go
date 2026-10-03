@@ -42,17 +42,23 @@ var logLoggerLevel LevelVar
 //
 // SetLogLoggerLevel returns the previous value.
 func SetLogLoggerLevel(level Level) (oldLevel Level) {
+	rejectIsolateProcess("SetLogLoggerLevel")
 	oldLevel = logLoggerLevel.Level()
 	logLoggerLevel.Set(level)
 	return
 }
 
 func init() {
-	defaultLogger.Store(New(newDefaultHandler(loginternal.DefaultOutput)))
+	l := New(newDefaultHandler(loginternal.DefaultOutput))
+	l.processRoot().processDefault.Store(true)
+	defaultLogger.Store(l)
 }
 
 // Default returns the default [Logger].
-func Default() *Logger { return defaultLogger.Load() }
+func Default() *Logger {
+	rejectIsolateProcess("Default")
+	return defaultLogger.Load()
+}
 
 // SetDefault makes l the default [Logger], which is used by
 // the top-level functions [Info], [Debug] and so on.
@@ -60,6 +66,8 @@ func Default() *Logger { return defaultLogger.Load() }
 // (as with [log.Print], etc.) will be logged using l's Handler,
 // at a level controlled by [SetLogLoggerLevel].
 func SetDefault(l *Logger) {
+	rejectIsolateProcess("SetDefault")
+	l.processRoot().processDefault.Store(true)
 	defaultLogger.Store(l)
 	// If the default's handler is a defaultHandler, then don't use a handleWriter,
 	// or we'll deadlock as they both try to acquire the log default mutex.
@@ -69,7 +77,7 @@ func SetDefault(l *Logger) {
 	// See TestSetDefault.
 	if _, ok := l.Handler().(*defaultHandler); !ok {
 		capturePC := log.Flags()&(log.Lshortfile|log.Llongfile) != 0
-		log.SetOutput(&handlerWriter{l.Handler(), &logLoggerLevel, capturePC})
+		log.SetOutput(&handlerWriter{h: l.Handler(), level: &logLoggerLevel, capturePC: capturePC, processDefault: true})
 		log.SetFlags(0) // we want just the log message, no time or location
 	}
 }
@@ -77,12 +85,16 @@ func SetDefault(l *Logger) {
 // handlerWriter is an io.Writer that calls a Handler.
 // It is used to link the default log.Logger to the default slog.Logger.
 type handlerWriter struct {
-	h         Handler
-	level     Leveler
-	capturePC bool
+	h              Handler
+	level          Leveler
+	capturePC      bool
+	processDefault bool
 }
 
 func (w *handlerWriter) Write(buf []byte) (int, error) {
+	if w.processDefault {
+		rejectIsolateDefaultObject("bridge")
+	}
 	level := w.level.Level()
 	if !w.h.Enabled(context.Background(), level) {
 		return 0, nil
@@ -110,20 +122,27 @@ func (w *handlerWriter) Write(buf []byte) (int, error) {
 // that begins "With".
 type Logger struct {
 	handler Handler // for structured logging
+	// Clones share the original logger's flag, so making any of them the
+	// process default also protects aliases retained before SetDefault.
+	origin         *Logger
+	processDefault atomic.Bool
 }
 
 func (l *Logger) clone() *Logger {
-	c := *l
-	return &c
+	return &Logger{handler: l.handler, origin: l.processRoot()}
 }
 
 // Handler returns l's Handler.
-func (l *Logger) Handler() Handler { return l.handler }
+func (l *Logger) Handler() Handler {
+	l.rejectIsolateDefault()
+	return l.handler
+}
 
 // With returns a Logger that includes the given attributes
 // in each output operation. Arguments are converted to
 // attributes as if by [Logger.Log].
 func (l *Logger) With(args ...any) *Logger {
+	l.rejectIsolateDefault()
 	if len(args) == 0 {
 		return l
 	}
@@ -139,6 +158,7 @@ func (l *Logger) With(args ...any) *Logger {
 //
 // If name is empty, WithGroup returns the receiver.
 func (l *Logger) WithGroup(name string) *Logger {
+	l.rejectIsolateDefault()
 	if name == "" {
 		return l
 	}
@@ -152,7 +172,9 @@ func New(h Handler) *Logger {
 	if h == nil {
 		panic("nil Handler")
 	}
-	return &Logger{handler: h}
+	l := &Logger{handler: h}
+	l.origin = l
+	return l
 }
 
 // With calls [Logger.With] on the default logger.
@@ -172,7 +194,7 @@ func (l *Logger) Enabled(ctx context.Context, level Level) bool {
 // dispatches a Record to the specified handler. The logger acts as a bridge from
 // the older log API to newer structured logging handlers.
 func NewLogLogger(h Handler, level Level) *log.Logger {
-	return log.New(&handlerWriter{h, level, true}, "", 0)
+	return log.New(&handlerWriter{h: h, level: level, capturePC: true}, "", 0)
 }
 
 // Log emits a log record with the current time and the given level and message.

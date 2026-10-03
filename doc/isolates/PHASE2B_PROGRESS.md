@@ -925,3 +925,19 @@ The subsequent `src/all.bash` run did not complete successfully: the
 starting with `TestScript/list_std`, and later scripts reported `context
 deadline exceeded`. The isolated `TestScript/list_std` run passed in 13 seconds.
 The complete suite therefore remains unverified for this change.
+
+## Structured logger boundary
+
+The process-wide `log/slog` default logger, its level controls, default
+handler, and bridge to the standard `log` logger now reject active isolates.
+Loggers that have been made the process default remain rejected through
+retained aliases and derived loggers. An explicit logger with a caller-owned
+handler can still write to a caller-owned buffer. The focused isolate test
+passed 100 race-detector runs, the complete isolate package passed 10
+race-detector runs, the ordinary `log/slog` short suite passed, and Plan
+9/amd64 and Windows/amd64 isolate test binaries compiled.
+
+A fresh text handler's default timestamp formatting can lazily initialize
+`time.Local`, which reads the process environment. The explicit-handler test
+omits timestamps to stay within the currently guarded subset. Default local
+time initialization and handler/writer ownership still need a broader audit.

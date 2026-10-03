@@ -105,6 +105,7 @@ func newDefaultHandler(output func(uintptr, []byte) error) *defaultHandler {
 }
 
 func (*defaultHandler) Enabled(_ context.Context, l Level) bool {
+	rejectIsolateDefaultObject("Handler")
 	return l >= logLoggerLevel.Level()
 }
 
@@ -112,6 +113,7 @@ func (*defaultHandler) Enabled(_ context.Context, l Level) bool {
 // write it with the default log.Logger.
 // Let the log.Logger handle time and file/line.
 func (h *defaultHandler) Handle(ctx context.Context, r Record) error {
+	rejectIsolateDefaultObject("Handler")
 	buf := buffer.New()
 	buf.WriteString(r.Level.String())
 	buf.WriteByte(' ')
@@ -123,10 +125,12 @@ func (h *defaultHandler) Handle(ctx context.Context, r Record) error {
 }
 
 func (h *defaultHandler) WithAttrs(as []Attr) Handler {
+	rejectIsolateDefaultObject("Handler")
 	return &defaultHandler{h.ch.withAttrs(as), h.output}
 }
 
 func (h *defaultHandler) WithGroup(name string) Handler {
+	rejectIsolateDefaultObject("Handler")
 	return &defaultHandler{h.ch.withGroup(name), h.output}
 }
 

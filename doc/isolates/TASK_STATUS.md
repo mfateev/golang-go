@@ -257,6 +257,10 @@ ordinary-Go execution remains unproved.**
 - [x] The process-wide standard `log` logger rejects isolate output and
       configuration access; explicit loggers with caller-provided writers
       remain usable. Standard `log.Fatal` exits only its isolate with status 1
+- [x] `log/slog` rejects its process-wide default logger, level controls,
+      default handler, and standard-log bridge from isolates. Explicit
+      loggers with caller-provided handlers remain usable when their effects
+      are allowed; lazy `time.Local` initialization remains an open boundary
 - [ ] Classify ownership and effects across the broad standard library;
       implement required library and runtime hooks and reject unclassified
       paths before claiming general standard-library support

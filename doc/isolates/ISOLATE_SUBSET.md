@@ -270,6 +270,14 @@ the process-wide standard logger. An explicitly created logger can still
 write to a caller-provided writer. Standard `log.Fatal` skips the host sink
 and requests isolate exit with status 1.
 
+The provisional `log/slog` guard rejects its process-wide default logger,
+level controls, default handler, and bridge to `log`. A logger that becomes
+the process default remains rejected through aliases and derived loggers.
+Explicit loggers with caller-provided handlers can still run, subject to the
+handler's own ownership and effects. For example, a fresh text handler that
+formats local timestamps can trigger `time.Local` initialization and a
+process environment read, which remains outside this guard.
+
 The provisional `os/signal` guards reject signal registration, ignoring,
 resetting, deregistration, and process signal-state reads from active isolates.
 They run before the package's process-wide handler table is accessed.
