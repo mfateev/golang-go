@@ -941,3 +941,7 @@ A fresh text handler's default timestamp formatting can lazily initialize
 `time.Local`, which reads the process environment. The explicit-handler test
 omits timestamps to stay within the currently guarded subset. Default local
 time initialization and handler/writer ownership still need a broader audit.
+
+The complete `src/all.bash` suite then passed, including the `cmd/go` script
+tests, race checks, and `../test`. This also verifies the preceding standard
+`log` guard in the full suite after its earlier test timeout.
