@@ -66,7 +66,8 @@ The provisional isolate runtime currently lacks deterministic scheduling and
 an exact quiescence barrier, so the serial adapter must not be presented as
 the completed steel thread. `internalbindings` is an unstable Go SDK API;
 the POC pins a tested SDK version and will need an adapter update when that
-version changes.
+version changes. The follow-on release gates are in
+[PRODUCTIZATION_PLAN.md](./PRODUCTIZATION_PLAN.md).
 
 ## Build shape
 

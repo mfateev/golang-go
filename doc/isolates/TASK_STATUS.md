@@ -17,6 +17,7 @@ isolates. Driving use case is Temporal workflow isolation.
 - [RUNTIME_REVOCATION.md](./RUNTIME_REVOCATION.md) — scheduler waiter ownership and `Kill` acceptance cases
 - [DYNAMIC_LOADING.md](./DYNAMIC_LOADING.md) — deferred feasibility of independently built programs loaded into one runtime
 - [TEMPORAL_POC.md](./TEMPORAL_POC.md) — trusted Temporal SDK integration plan and gates
+- [PRODUCTIZATION_PLAN.md](./PRODUCTIZATION_PLAN.md) — staged gates from the POC to a trusted production release
 - [ALTERNATIVES.md](./ALTERNATIVES.md) — rationale for the no-fork path
 
 - **Repo:** [golang/go](https://github.com/golang/go) via fork
