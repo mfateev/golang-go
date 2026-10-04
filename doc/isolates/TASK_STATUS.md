@@ -27,16 +27,20 @@ isolates. Driving use case is Temporal workflow isolation.
 
 ## Current Status
 
-The separate `sdk-go-poc` module now contains a byte-oriented isolate workflow
-API and a Temporal Go SDK `WorkflowDefinitionFactory` adapter. Its static
+The separate
+[`sdk-go-poc` repository](https://github.com/mfateev/sdk-go-poc/tree/task/modify-go-runtime-for-isolates)
+now contains a byte-oriented isolate workflow API and a Temporal Go SDK
+`WorkflowDefinitionFactory` adapter. Its static
 worker build and local activity/timer/signal driver pass. Both example
 workflows completed on a Temporal CLI development server, and fresh isolate
 processes replayed their exported histories. Native quiescence and
 deterministic scheduling remain open; see
 [TEMPORAL_POC.md](./TEMPORAL_POC.md).
 
-The separate `samples-go-poc` module ports the upstream `helloworld` and
-`choice-exclusive` samples to the POC API. Both workers built with the forked
+The separate
+[`samples-go-poc` repository](https://github.com/mfateev/samples-go-poc/tree/task/modify-go-runtime-for-isolates)
+ports the upstream `helloworld` and `choice-exclusive` samples to the POC API.
+Both workers built with the forked
 toolchain; live workflows and fresh-process history replay passed.
 
 🟡 **Phase 0 selects the Phase 2B compiler/runtime path for the trusted MVP.

@@ -3,7 +3,8 @@
 This is the next implementation target. A worker built with this Go fork links
 ordinary `package main` workflow programs with `-isolate-dir`, runs each
 workflow execution in an isolate instance, and uses the Temporal Go SDK for
-polling, history replay, and command emission. The separate `sdk-go-poc` module
+polling, history replay, and command emission. The separate
+[`sdk-go-poc` repository](https://github.com/mfateev/sdk-go-poc/tree/task/modify-go-runtime-for-isolates)
 contains the worker adapter and the small workflow-side API.
 
 ## Integration boundary
@@ -34,7 +35,8 @@ linked isolate boundary. With Temporal CLI 1.9.1 and its in-memory development
 server, both workflows completed through the real worker. The Go SDK replayer
 then accepted each exported history in a fresh process with a fresh isolate.
 
-The separate `samples-go-poc` module ports upstream `samples-go/helloworld`
+The separate [`samples-go-poc` repository](https://github.com/mfateev/samples-go-poc/tree/task/modify-go-runtime-for-isolates)
+ports upstream `samples-go/helloworld`
 and `samples-go/choice-exclusive`. Both completed against the development
 server, and their exported histories replayed in fresh isolate processes.
 
@@ -68,9 +70,10 @@ version changes.
 
 ## Build shape
 
-From `sdk-go-poc`, build the worker with the fork's `bin/go` and select each
-workflow directory using `-isolate-dir`. The worker binary shares one Go
-runtime while each execution receives its own selected package state. The
-activity implementation remains host-side. Workflow code imports only the
-small `sdk-go-poc/workflow` package and normal Go packages; it does not import
-the Temporal Go SDK.
+Clone `golang-go` and `sdk-go-poc` as sibling directories. From `sdk-go-poc`,
+build the worker with `../golang-go/bin/go` and select each workflow directory
+using `-isolate-dir`. The worker binary shares one Go runtime while each
+execution receives its own selected package state. The activity implementation
+remains host-side. Workflow code imports only the small
+`github.com/mfateev/sdk-go-poc/workflow` package and normal Go packages; it
+does not import the Temporal Go SDK.
