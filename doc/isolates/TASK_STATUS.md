@@ -35,6 +35,10 @@ processes replayed their exported histories. Native quiescence and
 deterministic scheduling remain open; see
 [TEMPORAL_POC.md](./TEMPORAL_POC.md).
 
+The separate `samples-go-poc` module ports the upstream `helloworld` and
+`choice-exclusive` samples to the POC API. Both workers built with the forked
+toolchain; live workflows and fresh-process history replay passed.
+
 🟡 **Phase 0 selects the Phase 2B compiler/runtime path for the trusted MVP.
 Phase 2B implementation has begun with an opt-in initialized-global probe;
 ordinary-Go execution remains unproved.**

@@ -34,6 +34,10 @@ linked isolate boundary. With Temporal CLI 1.9.1 and its in-memory development
 server, both workflows completed through the real worker. The Go SDK replayer
 then accepted each exported history in a fresh process with a fresh isolate.
 
+The separate `samples-go-poc` module ports upstream `samples-go/helloworld`
+and `samples-go/choice-exclusive`. Both completed against the development
+server, and their exported histories replayed in fresh isolate processes.
+
 ## Scope and gates
 
 1. **Serial vertical slice — passed locally:** one ordinary Go workflow program receives input,
