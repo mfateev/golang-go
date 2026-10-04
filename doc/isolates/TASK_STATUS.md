@@ -16,6 +16,7 @@ isolates. Driving use case is Temporal workflow isolation.
 - [STATIC_PROGRAMS.md](./STATIC_PROGRAMS.md) — per-directory config and static multi-program build direction
 - [RUNTIME_REVOCATION.md](./RUNTIME_REVOCATION.md) — scheduler waiter ownership and `Kill` acceptance cases
 - [DYNAMIC_LOADING.md](./DYNAMIC_LOADING.md) — deferred feasibility of independently built programs loaded into one runtime
+- [TEMPORAL_POC.md](./TEMPORAL_POC.md) — trusted Temporal SDK integration plan and gates
 - [ALTERNATIVES.md](./ALTERNATIVES.md) — rationale for the no-fork path
 
 - **Repo:** [golang/go](https://github.com/golang/go) via fork
@@ -25,6 +26,12 @@ isolates. Driving use case is Temporal workflow isolation.
 - **PR:** none yet
 
 ## Current Status
+
+The separate `sdk-go-poc` module now contains a byte-oriented isolate workflow
+API and a Temporal Go SDK `WorkflowDefinitionFactory` adapter. Its static
+worker build and local activity/timer/signal driver pass. Real server replay,
+native quiescence, and deterministic scheduling remain open; see
+[TEMPORAL_POC.md](./TEMPORAL_POC.md).
 
 🟡 **Phase 0 selects the Phase 2B compiler/runtime path for the trusted MVP.
 Phase 2B implementation has begun with an opt-in initialized-global probe;
