@@ -1,0 +1,39 @@
+// Replay a CLI-exported history with a fresh statically linked isolate.
+package main
+
+import (
+	"fmt"
+	"isolate"
+	"os"
+
+	"github.com/mfateev/golang-go/sdk-go-poc/temporalbridge"
+	"go.temporal.io/sdk/worker"
+	goWorkflow "go.temporal.io/sdk/workflow"
+)
+
+func main() {
+	if len(os.Args) != 3 {
+		fmt.Fprintln(os.Stderr, "usage: replay <program-name> <history.json>")
+		os.Exit(2)
+	}
+	program, ok := isolate.LookupProgram(os.Args[1])
+	if !ok {
+		fmt.Fprintln(os.Stderr, "unknown isolate program:", os.Args[1])
+		os.Exit(2)
+	}
+	workflowName := map[string]string{
+		"temporal-order":  "IsolateOrder",
+		"temporal-signal": "IsolateSignal",
+	}[os.Args[1]]
+	if workflowName == "" {
+		fmt.Fprintln(os.Stderr, "no workflow type for:", os.Args[1])
+		os.Exit(2)
+	}
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflowWithOptions(temporalbridge.Factory{Program: program}, goWorkflow.RegisterOptions{Name: workflowName})
+	if err := replayer.ReplayWorkflowHistoryFromJSONFile(nil, os.Args[2]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Println("replay passed:", workflowName)
+}

@@ -30,17 +30,18 @@ The host uses Temporal's data converter at the boundary.
 
 The first implementation is in `sdk-go-poc`. Its local driver runs the serial
 activity/timer/completion path and a signal path through the actual statically
-linked isolate boundary. The worker builds with both workflow programs. A
-Temporal server run and recorded-history replay remain to be verified.
+linked isolate boundary. With Temporal CLI 1.9.1 and its in-memory development
+server, both workflows completed through the real worker. The Go SDK replayer
+then accepted each exported history in a fresh process with a fresh isolate.
 
 ## Scope and gates
 
-1. **Serial vertical slice:** one ordinary Go workflow program receives input,
+1. **Serial vertical slice — passed locally:** one ordinary Go workflow program receives input,
    schedules an activity, waits for its result, sleeps on a durable Temporal
    timer, and completes. A worker registers it through the Go SDK factory.
-2. **Replay:** run the same history with a fresh isolate and verify the same
-   Temporal commands and result. Test an actual worker/server path as well as
-   a local bridge test.
+2. **Replay — passed locally for both examples:** run the same history with a fresh isolate and verify the same
+   Temporal commands and result. This covers the actual worker/server path and
+   a local bridge driver; it does not cover cross-architecture replay.
 3. **Native quiescence:** give `OnWorkflowTaskStarted` an exact suspend point
    after all runnable isolate goroutines have blocked. A channel receive,
    `sync.WaitGroup`, and concurrent `Call`s must work without polling delays or

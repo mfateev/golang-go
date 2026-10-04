@@ -29,8 +29,10 @@ isolates. Driving use case is Temporal workflow isolation.
 
 The separate `sdk-go-poc` module now contains a byte-oriented isolate workflow
 API and a Temporal Go SDK `WorkflowDefinitionFactory` adapter. Its static
-worker build and local activity/timer/signal driver pass. Real server replay,
-native quiescence, and deterministic scheduling remain open; see
+worker build and local activity/timer/signal driver pass. Both example
+workflows completed on a Temporal CLI development server, and fresh isolate
+processes replayed their exported histories. Native quiescence and
+deterministic scheduling remain open; see
 [TEMPORAL_POC.md](./TEMPORAL_POC.md).
 
 🟡 **Phase 0 selects the Phase 2B compiler/runtime path for the trusted MVP.

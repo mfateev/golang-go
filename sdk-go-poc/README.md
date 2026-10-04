@@ -16,6 +16,26 @@ registers workflow types `IsolateOrder` and `IsolateSignal`, task queue
 argument and returns it after an activity and a durable one-second timer.
 `IsolateSignal` returns the bytes from its next signal.
 
+The order and signal examples completed on Temporal CLI 1.9.1's local
+development server, and their exported histories replayed in fresh processes.
+To repeat the live check, start `temporal server start-dev --headless` and run
+`./worker` in another terminal. Then run:
+
+```sh
+temporal workflow execute --workflow-id isolate-poc-order --type IsolateOrder --task-queue isolate-poc --input aGVsbG8= --input-base64 --input-meta encoding=binary/plain
+temporal workflow start --workflow-id isolate-poc-signal --type IsolateSignal --task-queue isolate-poc
+temporal workflow signal --workflow-id isolate-poc-signal --name ready --input c2lnbmFsLXJlc3VsdA== --input-base64 --input-meta encoding=binary/plain
+temporal workflow result --workflow-id isolate-poc-signal
+```
+
+Export and replay a completed history with a fresh isolate process:
+
+```sh
+../bin/go build -isolate-dir=./example/order -isolate-dir=./example/signal -o replay ./example/replay
+temporal workflow show --workflow-id isolate-poc-order --output json > /tmp/isolate-order-history.json
+./replay temporal-order /tmp/isolate-order-history.json
+```
+
 Run the local bridge driver without a server:
 
 ```sh
