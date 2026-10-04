@@ -88,7 +88,9 @@ func runVersion(ctx context.Context, cmd *base.Command, args []string) {
 		if gover.TestVersion != "" {
 			v = gover.TestVersion + " (TESTGO_VERSION)"
 		}
-		fmt.Printf("go version %s %s/%s\n", v, runtime.GOOS, runtime.GOARCH)
+		// Keep the Go version itself parseable by the toolchain while making
+		// this fork recognizable in the human-facing command output.
+		fmt.Printf("go version %s %s/%s (isolates POC)\n", v, runtime.GOOS, runtime.GOARCH)
 		return
 	}
 
