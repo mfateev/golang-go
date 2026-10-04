@@ -5,12 +5,28 @@
 package time
 
 import (
+	"internal/isolatebridge"
+	"sync"
 	"unsafe"
 )
 
 // Sleep pauses the current goroutine for at least the duration d.
 // A negative or zero duration causes Sleep to return immediately.
-func Sleep(d Duration)
+func Sleep(d Duration) {
+	if d <= 0 {
+		return
+	}
+	if isolatebridge.ClockEnabled() {
+		if err := isolatebridge.Current().TimerSleep(int64(d)); err != nil {
+			panic("time: durable Sleep failed: " + err.Error())
+		}
+		return
+	}
+	runtimeSleep(d)
+}
+
+//go:linkname runtimeSleep time.runtimeSleep
+func runtimeSleep(d Duration)
 
 // syncTimer returns c as an unsafe.Pointer, for passing to newTimer.
 func syncTimer(c chan Time) unsafe.Pointer {
@@ -61,9 +77,57 @@ func resetTimer(t *Timer, when, period int64) bool
 type Timer struct {
 	C    <-chan Time
 	self *Timer
+	iso  *isolateTimer
 }
 
-// Timer must be allocated from the runtime and not copied.
+type isolateTimer struct {
+	mu         sync.Mutex
+	c          chan Time
+	generation uint64
+	active     bool
+}
+
+func (state *isolateTimer) wait(d Duration, generation uint64) {
+	if err := isolatebridge.Current().TimerSleep(int64(d)); err != nil {
+		panic("time: durable timer failed: " + err.Error())
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if !state.active || state.generation != generation {
+		return
+	}
+	state.active = false
+	select {
+	case state.c <- Now():
+	default:
+	}
+}
+
+func (state *isolateTimer) stop() bool {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	wasActive := state.active
+	state.active = false
+	state.generation++
+	return wasActive
+}
+
+func (state *isolateTimer) reset(d Duration) bool {
+	state.mu.Lock()
+	wasActive := state.active
+	state.generation++
+	generation := state.generation
+	state.active = true
+	select {
+	case <-state.c:
+	default:
+	}
+	state.mu.Unlock()
+	go state.wait(d, generation)
+	return wasActive
+}
+
+// A Timer must be created by NewTimer or AfterFunc and not copied.
 func (t *Timer) checkValid(meth string) {
 	if t.self == nil {
 		panic("time: " + meth + " called on uninitialized Timer")
@@ -93,6 +157,9 @@ func (t *Timer) checkValid(meth string) {
 // See the [NewTimer] documentation for more details.
 func (t *Timer) Stop() bool {
 	t.checkValid("Stop")
+	if t.iso != nil {
+		return t.iso.stop()
+	}
 	return stopTimer(t)
 }
 
@@ -115,6 +182,14 @@ func (t *Timer) Stop() bool {
 // As of Go 1.23, the channel is synchronous (unbuffered, capacity 0),
 // eliminating the possibility of those stale values.
 func NewTimer(d Duration) *Timer {
+	if isolatebridge.ClockEnabled() {
+		c := make(chan Time, 1)
+		state := &isolateTimer{c: c, generation: 1, active: true}
+		t := &Timer{C: c, iso: state}
+		t.self = t
+		go state.wait(d, 1)
+		return t
+	}
 	c := make(chan Time, 1)
 	t := newTimer(when(d), 0, sendTime, c, syncTimer(c))
 	t.C = c
@@ -144,6 +219,9 @@ func NewTimer(d Duration) *Timer {
 // See the [NewTimer] documentation for more details.
 func (t *Timer) Reset(d Duration) bool {
 	t.checkValid("Reset")
+	if t.iso != nil {
+		return t.iso.reset(d)
+	}
 	w := when(d)
 	return resetTimer(t, w, 0)
 }

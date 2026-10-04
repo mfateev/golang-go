@@ -26,6 +26,16 @@ func time_runtimeNow() (sec int64, nsec int32, mono int64) {
 		// Simplest is to omit the monotonic time within a bubble.
 		return sec, nsec, 0
 	}
+	if group := getg().isolateGroup; group != nil && group.clockSet.Load() {
+		now := group.clockNS.Load()
+		sec = now / 1e9
+		nsec = int32(now % 1e9)
+		if nsec < 0 {
+			sec--
+			nsec += 1e9
+		}
+		return sec, nsec, 0
+	}
 	return time_now()
 }
 
@@ -40,6 +50,9 @@ func time_runtimeNano() int64 {
 	gp := getg()
 	if gp.bubble != nil {
 		return gp.bubble.now
+	}
+	if group := gp.isolateGroup; group != nil && group.clockSet.Load() {
+		return group.clockNS.Load()
 	}
 	return nanotime()
 }
@@ -446,7 +459,7 @@ func isolateRevokeParkWaiters(group *isolateRevocationGroup) {
 
 // timeSleep puts the current goroutine to sleep for at least ns nanoseconds.
 //
-//go:linkname timeSleep time.Sleep
+//go:linkname timeSleep time.runtimeSleep
 func timeSleep(ns int64) {
 	isolateDiscardIfRevoked()
 	if ns <= 0 {
@@ -523,6 +536,7 @@ func resetForSleep(gp *g, _ unsafe.Pointer) bool {
 type timeTimer struct {
 	c    unsafe.Pointer // <-chan time.Time
 	self *timeTimer     // pointer to self, used by time to detect bad initialization
+	iso  unsafe.Pointer // package time's host-driven timer state; nil for runtime timers
 	timer
 }
 

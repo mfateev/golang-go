@@ -34,7 +34,9 @@ func LookupProgram(name string) (Program, bool) {
 
 // Config selects one program.
 type Config struct {
-	Program Program
+	Program     Program
+	InitialTime *time.Time // Enables the host clock before package initialization.
+	TimerOp     uint32     // Call operation used for durable timer waits.
 }
 
 // Command is one host request made by Call. Reply must be called once.
@@ -93,6 +95,15 @@ func New(cfg Config) (*Isolate, error) {
 		return nil, errors.New("isolate: unknown program")
 	}
 	boundary := isolatebridge.New()
+	if cfg.InitialTime != nil {
+		clock, err := isolateTimeNanos(*cfg.InitialTime)
+		if err != nil {
+			return nil, err
+		}
+		if err := boundary.ConfigureTime(clock, cfg.TimerOp); err != nil {
+			return nil, err
+		}
+	}
 	i := &Isolate{
 		entry:    cfg.Program.entry.Main,
 		boundary: boundary,
@@ -144,6 +155,28 @@ func New(cfg Config) (*Isolate, error) {
 	}
 	i.runState = runState
 	return i, nil
+}
+
+func isolateTimeNanos(t time.Time) (int64, error) {
+	ns := t.UnixNano()
+	if !time.Unix(0, ns).Equal(t) {
+		return 0, errors.New("isolate: host time is outside Unix nanosecond range")
+	}
+	return ns, nil
+}
+
+// AdvanceTime publishes a history timestamp for the next workflow task. The
+// host must call it while the instance is quiescent and before replying to any
+// commands from that task. Time cannot move backwards within an instance.
+func (i *Isolate) AdvanceTime(t time.Time) error {
+	if i == nil {
+		return errors.New("isolate: nil instance")
+	}
+	ns, err := isolateTimeNanos(t)
+	if err != nil {
+		return err
+	}
+	return i.boundary.AdvanceTime(ns)
 }
 
 // Start runs the program's ordinary main on a new goroutine. It may be called

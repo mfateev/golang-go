@@ -29,6 +29,17 @@ Initially the workflow API carries byte slices and offers input, activity,
 timer, signal, and completion operations. Typed wrappers can be built above it.
 The host uses Temporal's data converter at the boundary.
 
+The host now injects the Workflow Task's history time into each isolate before
+running it or replying to commands. `time.Now`, `time.Since`, and `time.Until`
+read that clock locally; the runtime scheduler keeps using real time. Native
+`time.Sleep`, `time.NewTimer`, and `time.After` send the SDK's durable timer
+operation through the isolate boundary. Timer completion is delivered after
+the host advances the clock for the next task. `time.AfterFunc` and tickers are
+outside this POC's workflow-time subset. `Timer.Stop` and `Timer.Reset` suppress
+local delivery but do not yet cancel an already scheduled Temporal timer; that
+can cause extra history events. Concurrent timer and signal handling still
+needs the exact quiescence and scheduling work below.
+
 The first implementation is in `sdk-go-poc`. Its local driver runs the serial
 activity/timer/completion path and a signal path through the actual statically
 linked isolate boundary. With Temporal CLI 1.9.1 and its in-memory development

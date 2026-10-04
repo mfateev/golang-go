@@ -16,6 +16,7 @@ import "unsafe"
 type Ticker struct {
 	C    <-chan Time // The channel on which the ticks are delivered.
 	self *Ticker
+	iso  *isolateTimer // Same layout as Timer; tickers need a separate host policy.
 }
 
 // Ticker must be allocated from the runtime and not copied.
@@ -43,6 +44,9 @@ func (t *Ticker) checkValid(meth string) {
 // The Stop method is no longer necessary to help the garbage collector.
 // (Code may of course still want to call Stop to stop the ticker for other reasons.)
 func NewTicker(d Duration) *Ticker {
+	if runtime_isolateActive() {
+		panic("time: Ticker is unavailable inside an isolate")
+	}
 	if d <= 0 {
 		panic("non-positive interval for NewTicker")
 	}

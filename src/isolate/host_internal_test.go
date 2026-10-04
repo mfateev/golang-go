@@ -100,6 +100,125 @@ func TestKillStopsCallWaiter(t *testing.T) {
 	}
 }
 
+func TestHostClockDrivesNativeTimer(t *testing.T) {
+	start := time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)
+	const duration = 10 * time.Second
+	const timerOp = 77
+	observed := make(chan [3]time.Time, 1)
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main: func() {
+			before := time.Now()
+			fired := <-time.After(duration)
+			observed <- [3]time.Time{before, fired, time.Now()}
+		},
+	}}
+	i, err := New(Config{Program: program, InitialTime: &start, TimerOp: timerOp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	var command *Command
+	select {
+	case command = <-i.Commands():
+	case <-time.After(time.Second):
+		t.Fatal("native timer did not request a host timer")
+	}
+	if command.Op != timerOp || string(command.Payload) != "10000000000" {
+		t.Fatalf("timer command = (%d, %q)", command.Op, command.Payload)
+	}
+	if err := i.AdvanceTime(start.Add(-time.Second)); err == nil {
+		t.Fatal("host clock moved backwards")
+	}
+	firedAt := start.Add(duration)
+	if err := i.AdvanceTime(firedAt); err != nil {
+		t.Fatal(err)
+	}
+	command.Reply(nil, nil)
+	if err := i.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	got := <-observed
+	if !got[0].Equal(start) || !got[1].Equal(firedAt) || !got[2].Equal(firedAt) {
+		t.Fatalf("clock observations = %v, want %v then %v", got, start, firedAt)
+	}
+}
+
+func TestHostClockDrivesNativeSleep(t *testing.T) {
+	start := time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)
+	const duration = 5 * time.Second
+	observed := make(chan time.Time, 1)
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+		Main: func() {
+			time.Sleep(duration)
+			observed <- time.Now()
+		},
+	}}
+	i, err := New(Config{Program: program, InitialTime: &start, TimerOp: 78})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i.Start(); err != nil {
+		t.Fatal(err)
+	}
+	var command *Command
+	select {
+	case command = <-i.Commands():
+	case <-time.After(time.Second):
+		t.Fatal("native Sleep did not request a host timer")
+	}
+	if command.Op != 78 || string(command.Payload) != "5000000000" {
+		t.Fatalf("sleep command = (%d, %q)", command.Op, command.Payload)
+	}
+	firedAt := start.Add(duration)
+	if err := i.AdvanceTime(firedAt); err != nil {
+		t.Fatal(err)
+	}
+	command.Reply(nil, nil)
+	if err := i.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-observed; !got.Equal(firedAt) {
+		t.Fatalf("time after Sleep = %v, want %v", got, firedAt)
+	}
+}
+
+func TestHostClocksArePerIsolate(t *testing.T) {
+	for _, clock := range []time.Time{
+		time.Date(2025, time.January, 2, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, time.January, 2, 0, 0, 0, 0, time.UTC),
+	} {
+		initialized := make(chan time.Time, 1)
+		observed := make(chan time.Time, 1)
+		program := Program{entry: isolatebridge.ProgramEntry{
+			NewState: func() (func(func()), error) {
+				initialized <- time.Now()
+				return func(fn func()) { fn() }, nil
+			},
+			Main: func() { observed <- time.Now() },
+		}}
+		i, err := New(Config{Program: program, InitialTime: &clock, TimerOp: 78})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := <-initialized; !got.Equal(clock) {
+			t.Fatalf("initializer time.Now = %v, want %v", got, clock)
+		}
+		if err := i.Start(); err != nil {
+			t.Fatal(err)
+		}
+		if err := i.Wait(); err != nil {
+			t.Fatal(err)
+		}
+		if got := <-observed; !got.Equal(clock) {
+			t.Fatalf("time.Now = %v, want %v", got, clock)
+		}
+	}
+}
+
 func TestProcessExitStopsOnlyIsolate(t *testing.T) {
 	for _, tt := range []struct {
 		name string

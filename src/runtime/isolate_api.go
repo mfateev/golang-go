@@ -55,6 +55,27 @@ func isolateNewGroup() unsafe.Pointer {
 	return unsafe.Pointer(new(isolateRevocationGroup))
 }
 
+//go:linkname isolateSetClock
+func isolateSetClock(p unsafe.Pointer, unixNano int64) bool {
+	group := (*isolateRevocationGroup)(p)
+	for {
+		old := group.clockNS.Load()
+		if group.clockSet.Load() && unixNano < old {
+			return false
+		}
+		if group.clockNS.CompareAndSwap(old, unixNano) {
+			group.clockSet.Store(true)
+			return true
+		}
+	}
+}
+
+//go:linkname isolateClockEnabled
+func isolateClockEnabled() bool {
+	group := getg().isolateGroup
+	return group != nil && group.clockSet.Load()
+}
+
 //go:linkname isolateSetGroupExit
 func isolateSetGroupExit(p unsafe.Pointer, fn func(int)) {
 	(*isolateRevocationGroup)(p).exit = fn

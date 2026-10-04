@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"errors"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,6 +31,7 @@ type Boundary struct {
 	wakeNeeded bool
 	stopped    atomic.Bool
 	onExit     func(int)
+	timerOp    uint32
 }
 
 var nextOwner atomic.Uintptr
@@ -65,6 +67,46 @@ func New() *Boundary {
 	}
 	setGroupExit(b.group, b.exit)
 	return b
+}
+
+// ConfigureTime gives this boundary a host-controlled clock and a Call
+// operation for durable timers. It must run before program initialization.
+func (b *Boundary) ConfigureTime(unixNano int64, timerOp uint32) error {
+	if timerOp == 0 {
+		return errors.New("isolate: timer operation is required for a host clock")
+	}
+	b.timerOp = timerOp
+	if !setClock(b.group, unixNano) {
+		return errors.New("isolate: clock moved backwards")
+	}
+	return nil
+}
+
+// AdvanceTime publishes a history timestamp before the host resumes a task.
+func (b *Boundary) AdvanceTime(unixNano int64) error {
+	if b.timerOp == 0 {
+		return errors.New("isolate: host clock is not configured")
+	}
+	if !setClock(b.group, unixNano) {
+		return errors.New("isolate: clock moved backwards")
+	}
+	return nil
+}
+
+// ClockEnabled reports whether the current goroutine has a host clock.
+func ClockEnabled() bool { return clockEnabled() }
+
+// TimerSleep waits for the host's durable timer event. The request payload is
+// the JSON representation of a time.Duration, shared with SDK timer calls.
+func (b *Boundary) TimerSleep(ns int64) error {
+	if ns <= 0 {
+		return nil
+	}
+	if b.timerOp == 0 {
+		return errors.New("isolate: durable timer operation is not configured")
+	}
+	_, err := b.Call(b.timerOp, []byte(strconv.FormatInt(ns, 10)))
+	return err
 }
 
 // SetExitHandler installs the host lifecycle callback before an instance
@@ -248,6 +290,12 @@ func stopCall() {
 
 //go:linkname discardIfRevoked runtime.isolateDiscardIfRevoked
 func discardIfRevoked()
+
+//go:linkname setClock runtime.isolateSetClock
+func setClock(unsafe.Pointer, int64) bool
+
+//go:linkname clockEnabled runtime.isolateClockEnabled
+func clockEnabled() bool
 
 //go:linkname markRevoked runtime.isolateMarkRevoked
 func markRevoked(unsafe.Pointer) bool
