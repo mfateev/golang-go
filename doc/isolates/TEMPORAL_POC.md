@@ -27,14 +27,19 @@ workflow execution, and replay reconstructs its isolate from the beginning.
 The isolate-side SDK owns stable `Call` operation numbers and wire encoding.
 Initially the workflow API carries byte slices and offers input, activity,
 timer, signal, and completion operations. Typed wrappers can be built above it.
-The current bridge uses Temporal's data converter in the host and accepts byte
-slice workflow values. The POC assumes the worker uses Temporal's default data
-converter. For typed workflow functions, pass protobuf-serialized Temporal
-`Payloads` through the copied-byte isolate boundary, then use
-`converter.GetDefaultDataConverter()` inside the isolate to decode typed
-arguments and encode the typed result. This avoids a second gob serialization
-format. The typed path is planned, not implemented. Custom worker data
-converters, including their codecs and serialization context, remain a TODO.
+The bridge accepts byte handlers and typed workflow functions. The isolate
+adapter requires Temporal's default data converter on the worker and rejects
+custom converters when a workflow task starts. Typed handlers receive
+protobuf-serialized Temporal `Payloads` through the copied-byte isolate
+boundary and use `converter.GetDefaultDataConverter()` inside the isolate to
+decode arguments and encode the result. A small wire codec handles the
+`Payloads` envelope without invoking protobuf's reflective decoder inside an
+isolate. This avoids a second gob serialization format. The supported payload
+encodings are `binary/null`, `binary/plain`, and `json/plain`; protobuf message
+encodings and external payload references fail with a workflow error. The
+converter's external dependency graph is provisionally process-owned. Its
+mutable caches and effects, custom worker converters, payload codecs, and
+serialization context remain productization work.
 
 The host now injects the Workflow Task's history time into each isolate before
 running it or replying to commands. `time.Now`, `time.Since`, and `time.Until`

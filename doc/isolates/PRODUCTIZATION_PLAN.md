@@ -131,12 +131,16 @@ cannot skip an unmet runtime gate.
   `internalbindings` and pins one SDK version. Establish a compatibility test
   matrix and either secure a supported extension point or maintain an
   isolated adapter with an explicit SDK upgrade gate.
-- Add typed workflow helpers above the byte protocol, while retaining normal
-  `package main` entry points. The POC supports only Temporal's default data
-  converter: move protobuf-serialized `Payloads` across the byte boundary and
-  decode/encode typed values inside the isolate with that converter. TODO:
-  support the worker's configured custom converter, its payload codecs and
-  serialization context, and validate boundary types and conversion errors.
+- Extend the POC's typed workflow helpers beyond zero, one, or two arguments
+  and route marked isolate functions through the ordinary worker registration
+  API without changing non-isolate workflow behavior. The POC moves
+  protobuf-serialized `Payloads` across the byte boundary and uses Temporal's
+  default converter inside the isolate for nil, byte, and ordinary JSON
+  values. Audit the provisional process-owned converter dependency graph,
+  including protobuf's lazy descriptor caches, before supporting protobuf
+  message values. TODO: support the worker's configured custom converter, its
+  payload codecs and serialization context, and validate boundary types and
+  conversion errors.
   Test real worker/server execution, exported history replay, worker restart,
   eviction, and upgrades from an older worker build. Keep activities and other
   I/O in the host.

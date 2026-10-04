@@ -146,6 +146,24 @@ func runBuildIsolates(ctx context.Context, args []string) {
 	allReachable := make(map[string]*load.Package)
 	selected := make(map[string]bool)
 	processStd := make(map[string]*load.Package)
+	// The pinned Temporal default converter is a process service in the trusted
+	// POC. Its dependency graph includes protobuf registries, embedded data,
+	// gRPC configuration, and executable/environment reads during initialization.
+	// Keep that graph out of per-instance initializer replay. The workflow SDK
+	// package and application packages remain selected. This is a provisional
+	// classification, not a complete state/effect audit of these dependencies.
+	processConverter := make(map[string]bool)
+	for _, root := range loaded {
+		for _, p := range load.PackageList([]*load.Package{root}) {
+			if p.ImportPath == "go.temporal.io/sdk/converter" {
+				for _, dep := range load.PackageList([]*load.Package{p}) {
+					if !dep.Standard {
+						processConverter[dep.ImportPath] = true
+					}
+				}
+			}
+		}
+	}
 	for i, root := range loaded {
 		for _, p := range load.PackageList([]*load.Package{root}) {
 			if p.ImportPath == "" {
@@ -153,6 +171,9 @@ func runBuildIsolates(ctx context.Context, args []string) {
 			}
 			programReachable[i] = append(programReachable[i], p.ImportPath)
 			allReachable[p.ImportPath] = p
+			if processConverter[p.ImportPath] {
+				continue
+			}
 			if p.Standard {
 				processStd[p.ImportPath] = p
 				if !isolateOwnedStandardPackages[p.ImportPath] {
@@ -321,6 +342,9 @@ func runBuildIsolates(ctx context.Context, args []string) {
 		for _, path := range paths {
 			p := allReachable[path]
 			classification := "reachable-application"
+			if processConverter[path] {
+				classification = "process-owned-converter-poc"
+			}
 			if p.Standard {
 				classification = "unclassified-standard"
 				if selected[path] {
