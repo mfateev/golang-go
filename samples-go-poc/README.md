@@ -15,9 +15,9 @@ same branch checkout.
 ## 1. Prepare a Linux machine
 
 These commands use Bash on Debian or Ubuntu Linux, on either ARM64 or x86-64.
-The complete sequence below was verified on Linux ARM64. Have a few gigabytes
-of free space for the Go source build and module cache. Install Git, curl,
-the archive tools, and a C compiler:
+The build and run sequence below was verified on Linux ARM64. Have a few
+gigabytes of free space for the Go source build and module cache. Install Git,
+curl, the archive tools, and a C compiler:
 
 ```sh
 sudo apt-get update
