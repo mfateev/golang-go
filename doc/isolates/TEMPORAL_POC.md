@@ -27,7 +27,14 @@ workflow execution, and replay reconstructs its isolate from the beginning.
 The isolate-side SDK owns stable `Call` operation numbers and wire encoding.
 Initially the workflow API carries byte slices and offers input, activity,
 timer, signal, and completion operations. Typed wrappers can be built above it.
-The host uses Temporal's data converter at the boundary.
+The current bridge uses Temporal's data converter in the host and accepts byte
+slice workflow values. The POC assumes the worker uses Temporal's default data
+converter. For typed workflow functions, pass protobuf-serialized Temporal
+`Payloads` through the copied-byte isolate boundary, then use
+`converter.GetDefaultDataConverter()` inside the isolate to decode typed
+arguments and encode the typed result. This avoids a second gob serialization
+format. The typed path is planned, not implemented. Custom worker data
+converters, including their codecs and serialization context, remain a TODO.
 
 The host now injects the Workflow Task's history time into each isolate before
 running it or replying to commands. `time.Now`, `time.Since`, and `time.Until`
