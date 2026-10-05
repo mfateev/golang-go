@@ -3,8 +3,9 @@
 // license that can be found in the LICENSE file.
 
 // Package isolate provides the host communication operations available to
-// code running inside an isolate. An isolate program is an ordinary package
-// main with an ordinary func main.
+// code running inside an isolate. Functions marked //go:isolate are discovered
+// by go build and exposed as handles; legacy package main programs remain
+// available for runtime probes.
 //
 // The native runtime boundary is still under construction. The current
 // transport is a trusted Phase 2B probe; it does not provide heap isolation or

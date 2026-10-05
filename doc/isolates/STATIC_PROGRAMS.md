@@ -6,7 +6,59 @@ standard-library ownership and effect classification and the native scheduler
 remain pending. Dynamic loading is a
 [future enhancement](./DYNAMIC_LOADING.md).
 
-## Directory contract
+## Function entry points
+
+The source API now marks ordinary Go functions with `//go:isolate`. Build a
+host executable with an ordinary `go build`; the build discovers marked
+functions in its import graph and generates their invokers, handles, and
+package-state factories. No workflow `main`, config, or directory flag is
+required. A package may contain multiple marked functions and ordinary
+functions. Each marked function keeps its Go signature:
+
+```go
+//go:isolate
+func Orders(input OrderRequest) (OrderResult, error) {
+    // Ordinary Go workflow code and SDK-mediated host operations.
+}
+```
+
+`isolate.LookupFunction(Orders)` returns a handle only for a discovered marked
+function. `Handle.Signature()` describes the original Go type.
+`Handle.Program(dispatch)` supplies an SDK dispatcher; `Handle.Invoke` calls
+the function directly inside the instance using typed argument and result
+slots. The SDK decodes into those slots and encodes the result there. Go
+values stay inside the isolate; only copied bytes cross the host boundary.
+The Temporal POC's worker wrapper uses this metadata from the ordinary
+`RegisterWorkflow(fn)` API and forwards unmarked registrations to the Go SDK.
+The generated host populates the function table after imported initializers;
+lookup and worker registration of marked functions therefore belong in host
+`main`, rather than package `init`.
+
+The marker supports concrete top-level functions with any number of ordinary
+Go arguments, returning nothing, `error`, or `(result, error)`. Methods,
+generics, variadic arguments, cgo source, dot imports, and Temporal
+`workflow.Context` arguments are rejected. Entry generation currently supports
+a single executable `go build`; other command paths remain TODO.
+
+State selection remains at package level: the containing package and its
+dependency graph get instance copies under the current ownership policy.
+Selected initializers run for every instance, including when the host also
+uses an ordinary function in that package. Function-level graph trimming and
+complete effect validation remain TODO. The trusted Temporal integration
+includes its SDK dispatcher state even for functions that do not import the
+dispatcher, and leaves the default converter graph provisionally process-owned.
+The pinned host activity SDK graph is also process-owned, allowing workflows
+and host activities to share an application package. Calling host activity SDK
+services from an isolate is outside the trusted POC contract.
+General framework support-package declarations remain productization work.
+
+`-isolate-report=ownership.json` also works for marked functions, listing each
+fully qualified function identity and its selected graph.
+
+## Legacy directory contract
+
+The following directory contract remains for earlier runtime probes. New
+workflow code uses marked function entries above.
 
 Each isolate program has its own directory containing `package main` and an
 `isolate.json` file. For example:

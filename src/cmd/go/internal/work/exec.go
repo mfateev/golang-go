@@ -352,6 +352,9 @@ func (b *Builder) buildActionID(a *Action) cache.ActionID {
 	}
 
 	// Input files.
+	if len(p.Internal.IsolateSource) != 0 {
+		fmt.Fprintf(h, "isolate source %q\n", p.Internal.IsolateSource)
+	}
 	// TODO(matloob): once the build action depends on the cgo actions, we can
 	// use those actions' outputs instead of the file names and hashes.
 	inputFiles := slices.Concat(
@@ -717,6 +720,13 @@ func (b *Builder) buildExport(ctx context.Context, a *Action) (err error) {
 	}
 
 	gofiles := p.GoFiles
+	if len(p.Internal.IsolateSource) != 0 {
+		generated := filepath.Join(a.Objdir, "_isolate_functions.go")
+		if err := os.WriteFile(generated, p.Internal.IsolateSource, 0666); err != nil {
+			return err
+		}
+		gofiles = append(slices.Clone(gofiles), generated)
+	}
 	cfiles := p.CFiles
 	sfiles := p.SFiles
 	var objects, cgoObjects []string

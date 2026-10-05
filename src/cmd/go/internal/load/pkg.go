@@ -237,6 +237,7 @@ type PackageInternal struct {
 	InternalImportOk  bool                // this package may be imported even though it is internal
 	BuildInfo         *debug.BuildInfo    // add this info to package main
 	TestmainGo        *[]byte             // content for _testmain.go
+	IsolateSource     []byte              // generated typed invokers for //go:isolate functions
 	Embed             map[string][]string // //go:embed comment mapping
 	OrigImportPath    string              // original import path before adding '_test' suffix
 	PGOProfile        string              // path to PGO profile
@@ -1044,6 +1045,13 @@ var resolvedImportCache par.Cache[importSpec, resolvedImport]
 
 // packageDataCache maps canonical package names (string) to package metadata.
 var packageDataCache par.ErrCache[string, *build.Package]
+
+// InvalidatePackageCache discards source metadata after changing build tags.
+// The caller must finish package loading (including preloading) first.
+func InvalidatePackageCache(ld *modload.Loader) {
+	clear(ld.PackageCache())
+	packageDataCache = par.ErrCache[string, *build.Package]{}
+}
 
 // preloadWorkerCount is the number of concurrent goroutines that can load
 // packages. Experimentally, there are diminishing returns with more than

@@ -13,12 +13,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 
 	"cmd/go/internal/base"
 	"cmd/go/internal/cfg"
 	"cmd/go/internal/fsys"
+	"cmd/go/internal/isolatecfg"
 	"cmd/go/internal/load"
 	"cmd/go/internal/modload"
 	"cmd/go/internal/search"
@@ -59,7 +61,13 @@ in the last two paragraphs. If the named output is an existing directory or
 ends with a slash or backslash, then any resulting executables
 will be written to that directory.
 
-The experimental -isolate-dir flag selects a directory containing a package
+Functions marked //go:isolate in a host's import graph are experimental isolate
+entry points. An ordinary single-executable build generates typed invokers,
+function handles, and per-instance package state without directory configs.
+The function retains its Go signature; its SDK supplies the byte protocol.
+See doc/isolates/STATIC_PROGRAMS.md for the current subset and state selection.
+
+The legacy experimental -isolate-dir flag selects a directory containing a package
 main and an isolate.json file. It may be repeated to link several programs
 into one executable with the host package main. The build command generates
 the program lookup table; see doc/isolates/STATIC_PROGRAMS.md for its current
@@ -477,9 +485,6 @@ func runBuild(ctx context.Context, cmd *base.Command, args []string) {
 		runBuildIsolates(ctx, args)
 		return
 	}
-	if buildIsolateReport != "" {
-		base.Fatalf("-isolate-report requires at least one -isolate-dir")
-	}
 	moduleLoader := modload.NewLoader()
 	moduleLoader.InitWorkfile()
 	BuildInit(moduleLoader)
@@ -492,6 +497,40 @@ func runBuild(ctx context.Context, cmd *base.Command, args []string) {
 
 	pkgs := load.PackagesAndErrors(moduleLoader, ctx, load.PackageOpts{AutoVCS: true}, args)
 	load.CheckPackageErrors(pkgs)
+	functions, err := discoverIsolateFunctions(pkgs)
+	if err != nil {
+		base.Fatal(err)
+	}
+	if len(functions) != 0 && len(pkgs) == 1 && pkgs[0].Name == "main" {
+		if cfg.BuildBuildmode != "default" || cfg.BuildContext.Compiler != "gc" || cfg.BuildN || cfg.BuildCover {
+			base.Fatalf("go build with //go:isolate requires the default gc build mode without -n or -cover")
+		}
+		if !slices.Contains(cfg.BuildContext.BuildTags, "phase0_e4") {
+			cfg.BuildContext.BuildTags = append(cfg.BuildContext.BuildTags, "phase0_e4")
+			// Discovery first loaded the ordinary runtime. Reload source
+			// metadata with the native package-state probe enabled.
+			load.InvalidatePackageCache(moduleLoader)
+			pkgs = load.PackagesAndErrors(moduleLoader, ctx, load.PackageOpts{AutoVCS: true}, args)
+			load.CheckPackageErrors(pkgs)
+			functions, err = discoverIsolateFunctions(pkgs)
+			if err != nil {
+				base.Fatal(err)
+			}
+		}
+		var roots []*load.Package
+		var programs []isolatecfg.Program
+		for _, fn := range functions {
+			if !slices.Contains(roots, fn.Package) {
+				roots = append(roots, fn.Package)
+				programs = append(programs, isolatecfg.Program{Name: fn.Package.ImportPath, Dir: fn.Package.Dir})
+			}
+		}
+		buildStaticIsolates(ctx, moduleLoader, b, pkgs[0], programs, roots, functions)
+		return
+	}
+	if buildIsolateReport != "" {
+		base.Fatalf("-isolate-report requires at least one -isolate-dir or a //go:isolate function")
+	}
 
 	explicitO := len(cfg.BuildO) > 0
 

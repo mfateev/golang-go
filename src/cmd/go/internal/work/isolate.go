@@ -139,6 +139,47 @@ func runBuildIsolates(ctx context.Context, args []string) {
 		}
 		seenPath[p.ImportPath] = true
 	}
+	buildStaticIsolates(ctx, ld, b, host, programs, loaded, nil)
+}
+
+// buildStaticIsolates shares state selection and entry generation between
+// legacy directory programs and compiler-discovered function entries.
+func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, host *load.Package, programs []isolatecfg.Program, loaded []*load.Package, functions []isolateFunction) {
+	implicit := load.PackagesAndErrors(ld, ctx, load.PackageOpts{}, []string{"unsafe", "runtime", "internal/isolatebridge", "internal/isolateproto"})
+	load.CheckPackageErrors(implicit)
+	if len(functions) != 0 {
+		for _, p := range loaded {
+			source, err := isolateInvokerSource(p, functions)
+			if err != nil {
+				base.Fatal(err)
+			}
+			p.Internal.IsolateSource = source
+			for _, dep := range implicit {
+				if dep.ImportPath != "unsafe" && dep.ImportPath != "internal/isolatebridge" {
+					continue
+				}
+				if slices.Contains(p.Imports, dep.ImportPath) {
+					continue
+				}
+				p.Imports = append(p.Imports, dep.ImportPath)
+				p.Internal.RawImports = append(p.Internal.RawImports, dep.ImportPath)
+				p.Internal.Imports = append(p.Internal.Imports, dep)
+			}
+		}
+	}
+	// The Temporal dispatcher is entered from a host-created factory, so a
+	// workflow need not import it directly (a clock-only function is one such
+	// example). Include its decoding/encoding state in each function instance.
+	// This is the same trusted POC integration as the converter classification
+	// below; a general SDK support-package declaration is future work.
+	var support []*load.Package
+	if len(functions) != 0 {
+		for _, p := range load.PackageList([]*load.Package{host}) {
+			if p.ImportPath == "github.com/mfateev/sdk-go-poc/workflow" {
+				support = append(support, p)
+			}
+		}
+	}
 	// Application packages reached by a program own instance state. Only
 	// audited standard packages join that selection in this trusted POC.
 	programPaths := make([][]string, len(loaded))
@@ -153,25 +194,38 @@ func runBuildIsolates(ctx context.Context, args []string) {
 	// package and application packages remain selected. This is a provisional
 	// classification, not a complete state/effect audit of these dependencies.
 	processConverter := make(map[string]bool)
+	// Activities may live beside marked workflow functions. Their SDK imports
+	// reach host logging and worker services that must initialize only in the
+	// process. Keep this pinned SDK graph process-owned too; activity functions
+	// still run exclusively on the host in this trusted POC. Application and
+	// workflow-support packages are not part of that SDK dependency graph.
+	processActivity := make(map[string]bool)
 	for _, root := range loaded {
-		for _, p := range load.PackageList([]*load.Package{root}) {
-			if p.ImportPath == "go.temporal.io/sdk/converter" {
-				for _, dep := range load.PackageList([]*load.Package{p}) {
-					if !dep.Standard {
-						processConverter[dep.ImportPath] = true
-					}
+		for _, p := range load.PackageList(append([]*load.Package{root}, support...)) {
+			var processGraph map[string]bool
+			switch p.ImportPath {
+			case "go.temporal.io/sdk/converter":
+				processGraph = processConverter
+			case "go.temporal.io/sdk/activity":
+				processGraph = processActivity
+			default:
+				continue
+			}
+			for _, dep := range load.PackageList([]*load.Package{p}) {
+				if !dep.Standard {
+					processGraph[dep.ImportPath] = true
 				}
 			}
 		}
 	}
 	for i, root := range loaded {
-		for _, p := range load.PackageList([]*load.Package{root}) {
+		for _, p := range load.PackageList(append([]*load.Package{root}, support...)) {
 			if p.ImportPath == "" {
 				base.Fatalf("isolate %q has a dependency without an import path", programs[i].Name)
 			}
 			programReachable[i] = append(programReachable[i], p.ImportPath)
 			allReachable[p.ImportPath] = p
-			if processConverter[p.ImportPath] {
+			if processConverter[p.ImportPath] || processActivity[p.ImportPath] {
 				continue
 			}
 			if p.Standard {
@@ -200,12 +254,13 @@ func runBuildIsolates(ctx context.Context, args []string) {
 	slices.Sort(startupSkip)
 	forcedGcflags = append(forcedGcflags, "-d=isolatepackages="+strings.Join(selectedPaths, ":"))
 
-	implicit := load.PackagesAndErrors(ld, ctx, load.PackageOpts{}, []string{"unsafe", "runtime", "internal/isolatebridge", "internal/isolateproto"})
-	load.CheckPackageErrors(implicit)
-	imports := append([]*load.Package{host}, loaded...)
-	imports = append(imports, implicit...)
+	var imports []*load.Package
 	seenImports := make(map[string]bool, len(imports))
-	for _, p := range imports {
+	for _, p := range append(append([]*load.Package{host}, loaded...), implicit...) {
+		if seenImports[p.ImportPath] {
+			continue
+		}
+		imports = append(imports, p)
 		seenImports[p.ImportPath] = true
 	}
 	processPaths := make([]string, 0, len(processStd))
@@ -240,9 +295,16 @@ func runBuildIsolates(ctx context.Context, args []string) {
 	source.WriteString(")\n")
 	fmt.Fprintf(&source, "//go:linkname isolateHostMain %s.main\n", host.ImportPath)
 	source.WriteString("func isolateHostMain()\n")
-	for i, p := range loaded {
-		fmt.Fprintf(&source, "//go:linkname isolateProgramMain%d %s.main\n", i, p.ImportPath)
-		fmt.Fprintf(&source, "func isolateProgramMain%d()\n", i)
+	if len(functions) == 0 {
+		for i, p := range loaded {
+			fmt.Fprintf(&source, "//go:linkname isolateProgramMain%d %s.main\n", i, p.ImportPath)
+			fmt.Fprintf(&source, "func isolateProgramMain%d()\n", i)
+		}
+	} else {
+		for i, fn := range functions {
+			fmt.Fprintf(&source, "//go:linkname isolateFunctionValue%d %s.%s\nfunc isolateFunctionValue%d() any\n", i, fn.Package.ImportPath, fn.valueName(), i)
+			fmt.Fprintf(&source, "//go:linkname isolateFunctionInvoke%d %s.%s\nfunc isolateFunctionInvoke%d(decode, encode func(...isolatebridge.Value) error) error\n", i, fn.Package.ImportPath, fn.invokeName(), i)
+		}
 	}
 	descriptorIndex := make(map[string]int, len(selectedPaths))
 	for i, path := range selectedPaths {
@@ -260,8 +322,15 @@ func runBuildIsolates(ctx context.Context, args []string) {
 		source.WriteString("if err != nil { return nil, err }; return state.Run, nil\n}\n")
 	}
 	source.WriteString("func init() {\n")
-	for i, p := range programs {
-		fmt.Fprintf(&source, "isolatebridge.RegisterProgram(%s, isolatebridge.ProgramEntry{Main: isolateProgramMain%d, NewState: isolateProgramState%d})\n", strconv.Quote(p.Name), i, i)
+	if len(functions) == 0 {
+		for i, p := range programs {
+			fmt.Fprintf(&source, "isolatebridge.RegisterProgram(%s, isolatebridge.ProgramEntry{Main: isolateProgramMain%d, NewState: isolateProgramState%d})\n", strconv.Quote(p.Name), i, i)
+		}
+	} else {
+		for i, fn := range functions {
+			root := slices.Index(loaded, fn.Package)
+			fmt.Fprintf(&source, "isolatebridge.RegisterFunction(isolatebridge.FunctionEntry{Name:%q, Function:isolateFunctionValue%d(), Invoke:isolateFunctionInvoke%d, NewState:isolateProgramState%d})\n", fn.fullName(), i, i, root)
+		}
 	}
 	source.WriteString("}\nfunc main() { isolateHostMain() }\n")
 
@@ -329,10 +398,18 @@ func runBuildIsolates(ctx context.Context, args []string) {
 	b.Do(ctx, a)
 	if reportPath != "" {
 		report := isolateBuildReport{FormatVersion: 1}
-		for i, program := range programs {
-			paths := slices.Clone(programReachable[i])
-			slices.Sort(paths)
-			report.Programs = append(report.Programs, isolateReportProgram{Name: program.Name, Packages: paths})
+		if len(functions) == 0 {
+			for i, program := range programs {
+				paths := slices.Clone(programReachable[i])
+				slices.Sort(paths)
+				report.Programs = append(report.Programs, isolateReportProgram{Name: program.Name, Packages: paths})
+			}
+		} else {
+			for _, fn := range functions {
+				paths := slices.Clone(programReachable[slices.Index(loaded, fn.Package)])
+				slices.Sort(paths)
+				report.Programs = append(report.Programs, isolateReportProgram{Name: fn.fullName(), Packages: paths})
+			}
 		}
 		paths := make([]string, 0, len(allReachable))
 		for path := range allReachable {
@@ -342,6 +419,9 @@ func runBuildIsolates(ctx context.Context, args []string) {
 		for _, path := range paths {
 			p := allReachable[path]
 			classification := "reachable-application"
+			if processActivity[path] {
+				classification = "process-owned-activity-poc"
+			}
 			if processConverter[path] {
 				classification = "process-owned-converter-poc"
 			}

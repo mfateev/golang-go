@@ -131,12 +131,15 @@ cannot skip an unmet runtime gate.
   `internalbindings` and pins one SDK version. Establish a compatibility test
   matrix and either secure a supported extension point or maintain an
   isolated adapter with an explicit SDK upgrade gate.
-- Extend the POC's typed workflow helpers beyond zero, one, or two arguments
-  and route marked isolate functions through the ordinary worker registration
-  API without changing non-isolate workflow behavior. The POC moves
+- Extend the POC's `//go:isolate` entry generation to `go run`, `go install`,
+  and test binaries, trim dependency selection with finer function reachability,
+  and generalize the trusted SDK support-package classification. Marked
+  functions now have generated typed invokers for any argument count and use
+  the ordinary worker registration API; unmarked workflows retain the Go SDK
+  path. The POC moves
   protobuf-serialized `Payloads` across the byte boundary and uses Temporal's
   default converter inside the isolate for nil, byte, and ordinary JSON
-  values. Audit the provisional process-owned converter dependency graph,
+  values. Audit the provisional process-owned converter and host activity SDK graphs,
   including protobuf's lazy descriptor caches, before supporting protobuf
   message values. TODO: support the worker's configured custom converter, its
   payload codecs and serialization context, and validate boundary types and

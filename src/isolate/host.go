@@ -20,7 +20,7 @@ type Program struct {
 	entry isolatebridge.ProgramEntry
 }
 
-// Name returns the stable name from the program's isolate.json.
+// Name returns the stable configured program name or marked function name.
 func (p Program) Name() string { return p.name }
 
 // LookupProgram finds a program selected by go build -isolate-dir.

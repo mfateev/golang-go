@@ -1,7 +1,8 @@
 # Trusted Temporal steel thread
 
-This is the next implementation target. A worker built with this Go fork links
-ordinary `package main` workflow programs with `-isolate-dir`, runs each
+This plan describes the trusted POC and its remaining gates. A worker built
+with this Go fork links
+functions marked `//go:isolate` through an ordinary `go build`, runs each
 workflow execution in an isolate instance, and uses the Temporal Go SDK for
 polling, history replay, and command emission. The separate
 [`sdk-go-poc` repository](https://github.com/mfateev/sdk-go-poc/tree/task/modify-go-runtime-for-isolates)
@@ -37,7 +38,9 @@ decode arguments and encode the result. A small wire codec handles the
 isolate. This avoids a second gob serialization format. The supported payload
 encodings are `binary/null`, `binary/plain`, and `json/plain`; protobuf message
 encodings and external payload references fail with a workflow error. The
-converter's external dependency graph is provisionally process-owned. Its
+converter's external dependency graph is provisionally process-owned. The host
+activity SDK graph is also process-owned so workflows and activities can live
+in the same package; its services must only be called by host activities. Its
 mutable caches and effects, custom worker converters, payload codecs, and
 serialization context remain productization work.
 
@@ -95,9 +98,15 @@ version changes. The follow-on release gates are in
 ## Build shape
 
 Clone `golang-go` and `sdk-go-poc` as sibling directories. From `sdk-go-poc`,
-build the worker with `../golang-go/bin/go` and select each workflow directory
-using `-isolate-dir`. The worker binary shares one Go runtime while each
+build the worker with `../golang-go/bin/go build -o worker ./example/worker`.
+Workflow functions carry `//go:isolate`; the host imports them and uses the
+POC SDK's `worker.RegisterWorkflow` API. The build generates their handles and
+typed invokers. No workflow `main` or `isolate.json` is needed. Unmarked
+ordinary workflows are forwarded to the Temporal SDK, including their
+configured converters. The worker binary shares one Go runtime while each
 execution receives its own selected package state. The activity implementation
 remains host-side. Workflow code imports only the small
 `github.com/mfateev/sdk-go-poc/workflow` package and normal Go packages; it
-does not import the Temporal Go SDK.
+does not require a host-owned Temporal `workflow.Context`. State selection and
+initializer replay still operate at package level; finer function reachability
+and general framework support-package declarations remain TODO.

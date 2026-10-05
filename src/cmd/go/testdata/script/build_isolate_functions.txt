@@ -1,0 +1,130 @@
+# Marked functions are discovered by ordinary builds, without configs or flags.
+[short] skip
+go build -o host.exe ./host
+exec ./host.exe
+stdout 'ordinary before 42'
+stdout 'marked first:x:42'
+stdout 'marked second:y:42'
+stdout 'ordinary after 43'
+stdout 'signature preserved'
+
+# The cached build must retain generated invokers and state metadata.
+go build -o cached.exe ./host
+exec ./cached.exe
+stdout 'marked second:y:42'
+
+# Invalid directives fail during discovery, rather than silently running on host.
+! go build ./badgeneric
+stderr '//go:isolate requires a concrete, top-level function'
+! go build ./badvariadic
+stderr '//go:isolate does not support variadic arguments'
+! go build ./badplacement
+stderr '//go:isolate must immediately precede a function declaration'
+
+-- go.mod --
+module example.org/isolatefunctiontest
+
+go 1.26
+-- jobs/jobs.go --
+package jobs
+
+import (
+    "encoding/json"
+    "time"
+)
+
+var counter = 41
+
+type Request struct { Name string }
+type Response struct { Message string; Counter int }
+
+//go:isolate
+func Work(request Request, suffix string, delay time.Duration) (Response, error) {
+    data, err := json.Marshal(request)
+    if err != nil { return Response{}, err }
+    if err := json.Unmarshal(data, &request); err != nil { return Response{}, err }
+    counter++
+    return Response{request.Name + ":" + suffix, counter}, nil
+}
+
+//go:isolate
+func other() error { return nil }
+
+func PlainCounter() int { counter++; return counter }
+func Other() any { return other }
+-- host/main.go --
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "isolate"
+    "reflect"
+    "time"
+
+    "example.org/isolatefunctiontest/jobs"
+)
+
+func run(name, suffix string) {
+    handle, ok := isolate.LookupFunction(jobs.Work)
+    if !ok { panic("missing marked function") }
+    if handle.Name() != "example.org/isolatefunctiontest/jobs.Work" { panic("wrong function name") }
+    if handle.Signature() != reflect.TypeOf(jobs.Work) { panic("wrong signature") }
+    program := handle.Program(func() {
+        input, err := isolate.Call(1, nil)
+        if err != nil { panic(err) }
+        var args []json.RawMessage
+        if err := json.Unmarshal(input, &args); err != nil { panic(err) }
+        err = handle.Invoke(func(values ...isolate.Value) error {
+            if len(values) != len(args) { panic("wrong argument count") }
+            for i, value := range values {
+                if err := json.Unmarshal(args[i], value.Pointer); err != nil { return err }
+            }
+            return nil
+        }, func(values ...isolate.Value) error {
+            output, err := json.Marshal(values[0].Value)
+            if err != nil { return err }
+            _, err = isolate.Call(2, output)
+            return err
+        })
+        if err != nil { panic(err) }
+    })
+    instance, err := isolate.New(isolate.Config{Program: program})
+    if err != nil { panic(err) }
+    if err := instance.Start(); err != nil { panic(err) }
+    command := <-instance.Commands()
+    input, err := json.Marshal([]any{jobs.Request{Name: name}, suffix, time.Second})
+    if err != nil { panic(err) }
+    command.Reply(input, nil)
+    command = <-instance.Commands()
+    var result jobs.Response
+    if err := json.Unmarshal(command.Payload, &result); err != nil { panic(err) }
+    fmt.Printf("marked %s:%d\n", result.Message, result.Counter)
+    command.Reply(nil, nil)
+    if err := instance.Wait(); err != nil { panic(err) }
+}
+
+func main() {
+    if _, ok := isolate.LookupFunction(jobs.PlainCounter); ok { panic("unmarked function received isolate handle") }
+    if _, ok := isolate.LookupFunction(jobs.Other()); !ok { panic("private marked function not discovered") }
+    fmt.Println("ordinary before", jobs.PlainCounter())
+    run("first", "x")
+    run("second", "y")
+    fmt.Println("ordinary after", jobs.PlainCounter())
+    fmt.Println("signature preserved")
+}
+-- badgeneric/main.go --
+package main
+//go:isolate
+func Bad[T any](arg T) error { return nil }
+func main() {}
+-- badvariadic/main.go --
+package main
+//go:isolate
+func Bad(args ...string) error { return nil }
+func main() {}
+-- badplacement/main.go --
+package main
+//go:isolate
+var Bad = 1
+func main() {}
