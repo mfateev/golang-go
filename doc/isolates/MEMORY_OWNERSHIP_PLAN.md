@@ -716,3 +716,43 @@ Six strict replays retained 195 observations and SHA-256
 This resolves the observed message-state retention crossing. Full protobuf
 value operations, metadata graph access, reflected/indirect operations and
 whole-program enforcement remain open; feature 2 is not complete.
+
+## Native ownership checkpoint
+
+[Run 37373842063](https://github.com/mfateev/golang-go/actions/runs/37373842063)
+passed all four native Linux/macOS arm64/amd64 jobs. Its preserved revisions are
+Go `e0e131fb10e03b4e74c162ab486c36b50178d642`, SDK
+`a8a51e2f5b4d8655e4b31195274d7856a7da0155`, and samples
+`1e77ee7ed61514455a3382b0bbe0e9050468a214`. This validates the preceding string,
+boxing, accessor and canonical message-info changes. The earlier failure to
+acquire hosted runners did not recur in this run.
+
+## Read-only map borrowing in metadata services
+
+Runtime map lookups and iteration now use the same caller-owner query as
+compiler heap diagnostics. An audited metadata service can read its original
+instance's map, including in a nested scope. It cannot read another instance's
+map or mutate the borrowed map. Borrowing grants no permission to publish its
+references in a process cache. Ordinary process execution gains no borrowing
+privilege. Existing process-map compatibility in ordinary runtime reads remains
+separate from the stricter opt-in compiler diagnostic.
+
+Fast uint32/uint64/string deletion helpers now delegate the empty-map decision
+to `Map.Delete`, which checks write ownership first. Previously an empty map
+could return before the write check, and populated foreign maps could fail on
+the preliminary read check instead of the write check. Nil deletion retains its
+ordinary behavior.
+
+The regression matrix exercises host and two instance owners, ordinary and
+nested services, empty/small/large maps, fast integer/string and generic struct
+keys, successful and missing lookups, iteration, assignment, deletion, clearing,
+and compiler diagnostic checks. It first reproduced rejected caller-map reads
+and the deletion ordering gaps, then passed five repetitions after the fixes.
+Full bootstrap, four compiler scripts, short runtime/isolate/bridge/reflection/
+maps/compiler suites, full SDK and tracked sample suites passed. Five race and
+static-lock-ranking runs passed, including 15,360 cached instance evictions.
+The broader strict SDK driver passed at `GOMAXPROCS=1/2/8`, `GOGC=1`, and under
+race detection at `GOMAXPROCS=8`, `GOGC=1`. Six strict replays retained 195
+observations and the existing trace hash. Map cloning and publication of
+borrowed reference graphs still need their separate policies; feature 2 remains
+in progress.

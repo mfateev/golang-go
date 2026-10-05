@@ -9,6 +9,9 @@ import _ "unsafe" // for go:linkname
 //go:linkname isolateMapOwner runtime.isolateGetOwner
 func isolateMapOwner() uintptr
 
+//go:linkname isolateMetadataBorrowOwner runtime.isolateMetadataBorrowOwner
+func isolateMetadataBorrowOwner() uintptr
+
 //go:linkname isolateDeterministic runtime.isolateDeterministic
 func isolateDeterministic() bool
 
@@ -25,6 +28,9 @@ func (m *Map) checkIsolateWrite() {
 
 func (m *Map) checkIsolateRead() {
 	if m.owner != 0 && m.owner != isolateMapOwner() {
+		if m.owner == isolateMetadataBorrowOwner() {
+			return
+		}
 		panic("isolate: map read crosses owner boundary")
 	}
 }

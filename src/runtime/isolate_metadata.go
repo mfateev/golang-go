@@ -6,9 +6,24 @@ package runtime
 
 import (
 	"internal/abi"
+	"internal/runtime/atomic"
 	"internal/stringslite"
 	"unsafe"
 )
+
+// Audited services may inspect only their original caller's private data.
+// Sharing this query with collection helpers keeps their logical ownership
+// checks consistent with compiler heap diagnostics. It grants no writes or
+// permission to retain borrowed references in process caches.
+//
+//go:linkname isolateMetadataBorrowOwner
+func isolateMetadataBorrowOwner() uintptr {
+	gp := getg()
+	if gp.isolateMetadataDepth == 0 || gp.isolateGroup == nil {
+		return 0
+	}
+	return atomic.Loaduintptr(&gp.isolateGroup.alloc.cache.isolateOwner)
+}
 
 // Audited metadata builders publish immutable types into process registries.
 // This is not a general escape hatch for application state or converters.

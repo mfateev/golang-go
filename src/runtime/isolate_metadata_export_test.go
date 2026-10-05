@@ -44,6 +44,14 @@ func IsolateHeapReferenceForTest(dst, value unsafe.Pointer) {
 	isolateCheckHeapReference(dst, value)
 }
 
+func IsolateHeapMapForTest(value any, write bool) {
+	e := efaceOf(&value)
+	if e._type.Kind() != abi.Map {
+		panic("invalid heap map test argument")
+	}
+	isolateCheckHeapMap(e.data, write)
+}
+
 // Test-only provenance fixtures exercise array bounds and excluded mutable
 // cells without importing the external protobuf module into runtime tests.
 func IsolateMessageInfoLayoutForTest(p unsafe.Pointer, stride, readonly, count uintptr, roots []bool) {

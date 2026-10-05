@@ -307,6 +307,122 @@ func TestIsolateHeapSliceCopies(t *testing.T) {
 //go:noinline
 func isolateHeapMapFixture[K comparable, V any]() map[K]V { return make(map[K]V) }
 
+func TestIsolateMetadataMapBorrowing(t *testing.T) {
+	t.Run("uint32", func(t *testing.T) { testIsolateMetadataMapBorrowing(t, func(n int) uint32 { return uint32(n) }) })
+	t.Run("uint64", func(t *testing.T) { testIsolateMetadataMapBorrowing(t, func(n int) uint64 { return uint64(n) }) })
+	t.Run("string", func(t *testing.T) {
+		testIsolateMetadataMapBorrowing(t, func(n int) string { return string(rune('a' + n)) })
+	})
+	t.Run("struct", func(t *testing.T) {
+		testIsolateMetadataMapBorrowing(t, func(n int) [3]int { return [3]int{n, n + 1, n + 2} })
+	})
+}
+
+func testIsolateMetadataMapBorrowing[K comparable](t *testing.T, key func(int) K) {
+	groups := []unsafe.Pointer{runtime.IsolateMetadataGroupForTest(), runtime.IsolateMetadataGroupForTest()}
+	owners := []uintptr{nextAllocTestOwner(), nextAllocTestOwner()}
+	keys := make([]K, 41)
+	for i := range keys {
+		keys[i] = key(i)
+	}
+	run := func(current int, fn func()) {
+		if current == 0 {
+			runtime.IsolateMetadataRunForTest(nil, 0, fn)
+		} else {
+			runtime.IsolateMetadataRunForTest(groups[current-1], owners[current-1], fn)
+		}
+	}
+	for _, count := range []int{0, 1, 40} {
+		values := make([]map[K]int, 3)
+		for current := range values {
+			run(current, func() {
+				values[current] = isolateHeapMapFixture[K, int]()
+				for i := range count {
+					values[current][keys[i]] = i + 1
+				}
+			})
+		}
+		for current := range values {
+			for depth := range 3 {
+				run(current, func() {
+					check := func() {
+						for target, value := range values {
+							service := current != 0 && depth != 0
+							readAllowed := target == 0 || target == current
+							writeAllowed := !service && target == current || service && target == 0
+							checkOperation := func(name string, allowed bool, write bool, fn func()) {
+								defer func() {
+									got := recover()
+									want := "isolate: map read crosses owner boundary"
+									if write {
+										want = "isolate: map write crosses owner boundary"
+									}
+									if allowed && got == nil || !allowed && got == want {
+										return
+									}
+									// Test bookkeeping belongs to the process, even when a
+									// synthetic owner is active or a borrowed lookup fails.
+									runtime.IsolateMetadataRunForTest(nil, 0, func() {
+										t.Errorf("count=%d current=%d depth=%d target=%d operation=%s allowed=%v: %v", count, current, depth, target, name, allowed, got)
+									})
+								}()
+								fn()
+							}
+							// Ordinary runtime reads preserve process-map compatibility;
+							// the opt-in compiler diagnostic enforces the stricter policy.
+							diagnosticAllowed := !service && target == current || service && (target == 0 || target == current)
+							checkOperation("diagnostic read", diagnosticAllowed, false, func() { runtime.IsolateHeapMapForTest(value, false) })
+							checkOperation("lookup", readAllowed, false, func() {
+								got, ok := value[keys[0]]
+								if count == 0 && (got != 0 || ok) || count != 0 && (got != 1 || !ok) {
+									panic("incorrect map lookup")
+								}
+							})
+							checkOperation("missing", readAllowed, false, func() {
+								if _, ok := value[keys[40]]; ok {
+									panic("incorrect missing-key lookup")
+								}
+							})
+							checkOperation("range", readAllowed, false, func() {
+								n, sum := 0, 0
+								for _, v := range value {
+									n++
+									sum += v
+								}
+								if n != count || sum != count*(count+1)/2 {
+									panic("incorrect map iteration")
+								}
+							})
+							checkOperation("diagnostic write", writeAllowed, true, func() { runtime.IsolateHeapMapForTest(value, true) })
+							checkOperation("assign", writeAllowed, true, func() {
+								value[keys[40]] = 41
+								delete(value, keys[40])
+							})
+							checkOperation("delete", writeAllowed, true, func() { delete(value, keys[40]) })
+							if !writeAllowed {
+								checkOperation("clear", false, true, func() { clear(value) })
+							}
+						}
+					}
+					if depth == 0 {
+						check()
+					} else {
+						runtime.IsolateMetadataScopeForTest(func() {
+							if depth == 1 {
+								check()
+							} else {
+								runtime.IsolateMetadataScopeForTest(check)
+							}
+						})
+					}
+				})
+			}
+		}
+		runtime.KeepAlive(values)
+	}
+	runtime.KeepAlive(groups)
+}
+
 func TestIsolateHeapMapKeys(t *testing.T) {
 	type key struct{ Pointers [10000]*int }
 	groups := []unsafe.Pointer{runtime.IsolateMetadataGroupForTest(), runtime.IsolateMetadataGroupForTest()}

@@ -485,7 +485,7 @@ func runtime_mapdelete_fast32(typ *abi.MapType, m *Map, key uint32) {
 		race.WritePC(unsafe.Pointer(m), callerpc, pc)
 	}
 
-	if m == nil || m.Used() == 0 {
+	if m == nil {
 		return
 	}
 

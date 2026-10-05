@@ -7,7 +7,6 @@ package runtime
 import (
 	"internal/abi"
 	"internal/goarch"
-	"internal/runtime/atomic"
 	"internal/runtime/maps"
 	"unsafe"
 )
@@ -25,10 +24,10 @@ func isolateCheckHeapAccess(p unsafe.Pointer, size uintptr, write bool) {
 	gp := getg()
 	owner := gp.isolateOwner
 	var borrowed uintptr
-	if gp.isolateMetadataDepth != 0 && !write && gp.isolateGroup != nil {
+	if !write {
 		// Builders may inspect their caller's private arguments. They may not
 		// mutate them or read another instance's data under service privileges.
-		borrowed = atomic.Loaduintptr(&gp.isolateGroup.alloc.cache.isolateOwner)
+		borrowed = isolateMetadataBorrowOwner()
 	}
 	end := uintptr(p) + size - 1
 	if end < uintptr(p) {
@@ -87,9 +86,10 @@ func isolateCheckHeapMap(p unsafe.Pointer, write bool) {
 	if m.IsolateOwner() == gp.isolateOwner {
 		return
 	}
-	if !write && gp.isolateMetadataDepth != 0 && gp.isolateGroup != nil &&
-		m.IsolateOwner() == atomic.Loaduintptr(&gp.isolateGroup.alloc.cache.isolateOwner) {
-		return
+	if !write {
+		if borrowed := isolateMetadataBorrowOwner(); borrowed != 0 && m.IsolateOwner() == borrowed {
+			return
+		}
 	}
 	if write {
 		panic("isolate: map write crosses owner boundary")
