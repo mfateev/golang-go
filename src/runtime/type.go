@@ -506,6 +506,12 @@ var (
 // by type string; the sorting is done by the linker.
 // This slice is constructed as needed.
 func moduleTypelinks(md *moduledata) []*_type {
+	// Compiled type descriptors and their lazy lookup cache belong to the
+	// process, including when the first lookup originates inside an isolate.
+	gp := getg()
+	oldOwner := gp.isolateOwner
+	gp.isolateOwner = 0
+	defer func() { gp.isolateOwner = oldOwner }()
 	lock(&moduleToTypelinksLock)
 	if raceenabled {
 		raceacquire(unsafe.Pointer(&moduleToTypelinksLock))

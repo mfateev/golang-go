@@ -27,8 +27,12 @@ they never run isolate code themselves. A new factory instance is created per
 workflow execution, and replay reconstructs its isolate from the beginning.
 
 The isolate-side SDK owns stable `Call` operation numbers and wire encoding.
-Initially the workflow API carries byte slices and offers input, activity,
-timer, signal, and completion operations. Typed wrappers can be built above it.
+The workflow API offers input, activity, timer, signal, and completion
+operations. Generic ExecuteActivity[R](name, timeout, args...) and its async
+variant encode typed arguments and decode typed results using the default
+converter inside the isolate. Activities register native Go signatures on the
+host; zero and multiple arguments are supported. The copied-byte transport
+carries serialized Temporal Payloads, without sharing Go values.
 The bridge accepts byte handlers and typed workflow functions. The isolate
 adapter requires Temporal's default data converter on the worker and rejects
 custom converters when a workflow task starts. Typed handlers receive
@@ -115,3 +119,33 @@ remains host-side. Workflow code imports only the small
 does not require a host-owned Temporal `workflow.Context`. State selection and
 initializer replay still operate at package level; finer function reachability
 and general framework support-package declarations remain TODO.
+
+## Generic activity API (2026-10-05)
+
+`ExecuteActivity[R](name, timeout, args...)` returns `(R, error)` and
+`ExecuteActivityAsync[R]` returns `<-chan ActivityResult[R]`. The result type is
+explicit because Go cannot infer type parameters from assignment targets. The
+argument list can be empty or contain several values; error-only activities
+use `struct{}`. The default converter runs inside the isolate and serializes
+Temporal Payloads across the byte boundary. The host forwards those Payloads
+to ordinary activity signatures and returns result Payloads without decoding
+them into a byte slice. The original byte operation number remains reserved
+and supported by the bridge; byte API callers now specify `[[]byte]`.
+
+Tests cover struct results, multiple arguments, async integer results, zero
+arguments, error-only activities, malformed/wrong-type results, unsupported
+JSON/protobuf values, and activity errors. The SDK driver and four sample
+behavior/live paths passed. The typed activity workflow and GreetAll histories
+replayed in fresh processes at GOMAXPROCS 1, 2, and 8; HelloWorld,
+ExclusiveChoice, and SleepForDays also replayed. Ordinary PlainEcho completed
+on the same worker. Samples now register native string activities; earlier
+byte-activity histories need to be recorded again for these changed contracts.
+
+Reflection exposed lazy runtime type registries whose maps inherited the
+first calling isolate's owner. Type-offset registration and compiled typelink
+caching now allocate and mutate their process metadata under owner zero,
+restoring the caller's owner before returning. A race regression constructs
+new descriptors in several isolates and checks that subsequent user maps
+still reject another isolate's writes. General heap containment, metadata
+reclamation, custom converters, and complete compile-time type enforcement
+remain productization work.

@@ -752,6 +752,13 @@ func reflectlite_resolveTypeOff(rtype unsafe.Pointer, off int32) unsafe.Pointer 
 //
 //go:linkname reflect_addReflectOff reflect.addReflectOff
 func reflect_addReflectOff(ptr unsafe.Pointer) int32 {
+	// This registry contains immutable runtime type/name metadata shared by
+	// the process, even when reflection creates a descriptor inside an isolate.
+	// Its maps and growth allocations must use the runtime's process owner.
+	gp := getg()
+	oldOwner := gp.isolateOwner
+	gp.isolateOwner = 0
+	defer func() { gp.isolateOwner = oldOwner }()
 	reflectOffsLock()
 	if reflectOffs.m == nil {
 		reflectOffs.m = make(map[int32]unsafe.Pointer)
