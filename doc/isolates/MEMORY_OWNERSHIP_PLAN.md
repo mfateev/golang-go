@@ -234,3 +234,9 @@ separately tests application goroutine rejection. The allocation/metadata,
 determinism and cached-eviction race and static-lock-ranking gates passed five
 local repetitions after this fix. The SDK driver also passed at
 `GOMAXPROCS=1/2/8` with both default GC and `GOGC=1`.
+
+Goroutine entry classification subsequently stopped constructing a temporary
+`g` in `newproc`. ARM64 disassembly confirms its frame fell from 672 to 80 bytes;
+ordinary goroutine creation keeps its small frame even when no service is
+active. Cold GC/service rejection tests passed five race and lock-ranking
+repetitions, and finalizer/cleanup/goroutine/Goexit regressions passed.

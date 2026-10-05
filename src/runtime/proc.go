@@ -5422,7 +5422,7 @@ func newproc(fn *funcval) {
 	// system-goroutine classification used by newproc1: those workers never
 	// inherit the caller's isolate, while application goroutines must not
 	// escape the service scope.
-	if gp.isolateMetadataDepth != 0 && (fn == nil || !isSystemGoroutine(&g{startpc: fn.fn}, false)) {
+	if gp.isolateMetadataDepth != 0 && (fn == nil || !isSystemGoroutinePC(fn.fn, nil, false)) {
 		panic("isolate: metadata services cannot start goroutines")
 	}
 	pc := sys.GetCallerPC()

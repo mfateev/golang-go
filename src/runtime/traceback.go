@@ -1507,8 +1507,15 @@ func tracebackHexdump(stk stack, frame *stkframe, bad uintptr) {
 // system (that is, the finalizer goroutine) is considered a user
 // goroutine.
 func isSystemGoroutine(gp *g, fixed bool) bool {
+	return isSystemGoroutinePC(gp.startpc, gp, fixed)
+}
+
+// A nil gp classifies a not-yet-created goroutine, before a real g exists.
+// Cleanup callbacks cannot already be running on such a goroutine. Avoid
+// synthesizing a full g on newproc's stack merely to classify its entry PC.
+func isSystemGoroutinePC(startpc uintptr, gp *g, fixed bool) bool {
 	// Keep this in sync with internal/trace.IsSystemGoroutine.
-	f := findfunc(gp.startpc)
+	f := findfunc(startpc)
 	if !f.valid() {
 		return false
 	}
@@ -1533,7 +1540,7 @@ func isSystemGoroutine(gp *g, fixed bool) bool {
 			// always consider it a user goroutine.
 			return false
 		}
-		return !gp.runningCleanups.Load()
+		return gp == nil || !gp.runningCleanups.Load()
 	}
 	return stringslite.HasPrefix(funcname(f), "runtime.")
 }
