@@ -25,3 +25,6 @@ func isolateLeaveMetadata(uintptr)
 //
 //go:linkname isolatePublishType runtime.isolatePublishType
 func isolatePublishType(*abi.Type)
+
+//go:linkname isolateCopyMetadataString runtime.isolateCopyMetadataString
+func isolateCopyMetadataString(string) string

@@ -524,6 +524,10 @@ func buildssa(compiler ssa.Compiler, fn *ir.Func, worker int, isPgoHot bool) (*s
 		}
 	}
 
+	// Ownership instrumentation of closure loads can call the runtime and grow
+	// the stack. Result slots must already be initialized at those safe points.
+	s.zeroResults()
+
 	// Populate closure variables.
 	if fn.Needctxt() {
 		clo := s.entryNewValue0(ssaop.OpGetClosurePtr, s.f.Config.Types.BytePtr)
@@ -578,7 +582,6 @@ func buildssa(compiler ssa.Compiler, fn *ir.Func, worker int, isPgoHot bool) (*s
 	if s.instrumentEnterExit {
 		s.rtcall(ir.Syms.Racefuncenter, true, nil, s.newValue0(ssaop.OpGetCallerPC, types.Types[types.TUINTPTR]))
 	}
-	s.zeroResults()
 	s.paramsToHeap()
 	s.stmtList(fn.Body)
 
@@ -663,14 +666,18 @@ func (s *state) zeroResults() {
 			// by a Needzero annotation in plive.go:(*liveness).epilogue.
 			continue
 		}
-		// Zero the stack location containing f.
-		if typ := n.Type(); ssa.CanSSA(typ) {
+		// Initializing compiler-owned result slots must not insert any calls:
+		// other result slots are still uninitialized and always live to GC.
+		typ := n.Type()
+		if s.canSSA(n) {
 			s.assign(n, s.zeroVal(typ), false, 0)
 		} else {
 			if typ.HasPointers() || ssa.IsMergeCandidate(n) {
 				s.vars[memVar] = s.newValue1A(ssaop.OpVarDef, types.TypeMem, n, s.mem())
 			}
-			s.zero(n.Type(), s.decladdrs[n])
+			zero := s.newValue2I(ssaop.OpZero, types.TypeMem, typ.Size(), s.decladdrs[n], s.mem())
+			zero.Aux = typ
+			s.vars[memVar] = zero
 		}
 	}
 }

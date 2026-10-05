@@ -601,9 +601,9 @@ func textOffFor(t *abi.Type, off aTextOff) unsafe.Pointer {
 func (t *rtype) String() string {
 	s := t.nameOff(t.t.Str).Name()
 	if t.t.TFlag&abi.TFlagExtraStar != 0 {
-		return s[1:]
+		return isolateCopyMetadataString(s[1:])
 	}
-	return s
+	return isolateCopyMetadataString(s)
 }
 
 func (t *rtype) Size() uintptr { return t.t.Size() }
@@ -652,7 +652,7 @@ func (t *rtype) Method(i int) (m Method) {
 	}
 	p := methods[i]
 	pname := t.nameOff(p.Name)
-	m.Name = pname.Name()
+	m.Name = isolateCopyMetadataString(pname.Name())
 	fl := flag(Func)
 	mtyp := t.typeOff(p.Mtyp)
 	ft := (*funcType)(unsafe.Pointer(mtyp))
@@ -715,7 +715,7 @@ func (t *rtype) PkgPath() string {
 	if ut == nil {
 		return ""
 	}
-	return t.nameOff(ut.PkgPath).Name()
+	return isolateCopyMetadataString(t.nameOff(ut.PkgPath).Name())
 }
 
 func pkgPathFor(t *abi.Type) string {
@@ -1031,11 +1031,11 @@ func (t *interfaceType) Method(i int) (m Method) {
 	}
 	p := &t.Methods[i]
 	pname := t.nameOff(p.Name)
-	m.Name = pname.Name()
+	m.Name = isolateCopyMetadataString(pname.Name())
 	if !pname.IsExported() {
-		m.PkgPath = pkgPath(pname)
+		m.PkgPath = isolateCopyMetadataString(pkgPath(pname))
 		if m.PkgPath == "" {
-			m.PkgPath = t.PkgPath.Name()
+			m.PkgPath = isolateCopyMetadataString(t.PkgPath.Name())
 		}
 	}
 	m.Type = toType(t.typeOff(p.Typ))
@@ -1170,13 +1170,13 @@ func (t *structType) Field(i int) (f StructField) {
 	}
 	p := &t.Fields[i]
 	f.Type = toType(p.Typ)
-	f.Name = p.Name.Name()
+	f.Name = isolateCopyMetadataString(p.Name.Name())
 	f.Anonymous = p.Embedded()
 	if !p.Name.IsExported() {
-		f.PkgPath = t.PkgPath.Name()
+		f.PkgPath = isolateCopyMetadataString(t.PkgPath.Name())
 	}
 	if tag := p.Name.Tag(); tag != "" {
-		f.Tag = StructTag(tag)
+		f.Tag = StructTag(isolateCopyMetadataString(tag))
 	}
 	f.Offset = p.Offset
 

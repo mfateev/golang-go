@@ -307,3 +307,44 @@ func TestIsolateMetadataPanicOwnership(t *testing.T) {
 		}
 	}
 }
+
+func TestIsolateMetadataStringOwnership(t *testing.T) {
+	group := runtime.IsolateMetadataGroupForTest()
+	owner := nextAllocTestOwner()
+	name := strings.Repeat("MetadataField", 8)
+	tag := `json:"owned_field"`
+	path := "example.org/metadata/ownership"
+	typ := reflect.StructOf([]reflect.StructField{
+		{Name: name, Type: reflect.TypeFor[int](), Tag: reflect.StructTag(tag)},
+		{Name: "hidden", Type: reflect.TypeFor[int](), PkgPath: path},
+	})
+	hostDescription := typ.String()
+	// This must be heap-backed canonical metadata, not a linker-literal fixture.
+	if got, ok := runtime.IsolateAllocOriginForTest(unsafe.Pointer(unsafe.StringData(hostDescription))); !ok || got != 0 {
+		t.Fatal("description is not process heap metadata")
+	}
+	runtime.IsolateMetadataRunForTest(group, owner, func() {
+		description := typ.String()
+		field, hidden := typ.Field(0), typ.Field(1)
+		if description != hostDescription || field.Name != name || string(field.Tag) != tag || hidden.PkgPath != path {
+			t.Fatal("metadata string contents changed")
+		}
+		for label, value := range map[string]string{"description": description, "name": field.Name, "tag": string(field.Tag), "path": hidden.PkgPath} {
+			if got, ok := runtime.IsolateAllocOriginForTest(unsafe.Pointer(unsafe.StringData(value))); !ok || got != owner {
+				t.Errorf("%s owner=(%d,%v), want %d", label, got, ok, owner)
+			}
+		}
+		// Constructing another canonical type from copied strings must still make
+		// process metadata, then restore ownership for public accessor results.
+		again := reflect.StructOf([]reflect.StructField{{Name: field.Name, Type: typ}})
+		value := again.Field(0).Name
+		if got, ok := runtime.IsolateAllocOriginForTest(unsafe.Pointer(unsafe.StringData(value))); !ok || got != owner {
+			t.Error("builder changed the accessor owner")
+		}
+	})
+	if unsafe.StringData(typ.String()) != unsafe.StringData(hostDescription) {
+		t.Error("host accessor no longer uses canonical metadata storage")
+	}
+	runtime.KeepAlive(typ)
+	runtime.KeepAlive(group)
+}

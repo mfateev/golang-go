@@ -161,12 +161,11 @@ checks passed five race and static-lock-ranking repetitions. Pointer-bearing
 multi-result structures exposed an ABI spill-area overwrite; a local snapshot
 before inserted calls fixed the regression.
 
-The stricter SDK audit currently rejects the metadata workflow when it stores a
-dynamic `reflect.Type` returned by `ArrayOf` in a `StructField` (metadata workflow
-line 48). That canonical immutable object is process-owned, but positive sharing
-provenance is not implemented yet. Do not use level two for SDK builds until that
-audit is complete; do not bypass the check by treating all owner-zero heap data
-as immutable. The level-one SDK driver retains its passing behavior.
+The first stricter SDK audit rejected a dynamic `reflect.Type` returned by
+`ArrayOf` when stored in a `StructField`. The canonical-root policy and subsequent
+panic/entry fixes below resolve those observed failures. Native CI now uses level
+two for SDK application packages; the complete external dependency graph still
+requires its separate audit. Owner zero never grants blanket immutable sharing.
 
 ## Initial audit
 
@@ -434,3 +433,52 @@ The preceding canonical-root checkpoint also passed all four native jobs in
 [native run 37360385290](https://github.com/mfateev/golang-go/actions/runs/37360385290),
 Go `76997944b0a4a94a3b327ad685f70fdd58b3570b`, SDK `52210a4`, samples `1e77ee7`.
 That checkpoint predates the slice-copy and panic/entry changes above.
+
+## Reflection metadata strings
+
+Public reflection accessors copy process-heap strings into the calling instance:
+type descriptions, method/field names, package paths and struct tags. This permits
+ordinary application storage and use without approving the metadata object's
+entire reachable graph. Static strings and strings already owned by the caller
+retain their backing storage. Host callers and metadata builders retain the
+canonical process storage. Strings belonging to another instance are rejected.
+
+Repeated access to a dynamic description can therefore allocate a new string in
+the instance; the POC does not add an instance-local accessor cache. Canonical
+type identity and constructor caching remain unchanged. Field arrays, equality
+closures, lazy GC masks, protobuf handles and non-string service panics still
+require their separate policies.
+
+`TestIsolateMetadataStringOwnership` verifies backing owners and text for a
+dynamic type description, field name, tag and package path, then constructs
+another canonical type using the returned private name. The compiler script
+stores returned fields and descriptions in heap-backed application objects under
+level-two checks, covering the actual publication path.
+
+## GC safety of inserted entry checks
+
+Result slots in functions with defers are live to GC from function entry. The
+compiler now initializes these slots with direct SSA stores/zeroing before
+loading closure captures, and emits no ownership calls during initialization.
+An inserted call can grow the stack even when its argument is nil, so checking
+a zero store before finishing initialization is unsafe. Normal body stores
+retain their ownership checks.
+
+The SDK level-two driver reproduced an invalid pointer in `RunFunction` during
+stack growth. The same failure appears in the Linux arm64 and macOS arm64 logs
+of [native run 37364058144](https://github.com/mfateev/golang-go/actions/runs/37364058144).
+Those failures are compiler bugs, not container permission failures. The heap
+compiler regression now exercises multiple pointer-bearing result types,
+closure captures, defers, nested frames, stack reuse and concurrent GC.
+
+Reflection/entry validation: the full toolchain bootstrap and short runtime,
+isolate, bridge, reflection, compiler SSA/generation/typecheck suites passed.
+Marked/legacy function, metadata and heap compiler scripts passed. Five race
+and static-lock-ranking ownership runs passed, including 15,360 cached isolate
+evictions under race detection. The SDK full suite and level-two driver passed;
+the driver passed normally and under race detection at `GOMAXPROCS=1/2/8`,
+`GOGC=1`. Six level-two fresh-process history replays retained the same 195
+observations and SHA-256
+`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
+The prior native failures require a new run of the corrected source; local
+results do not establish the four-platform gate.

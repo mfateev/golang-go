@@ -66,6 +66,12 @@ stdout '^isolate: write to foreign heap$'
 
 # Level two also checks the references stored in an otherwise owned object.
 go build -gcflags=example.org/isolateheap=-d=isolateheap=2 -o publication.exe .
+env GOGC=1
+exec ./publication.exe entry-results
+stdout '^allowed$'
+env GOGC=
+exec ./publication.exe metadata-strings
+stdout '^allowed$'
 exec ./publication.exe metadata-panic
 stdout '^allowed$'
 exec ./publication.exe metadata
@@ -106,6 +112,7 @@ import (
     "fmt"
     "os"
     "reflect"
+    "runtime"
     "unsafe"
     "example.org/isolateheap/bridge"
 )
@@ -132,6 +139,8 @@ func allocate() *record { return &record{Data: [64]int{11}} }
 func allocateTypes() *[7]reflect.Type { return new([7]reflect.Type) }
 //go:noinline
 func allocatePanic() *any { return new(any) }
+//go:noinline
+func allocateFields() *[2]reflect.StructField { return new([2]reflect.StructField) }
 //go:noinline
 func allocatePointers(p *record, length int) []*record {
     result := make([]*record, length)
@@ -203,6 +212,33 @@ func moveHolder(dst, src *holder) { *dst = *src }
 //go:noinline
 func publishStatic(value *record) { published = value }
 
+// Result slots in a function with a defer are live to GC from function entry.
+// Nested frames and pointer-free stack contents exercise stack growth/reuse;
+// initialization must precede checks of captured values and must not emit calls.
+//go:noinline
+func resultClosure(value *record) func(int) (error, *record, []byte, string, any, [1]*record) {
+    return func(depth int) (err error, p *record, b []byte, s string, a any, array [1]*record) {
+        defer func() {
+            if err != nil || p != nil || b != nil || s != "" || a != nil || array[0] != nil {
+                panic("result initialization changed")
+            }
+        }()
+        if value.Data[0] != 11 { panic("closure argument changed") }
+        if depth > 0 { resultFrames(depth - 1, value) }
+        return
+    }
+}
+//go:noinline
+func resultFrames(depth int, value *record) {
+    var dirty [128]uintptr
+    for i := range dirty { dirty[i] = uintptr(i + 1) }
+    err, p, b, s, a, array := resultClosure(value)(depth)
+    if err != nil || p != nil || b != nil || s != "" || a != nil || array[0] != nil {
+        panic("result values changed")
+    }
+    runtime.KeepAlive(dirty)
+}
+
 func run(owner uintptr, fn func()) {
     group := newGroup()
     previousGroup := setGroup(group)
@@ -241,6 +277,35 @@ func main() {
         }
     }()
     switch os.Args[1] {
+    case "entry-results":
+        done := make(chan struct{})
+        gcStopped := make(chan struct{})
+        go func() {
+            defer close(gcStopped)
+            for {
+                select { case <-done: return; default: runtime.GC() }
+            }
+        }()
+        run(104, func() {
+            value := allocate()
+            for i := 0; i < 64; i++ { resultFrames(32, value) }
+        })
+        close(done)
+        <-gcStopped
+    case "metadata-strings":
+        run(104, func() {
+            typ := reflect.StructOf([]reflect.StructField{
+                {Name: "OwnedName", Type: reflect.TypeFor[int](), Tag: `json:"owned_name"`},
+                {Name: "hidden", Type: reflect.TypeFor[int](), PkgPath: "example.org/metadata/private"},
+            })
+            fields := allocateFields()
+            fields[0], fields[1] = typ.Field(0), typ.Field(1)
+            text := allocatePanic()
+            *text = typ.String()
+            if fields[0].Name != "OwnedName" || string(fields[0].Tag) != `json:"owned_name"` || fields[1].PkgPath != "example.org/metadata/private" || (*text).(string) == "" {
+                panic("metadata strings changed")
+            }
+        })
     case "metadata-panic":
         run(104, func() {
             payload := allocatePanic()

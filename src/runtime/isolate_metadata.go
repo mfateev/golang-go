@@ -149,3 +149,29 @@ func isolateCopyMetadataPanic(gp *g, owner uintptr) {
 	*(*string)(box) = clone
 	arg.data = box
 }
+
+// Reflection exposes names and tags as ordinary Go strings. Copy process-heap
+// backing storage into an instance without extending immutable sharing to a
+// type's entire metadata graph. Static strings and the caller's own strings
+// retain their storage. Builders and ordinary host callers remain owner zero.
+//
+//go:linkname isolateCopyMetadataString
+func isolateCopyMetadataString(message string) string {
+	owner := getg().isolateOwner
+	if owner == 0 {
+		return message
+	}
+	if len(message) == 0 {
+		return ""
+	}
+	origin, heap := isolateAllocOrigin(unsafe.Pointer(unsafe.StringData(message)))
+	if !heap || origin == owner {
+		return message
+	}
+	if origin != 0 {
+		panic("isolate: metadata string belongs to another instance")
+	}
+	clone, data := rawstring(len(message))
+	copy(data, message)
+	return clone
+}
