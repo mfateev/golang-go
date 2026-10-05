@@ -24,7 +24,8 @@ timer example and the SleepForDays signal path completed on a local server and
 replayed in fresh Linux arm64 processes at different GOMAXPROCS settings.
 Dispatcher stress and race tests passed. See
 [NATIVE_DETERMINISM_PLAN.md](./NATIVE_DETERMINISM_PLAN.md) for the contract and
-evidence. Native cross-architecture CI remains open. The runtime still uses
+evidence. Native Linux/macOS arm64/amd64 conformance and saved-history replay
+passed on 2026-10-05. The runtime still uses
 the ordinary shared Go heap; child failures, unreviewed runtime waits,
 process-owned state, and effects remain uncontained.
 
@@ -80,6 +81,13 @@ CI, documentation, and validation results must be checked in before beginning
 high-level feature **2 (memory ownership)**. These feature numbers refer to the
 list above, not to the milestone numbers below.
 
+Feature 1's local and native gates passed on 2026-10-05; its implementation,
+history fixture, sample fixes, and CI are checked in and pushed in all three
+repositories. See the native validation checkpoint in
+[Native isolate determinism](./NATIVE_DETERMINISM_PLAN.md). Feature 2 can now
+begin. The validated determinism contract still excludes the unsupported
+operations listed there.
+
 See [Native isolate determinism](./NATIVE_DETERMINISM_PLAN.md) for the supported
 operations and reproducibility contract. Unsupported map key kinds and
 machine-dependent effects require explicit restrictions rather than an implied
@@ -114,8 +122,8 @@ cannot skip an unmet runtime gate.
 - Define what counts as a Workflow Task failure versus a Workflow Execution
   failure. Temporal retries these differently; the bridge must preserve that
   distinction. See [Temporal's task model](https://docs.temporal.io/tasks).
-- Decide the initial native platform set from CI evidence. The macOS README
-  currently describes setup, but native macOS execution has not been verified.
+- Keep the initial native platform matrix (Linux/macOS arm64/amd64) green.
+  Its first conformance and saved-history replay run passed on 2026-10-05.
 
 ### 1. Exact suspension and deterministic execution
 

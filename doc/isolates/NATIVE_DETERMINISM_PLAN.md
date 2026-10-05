@@ -105,9 +105,10 @@ by the Temporal adapter.
   focused runtime regressions (including goroutine leak profiles), and static
   lock-ranking checks passed. SDK tests and all three sample behavior drivers
   passed. The dispatcher suite passed five repeated race runs.
-- Native cross-architecture replay and the remaining productization gates have
-  not been completed. Deterministic code must still follow Go synchronization
-  rules for shared values; the race detector's memory model is unchanged.
+- Native cross-architecture replay is now verified by the item 1 matrix below.
+  The remaining productization features are still open. Deterministic code
+  must follow Go synchronization rules for shared values; the race detector's
+  memory model is unchanged.
 
 ## Productization item 1
 
@@ -154,4 +155,29 @@ must pass old histories or introduce an explicit compatibility/version policy.
   still reports a vet error in an unrelated, untracked root `main.go`; that
   user file is excluded from commits. Native CI runs the full samples command
   from clean branch checkouts.
-- Native Linux/macOS arm64/amd64 jobs remain pending. Item 2 has not started.
+
+### Native validation and item 1 checkpoint
+
+[CI run 37271125389](https://github.com/mfateev/golang-go/actions/runs/37271125389)
+passed on every platform on 2026-10-05:
+
+| Platform | Runner | Result |
+|---|---|---|
+| Linux amd64 | ubuntu-24.04 | Passed |
+| Linux arm64 | ubuntu-24.04-arm | Passed |
+| macOS amd64 | macos-15-intel | Passed |
+| macOS arm64 | macos-15 | Passed |
+
+Each job rebuilt the fork, passed runtime/library and compiler conformance,
+repeated the dispatcher race tests, passed SDK and clean-checkout sample tests,
+and replayed the unchanged history at GOMAXPROCS 1/2/8 with normal/disabled
+optional CPU features. All 195 observations matched the same digest above.
+The negative history test also passed on each platform. Full logs and exact
+repository revisions are retained as CI artifacts.
+
+Verified source revisions: `golang-go` **0d8df0897c**,
+`sdk-go-poc` **82df3ea**, `samples-go-poc` **1e77ee7**. Item 1 is complete for
+the supported contract in this document. These commits and this validation
+checkpoint precede item 2 (memory ownership). Future runtime versions must
+pass this retained corpus; this does not claim compatibility with an untested
+compiler or runtime version.
