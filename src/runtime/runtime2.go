@@ -23,6 +23,7 @@ import (
 // semaphore waits, and permanent parks; their runtime cleanup still runs on
 // the resumed goroutine.
 type isolateRevocationGroup struct {
+	alloc          *isolateAllocHandle // GC-visible lifetime; registry keeps no group pointer.
 	admission      atomic.Uint64
 	live           atomic.Int32
 	running        atomic.Int32      // Goroutines associated with an M, including syscalls.
@@ -596,6 +597,7 @@ type g struct {
 	labels                unsafe.Pointer          // profiler labels
 	isolateE4Base         unsafe.Pointer          // tagged Phase 0 global-base experiment
 	isolateE4Bases        unsafe.Pointer          // tagged Phase 2B package-state table probe
+	isolateMetadataDepth  uint32                  // Audited process metadata service nesting; never inherited.
 	isolateOwner          uintptr                 // monotonic trusted instance ID for future heap ownership
 	isolateBoundary       unsafe.Pointer          // provisional host transport for Call
 	isolateGroup          *isolateRevocationGroup // Phase 2B live count and first-dispatch experiment

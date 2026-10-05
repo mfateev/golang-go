@@ -84,8 +84,10 @@ list above, not to the milestone numbers below.
 Feature 1's local and native gates passed on 2026-10-05; its implementation,
 history fixture, sample fixes, and CI are checked in and pushed in all three
 repositories. See the native validation checkpoint in
-[Native isolate determinism](./NATIVE_DETERMINISM_PLAN.md). Feature 2 can now
-begin. The validated determinism contract still excludes the unsupported
+[Native isolate determinism](./NATIVE_DETERMINISM_PLAN.md). Feature 2 is in progress. Per-instance allocator caches, homogeneous heap
+spans, trusted metadata scopes, and cache/eviction stress coverage are implemented.
+General cross-owner access/publication enforcement and broad package-state audits
+remain outstanding; see [Memory ownership](./MEMORY_OWNERSHIP_PLAN.md). The validated determinism contract still excludes the unsupported
 operations listed there.
 
 See [Native isolate determinism](./NATIVE_DETERMINISM_PLAN.md) for the supported

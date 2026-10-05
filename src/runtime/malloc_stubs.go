@@ -63,6 +63,9 @@ func mallocgcSlowPathStub(size uintptr, typ *_type, needzero bool, spc spanClass
 // WARNING: mallocStub does not do any work for sanitizers so callers need
 // to steer out of this codepath early if sanitizers are enabled.
 func mallocStub(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+	if isTiny_ && getg().isolateOwner != 0 {
+		return mallocgcSmallNoScanSC2(size, typ, needzero)
+	}
 	if doubleCheckMalloc {
 		if gcphase == _GCmarktermination {
 			throw("mallocgc called with gcphase == _GCmarktermination")
@@ -223,7 +226,7 @@ func smallStub(mp *m, size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	const spc = spanClass(sizeclass<<1) | spanClass(noscanint_)
 	span := c.alloc[spc]
 
@@ -234,6 +237,7 @@ func smallStub(mp *m, size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		if runtimeFreegcEnabled && c.hasReusableNoscan(spc) {
 			// We have a reusable object, use it.
 			x = mallocgcSmallNoscanReuse(c, span, spc, elemsize, needzero)
+			releaseIsolateAllocCache(c)
 			mp.mallocing = 0
 			releasem(mp)
 			if isSlowPath_ {
@@ -312,8 +316,9 @@ func smallStub(mp *m, size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 	// using the whole allocation slot.
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -395,7 +400,7 @@ func tinyStub(mp *m, size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 	// standalone escaping variables. On a json benchmark
 	// the allocator reduces number of allocations by ~12% and
 	// reduces heap size by ~20%.
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	off := c.tinyoffset
 	// Align tiny pointer for required (conservative) alignment.
 	if size&7 == 0 {
@@ -418,6 +423,7 @@ func tinyStub(mp *m, size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		x := unsafe.Pointer(c.tiny + off)
 		c.tinyoffset = off + size
 		c.tinyAllocs++
+		releaseIsolateAllocCache(c)
 		mp.mallocing = 0
 		releasem(mp)
 		const elemsize = 0
@@ -479,8 +485,9 @@ func tinyStub(mp *m, size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 	// using the whole allocation slot.
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 

@@ -14,7 +14,7 @@ const isolateRevokedBit = uint64(1) << 63
 // this first-dispatch experiment.
 func isolateFirstDispatchRevoked(gp *g) bool {
 	group := gp.isolateGroup
-	if group == nil || gp.isolateStarted {
+	if group == nil || gp.isolateStarted || gp.isolateMetadataDepth != 0 {
 		return false
 	}
 	for {
@@ -67,7 +67,7 @@ func (group *isolateRevocationGroup) wakeRevoked() {
 // and select paths use hard discard instead after cleaning their wait records.
 func isolateExitIfRevoked() {
 	group := getg().isolateGroup
-	if group != nil && group.admission.Load()&isolateRevokedBit != 0 {
+	if group != nil && getg().isolateMetadataDepth == 0 && group.admission.Load()&isolateRevokedBit != 0 {
 		Goexit()
 	}
 }
@@ -80,7 +80,7 @@ func isolateExitIfRevoked() {
 //go:linkname isolateDiscardIfRevoked
 func isolateDiscardIfRevoked() {
 	group := getg().isolateGroup
-	if group == nil || group.admission.Load()&isolateRevokedBit == 0 {
+	if group == nil || getg().isolateMetadataDepth != 0 || group.admission.Load()&isolateRevokedBit == 0 {
 		return
 	}
 	gp := getg()
@@ -110,6 +110,9 @@ func isolateDiscard0(gp *g) {
 //
 //go:linkname isolateExit
 func isolateExit(code int) {
+	if getg().isolateMetadataDepth != 0 {
+		panic("isolate: metadata services cannot exit an instance")
+	}
 	group := getg().isolateGroup
 	if group == nil {
 		panic("isolate: Exit without a runtime group")

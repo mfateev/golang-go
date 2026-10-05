@@ -74,11 +74,15 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/cpu-disabled.log"
             exit 1
           fi
-          if ! ./bin/go test -race isolate -run TestDeterministic -count=5 > "$POC_LOG_DIR/race.log" 2>&1; then
+          if ! ./bin/go test -race runtime isolate -run 'TestIsolateAlloc|TestIsolateMetadata|TestIsolateCachedEviction|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/race.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/race.log"
             exit 1
           fi
-          if ! ./bin/go test cmd/go -run 'TestScript/build_isolate_(functions|programs)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
+          if ! GOEXPERIMENT=staticlockranking ./bin/go test -short runtime isolate -run 'TestIsolateAlloc|TestIsolateMetadata|TestIsolateCachedEviction|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/lockranking.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/lockranking.log"
+            exit 1
+          fi
+          if ! ./bin/go test cmd/go -run 'TestScript/build_isolate_(functions|programs|metadata)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/compiler.log"
             exit 1
           fi
@@ -92,12 +96,26 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/sdk.log"
             exit 1
           fi
-          ../golang-go/bin/go build -o "$RUNNER_TEMP/isolate-driver" ./example/driver
+          if ! ../golang-go/bin/go build -o "$RUNNER_TEMP/isolate-driver" ./example/driver > "$POC_LOG_DIR/driver-build.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/driver-build.log"
+            exit 1
+          fi
           if ! "$RUNNER_TEMP/isolate-driver" > "$POC_LOG_DIR/driver.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/driver.log"
             exit 1
           fi
-          ../golang-go/bin/go build -o "$RUNNER_TEMP/isolate-replay" ./example/determinism/check
+          if ! ../golang-go/bin/go build -race -o "$RUNNER_TEMP/isolate-driver-race" ./example/driver > "$POC_LOG_DIR/driver-race-build.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/driver-race-build.log"
+            exit 1
+          fi
+          if ! "$RUNNER_TEMP/isolate-driver-race" > "$POC_LOG_DIR/driver-race.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/driver-race.log"
+            exit 1
+          fi
+          if ! ../golang-go/bin/go build -o "$RUNNER_TEMP/isolate-replay" ./example/determinism/check > "$POC_LOG_DIR/replay-build.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/replay-build.log"
+            exit 1
+          fi
           cd ../samples-go-poc
           if ! ../golang-go/bin/go test ./... > "$POC_LOG_DIR/samples.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/samples.log"

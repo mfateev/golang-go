@@ -433,6 +433,12 @@ func SetFinalizer(obj any, finalizer any) {
 	if isolateActive() {
 		panic("runtime.SetFinalizer is unavailable in an isolate")
 	}
+	setFinalizer(obj, finalizer, sys.GetCallerPC())
+}
+
+// setFinalizer is reserved for runtime lifetimes such as an owner cache handle.
+// Its public wrapper rejects application finalizers inside isolates.
+func setFinalizer(obj any, finalizer any, callerpc uintptr) {
 	e := efaceOf(&obj)
 	etyp := e._type
 	if etyp == nil {
@@ -536,7 +542,6 @@ okarg:
 	// make sure we have a finalizer goroutine
 	createfing()
 
-	callerpc := sys.GetCallerPC()
 	systemstack(func() {
 		if !addfinalizer(e.data, (*funcval)(f.data), nret, fint, ot) {
 			throw("runtime.SetFinalizer: finalizer already set")

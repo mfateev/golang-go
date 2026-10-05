@@ -11,6 +11,7 @@ import (
 )
 
 func mallocgcSmallScanNoHeaderSC1(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+
 	if doubleCheckMalloc {
 		if gcphase == _GCmarktermination {
 			throw("mallocgc called with gcphase == _GCmarktermination")
@@ -45,7 +46,7 @@ func mallocgcSmallScanNoHeaderSC1(size uintptr, typ *_type, needzero bool) unsaf
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	const spc = spanClass(sizeclass<<1) | spanClass(0)
 	span := c.alloc[spc]
 
@@ -149,8 +150,9 @@ func mallocgcSmallScanNoHeaderSC1(size uintptr, typ *_type, needzero bool) unsaf
 
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -164,6 +166,7 @@ func mallocgcSmallScanNoHeaderSC1(size uintptr, typ *_type, needzero bool) unsaf
 }
 
 func mallocgcSmallScanNoHeaderSC2(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+
 	if doubleCheckMalloc {
 		if gcphase == _GCmarktermination {
 			throw("mallocgc called with gcphase == _GCmarktermination")
@@ -198,7 +201,7 @@ func mallocgcSmallScanNoHeaderSC2(size uintptr, typ *_type, needzero bool) unsaf
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	const spc = spanClass(sizeclass<<1) | spanClass(0)
 	span := c.alloc[spc]
 
@@ -302,8 +305,9 @@ func mallocgcSmallScanNoHeaderSC2(size uintptr, typ *_type, needzero bool) unsaf
 
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -317,6 +321,7 @@ func mallocgcSmallScanNoHeaderSC2(size uintptr, typ *_type, needzero bool) unsaf
 }
 
 func mallocgcSmallScanNoHeaderSC3(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+
 	if doubleCheckMalloc {
 		if gcphase == _GCmarktermination {
 			throw("mallocgc called with gcphase == _GCmarktermination")
@@ -351,7 +356,7 @@ func mallocgcSmallScanNoHeaderSC3(size uintptr, typ *_type, needzero bool) unsaf
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	const spc = spanClass(sizeclass<<1) | spanClass(0)
 	span := c.alloc[spc]
 
@@ -455,8 +460,9 @@ func mallocgcSmallScanNoHeaderSC3(size uintptr, typ *_type, needzero bool) unsaf
 
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -470,6 +476,7 @@ func mallocgcSmallScanNoHeaderSC3(size uintptr, typ *_type, needzero bool) unsaf
 }
 
 func mallocgcSmallScanNoHeaderSC4(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+
 	if doubleCheckMalloc {
 		if gcphase == _GCmarktermination {
 			throw("mallocgc called with gcphase == _GCmarktermination")
@@ -504,7 +511,7 @@ func mallocgcSmallScanNoHeaderSC4(size uintptr, typ *_type, needzero bool) unsaf
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	const spc = spanClass(sizeclass<<1) | spanClass(0)
 	span := c.alloc[spc]
 
@@ -608,8 +615,9 @@ func mallocgcSmallScanNoHeaderSC4(size uintptr, typ *_type, needzero bool) unsaf
 
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -623,6 +631,7 @@ func mallocgcSmallScanNoHeaderSC4(size uintptr, typ *_type, needzero bool) unsaf
 }
 
 func mallocgcSmallScanNoHeaderSC5(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+
 	if doubleCheckMalloc {
 		if gcphase == _GCmarktermination {
 			throw("mallocgc called with gcphase == _GCmarktermination")
@@ -657,7 +666,7 @@ func mallocgcSmallScanNoHeaderSC5(size uintptr, typ *_type, needzero bool) unsaf
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	const spc = spanClass(sizeclass<<1) | spanClass(0)
 	span := c.alloc[spc]
 
@@ -761,8 +770,9 @@ func mallocgcSmallScanNoHeaderSC5(size uintptr, typ *_type, needzero bool) unsaf
 
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -776,6 +786,7 @@ func mallocgcSmallScanNoHeaderSC5(size uintptr, typ *_type, needzero bool) unsaf
 }
 
 func mallocgcSmallScanNoHeaderSC6(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+
 	if doubleCheckMalloc {
 		if gcphase == _GCmarktermination {
 			throw("mallocgc called with gcphase == _GCmarktermination")
@@ -810,7 +821,7 @@ func mallocgcSmallScanNoHeaderSC6(size uintptr, typ *_type, needzero bool) unsaf
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	const spc = spanClass(sizeclass<<1) | spanClass(0)
 	span := c.alloc[spc]
 
@@ -914,8 +925,9 @@ func mallocgcSmallScanNoHeaderSC6(size uintptr, typ *_type, needzero bool) unsaf
 
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -929,6 +941,7 @@ func mallocgcSmallScanNoHeaderSC6(size uintptr, typ *_type, needzero bool) unsaf
 }
 
 func mallocgcSmallScanNoHeaderSC7(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+
 	if doubleCheckMalloc {
 		if gcphase == _GCmarktermination {
 			throw("mallocgc called with gcphase == _GCmarktermination")
@@ -963,7 +976,7 @@ func mallocgcSmallScanNoHeaderSC7(size uintptr, typ *_type, needzero bool) unsaf
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	const spc = spanClass(sizeclass<<1) | spanClass(0)
 	span := c.alloc[spc]
 
@@ -1067,8 +1080,9 @@ func mallocgcSmallScanNoHeaderSC7(size uintptr, typ *_type, needzero bool) unsaf
 
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1082,6 +1096,9 @@ func mallocgcSmallScanNoHeaderSC7(size uintptr, typ *_type, needzero bool) unsaf
 }
 
 func mallocgcTinySC2(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+	if getg().isolateOwner != 0 {
+		return mallocgcSmallNoScanSC2(size, typ, needzero)
+	}
 	if doubleCheckMalloc {
 		if gcphase == _GCmarktermination {
 			throw("mallocgc called with gcphase == _GCmarktermination")
@@ -1110,7 +1127,7 @@ func mallocgcTinySC2(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 	}
 	mp.mallocing = 1
 
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	off := c.tinyoffset
 
 	if size&7 == 0 {
@@ -1128,6 +1145,7 @@ func mallocgcTinySC2(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		x := unsafe.Pointer(c.tiny + off)
 		c.tinyoffset = off + size
 		c.tinyAllocs++
+		releaseIsolateAllocCache(c)
 		mp.mallocing = 0
 		releasem(mp)
 		const elemsize = 0
@@ -1174,8 +1192,9 @@ func mallocgcTinySC2(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1189,6 +1208,7 @@ func mallocgcTinySC2(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 }
 
 func mallocgcSmallNoScanSC2(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+
 	if doubleCheckMalloc {
 		if gcphase == _GCmarktermination {
 			throw("mallocgc called with gcphase == _GCmarktermination")
@@ -1223,7 +1243,7 @@ func mallocgcSmallNoScanSC2(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	const spc = spanClass(sizeclass<<1) | spanClass(1)
 	span := c.alloc[spc]
 
@@ -1233,6 +1253,7 @@ func mallocgcSmallNoScanSC2(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	if runtimeFreegcEnabled && c.hasReusableNoscan(spc) {
 
 		x = mallocgcSmallNoscanReuse(c, span, spc, elemsize, needzero)
+		releaseIsolateAllocCache(c)
 		mp.mallocing = 0
 		releasem(mp)
 
@@ -1273,8 +1294,9 @@ func mallocgcSmallNoScanSC2(size uintptr, typ *_type, needzero bool) unsafe.Poin
 
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1288,6 +1310,7 @@ func mallocgcSmallNoScanSC2(size uintptr, typ *_type, needzero bool) unsafe.Poin
 }
 
 func mallocgcSmallNoScanSC3(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+
 	if doubleCheckMalloc {
 		if gcphase == _GCmarktermination {
 			throw("mallocgc called with gcphase == _GCmarktermination")
@@ -1322,7 +1345,7 @@ func mallocgcSmallNoScanSC3(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	const spc = spanClass(sizeclass<<1) | spanClass(1)
 	span := c.alloc[spc]
 
@@ -1332,6 +1355,7 @@ func mallocgcSmallNoScanSC3(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	if runtimeFreegcEnabled && c.hasReusableNoscan(spc) {
 
 		x = mallocgcSmallNoscanReuse(c, span, spc, elemsize, needzero)
+		releaseIsolateAllocCache(c)
 		mp.mallocing = 0
 		releasem(mp)
 
@@ -1372,8 +1396,9 @@ func mallocgcSmallNoScanSC3(size uintptr, typ *_type, needzero bool) unsafe.Poin
 
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1387,6 +1412,7 @@ func mallocgcSmallNoScanSC3(size uintptr, typ *_type, needzero bool) unsafe.Poin
 }
 
 func mallocgcSmallNoScanSC4(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+
 	if doubleCheckMalloc {
 		if gcphase == _GCmarktermination {
 			throw("mallocgc called with gcphase == _GCmarktermination")
@@ -1421,7 +1447,7 @@ func mallocgcSmallNoScanSC4(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	const spc = spanClass(sizeclass<<1) | spanClass(1)
 	span := c.alloc[spc]
 
@@ -1431,6 +1457,7 @@ func mallocgcSmallNoScanSC4(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	if runtimeFreegcEnabled && c.hasReusableNoscan(spc) {
 
 		x = mallocgcSmallNoscanReuse(c, span, spc, elemsize, needzero)
+		releaseIsolateAllocCache(c)
 		mp.mallocing = 0
 		releasem(mp)
 
@@ -1471,8 +1498,9 @@ func mallocgcSmallNoScanSC4(size uintptr, typ *_type, needzero bool) unsafe.Poin
 
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1486,6 +1514,7 @@ func mallocgcSmallNoScanSC4(size uintptr, typ *_type, needzero bool) unsafe.Poin
 }
 
 func mallocgcSmallNoScanSC5(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+
 	if doubleCheckMalloc {
 		if gcphase == _GCmarktermination {
 			throw("mallocgc called with gcphase == _GCmarktermination")
@@ -1520,7 +1549,7 @@ func mallocgcSmallNoScanSC5(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	const spc = spanClass(sizeclass<<1) | spanClass(1)
 	span := c.alloc[spc]
 
@@ -1530,6 +1559,7 @@ func mallocgcSmallNoScanSC5(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	if runtimeFreegcEnabled && c.hasReusableNoscan(spc) {
 
 		x = mallocgcSmallNoscanReuse(c, span, spc, elemsize, needzero)
+		releaseIsolateAllocCache(c)
 		mp.mallocing = 0
 		releasem(mp)
 
@@ -1570,8 +1600,9 @@ func mallocgcSmallNoScanSC5(size uintptr, typ *_type, needzero bool) unsafe.Poin
 
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1585,6 +1616,7 @@ func mallocgcSmallNoScanSC5(size uintptr, typ *_type, needzero bool) unsafe.Poin
 }
 
 func mallocgcSmallNoScanSC6(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+
 	if doubleCheckMalloc {
 		if gcphase == _GCmarktermination {
 			throw("mallocgc called with gcphase == _GCmarktermination")
@@ -1619,7 +1651,7 @@ func mallocgcSmallNoScanSC6(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	const spc = spanClass(sizeclass<<1) | spanClass(1)
 	span := c.alloc[spc]
 
@@ -1629,6 +1661,7 @@ func mallocgcSmallNoScanSC6(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	if runtimeFreegcEnabled && c.hasReusableNoscan(spc) {
 
 		x = mallocgcSmallNoscanReuse(c, span, spc, elemsize, needzero)
+		releaseIsolateAllocCache(c)
 		mp.mallocing = 0
 		releasem(mp)
 
@@ -1669,8 +1702,9 @@ func mallocgcSmallNoScanSC6(size uintptr, typ *_type, needzero bool) unsafe.Poin
 
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1684,6 +1718,7 @@ func mallocgcSmallNoScanSC6(size uintptr, typ *_type, needzero bool) unsafe.Poin
 }
 
 func mallocgcSmallNoScanSC7(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+
 	if doubleCheckMalloc {
 		if gcphase == _GCmarktermination {
 			throw("mallocgc called with gcphase == _GCmarktermination")
@@ -1718,7 +1753,7 @@ func mallocgcSmallNoScanSC7(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	const spc = spanClass(sizeclass<<1) | spanClass(1)
 	span := c.alloc[spc]
 
@@ -1728,6 +1763,7 @@ func mallocgcSmallNoScanSC7(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	if runtimeFreegcEnabled && c.hasReusableNoscan(spc) {
 
 		x = mallocgcSmallNoscanReuse(c, span, spc, elemsize, needzero)
+		releaseIsolateAllocCache(c)
 		mp.mallocing = 0
 		releasem(mp)
 
@@ -1768,8 +1804,9 @@ func mallocgcSmallNoScanSC7(size uintptr, typ *_type, needzero bool) unsafe.Poin
 
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1783,6 +1820,9 @@ func mallocgcSmallNoScanSC7(size uintptr, typ *_type, needzero bool) unsafe.Poin
 }
 
 func mallocgcTinySlowPath(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+	if getg().isolateOwner != 0 {
+		return mallocgcSmallNoScanSC2(size, typ, needzero)
+	}
 	if doubleCheckMalloc {
 		if gcphase == _GCmarktermination {
 			throw("mallocgc called with gcphase == _GCmarktermination")
@@ -1825,7 +1865,7 @@ func mallocgcTinySlowPath(size uintptr, typ *_type, needzero bool) unsafe.Pointe
 	}
 	mp.mallocing = 1
 
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	off := c.tinyoffset
 
 	if size&7 == 0 {
@@ -1843,6 +1883,7 @@ func mallocgcTinySlowPath(size uintptr, typ *_type, needzero bool) unsafe.Pointe
 		x := unsafe.Pointer(c.tiny + off)
 		c.tinyoffset = off + size
 		c.tinyAllocs++
+		releaseIsolateAllocCache(c)
 		mp.mallocing = 0
 		releasem(mp)
 		const elemsize = 0
@@ -1904,8 +1945,9 @@ func mallocgcTinySlowPath(size uintptr, typ *_type, needzero bool) unsafe.Pointe
 
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1967,7 +2009,7 @@ func mallocgcSmallScanSlowPath(size uintptr, typ *_type, needzero bool, spc span
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 
 	span := c.alloc[spc]
 
@@ -2075,8 +2117,9 @@ func mallocgcSmallScanSlowPath(size uintptr, typ *_type, needzero bool, spc span
 
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -2144,7 +2187,7 @@ func mallocgcSmallNoScanSlowPath(size uintptr, typ *_type, needzero bool, spc sp
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 
 	span := c.alloc[spc]
 
@@ -2154,6 +2197,7 @@ func mallocgcSmallNoScanSlowPath(size uintptr, typ *_type, needzero bool, spc sp
 	if runtimeFreegcEnabled && c.hasReusableNoscan(spc) {
 
 		x = mallocgcSmallNoscanReuse(c, span, spc, elemsize, needzero)
+		releaseIsolateAllocCache(c)
 		mp.mallocing = 0
 		releasem(mp)
 
@@ -2200,8 +2244,9 @@ func mallocgcSmallNoScanSlowPath(size uintptr, typ *_type, needzero bool, spc sp
 
 	c.nextSample -= int64(elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, elemsize)
+		profilealloc(mp, c, x, elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 

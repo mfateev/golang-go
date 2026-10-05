@@ -127,7 +127,7 @@ func isolateDispatchRelease(gp *g, requeue bool) {
 
 func isolateDispatchParkBegin(gp *g) bool {
 	group := gp.isolateGroup
-	if group == nil || !group.deterministic || gp.isolateRuntimeWait {
+	if group == nil || !group.deterministic || gp.isolateRuntimeWait || gp.isolateMetadataDepth != 0 {
 		return false
 	}
 	// Runtime-internal GC, stack, trace, and semaphore waits retain the token.

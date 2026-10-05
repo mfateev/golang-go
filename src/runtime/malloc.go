@@ -1151,7 +1151,7 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 				// Make sure secret allocations get zeroed by avoiding the tiny allocator
 				// See go.dev/issue/76356
 				gp := getg()
-				if size < maxTinySize && gp.secret == 0 {
+				if size < maxTinySize && gp.secret == 0 && gp.isolateOwner == 0 {
 					x, elemsize = mallocgcTiny(size, typ)
 				} else {
 					x, elemsize = mallocgcSmallNoscan(size, typ, needzero)
@@ -1210,6 +1210,9 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 }
 
 func mallocgcTiny(size uintptr, typ *_type) (unsafe.Pointer, uintptr) {
+	if getg().isolateOwner != 0 {
+		return mallocgcSmallNoscan(size, typ, true)
+	}
 	// Set mp.mallocing to keep from being preempted by GC.
 	mp := acquirem()
 	if doubleCheckMalloc {
@@ -1254,7 +1257,7 @@ func mallocgcTiny(size uintptr, typ *_type) (unsafe.Pointer, uintptr) {
 	// standalone escaping variables. On a json benchmark
 	// the allocator reduces number of allocations by ~12% and
 	// reduces heap size by ~20%.
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	off := c.tinyoffset
 	// Align tiny pointer for required (conservative) alignment.
 	if size&7 == 0 {
@@ -1277,6 +1280,7 @@ func mallocgcTiny(size uintptr, typ *_type) (unsafe.Pointer, uintptr) {
 		x := unsafe.Pointer(c.tiny + off)
 		c.tinyoffset = off + size
 		c.tinyAllocs++
+		releaseIsolateAllocCache(c)
 		mp.mallocing = 0
 		releasem(mp)
 		return x, 0
@@ -1336,8 +1340,9 @@ func mallocgcTiny(size uintptr, typ *_type) (unsafe.Pointer, uintptr) {
 	// using the whole allocation slot.
 	c.nextSample -= int64(span.elemsize)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, span.elemsize)
+		profilealloc(mp, c, x, span.elemsize)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1382,7 +1387,7 @@ func mallocgcSmallNoscan(size uintptr, typ *_type, needzero bool) (unsafe.Pointe
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	var sizeclass uint8
 	if size <= gc.SmallSizeMax-8 {
 		sizeclass = gc.SizeToSizeClass8[divRoundUp(size, gc.SmallSizeDiv)]
@@ -1397,6 +1402,7 @@ func mallocgcSmallNoscan(size uintptr, typ *_type, needzero bool) (unsafe.Pointe
 	if runtimeFreegcEnabled && c.hasReusableNoscan(spc) {
 		// We have a reusable object, use it.
 		x := mallocgcSmallNoscanReuse(c, span, spc, size, needzero)
+		releaseIsolateAllocCache(c)
 		mp.mallocing = 0
 		releasem(mp)
 		return x, size
@@ -1448,8 +1454,9 @@ func mallocgcSmallNoscan(size uintptr, typ *_type, needzero bool) (unsafe.Pointe
 	// using the whole allocation slot.
 	c.nextSample -= int64(size)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, size)
+		profilealloc(mp, c, x, size)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1530,7 +1537,7 @@ func mallocgcSmallScanNoHeader(size uintptr, typ *_type) (unsafe.Pointer, uintpt
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	sizeclass := gc.SizeToSizeClass8[divRoundUp(size, gc.SmallSizeDiv)]
 	spc := makeSpanClass(sizeclass, false)
 	span := c.alloc[spc]
@@ -1588,8 +1595,9 @@ func mallocgcSmallScanNoHeader(size uintptr, typ *_type) (unsafe.Pointer, uintpt
 	// using the whole allocation slot.
 	c.nextSample -= int64(size)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, size)
+		profilealloc(mp, c, x, size)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1621,7 +1629,7 @@ func mallocgcSmallScanHeader(size uintptr, typ *_type) (unsafe.Pointer, uintptr)
 	mp.mallocing = 1
 
 	checkGCTrigger := false
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	size += gc.MallocHeaderSize
 	var sizeclass uint8
 	if size <= gc.SmallSizeMax-8 {
@@ -1681,8 +1689,9 @@ func mallocgcSmallScanHeader(size uintptr, typ *_type) (unsafe.Pointer, uintptr)
 	// using the whole allocation slot.
 	c.nextSample -= int64(size)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, size)
+		profilealloc(mp, c, x, size)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1707,7 +1716,7 @@ func mallocgcLarge(size uintptr, typ *_type, needzero bool) (unsafe.Pointer, uin
 	}
 	mp.mallocing = 1
 
-	c := getMCache(mp)
+	c := acquireIsolateAllocCache(mp)
 	// For large allocations, keep track of zeroed state so that
 	// bulk zeroing can be happen later in a preemptible context.
 	span := c.allocLarge(size, typ == nil || !typ.Pointers())
@@ -1756,8 +1765,9 @@ func mallocgcLarge(size uintptr, typ *_type, needzero bool) (unsafe.Pointer, uin
 	// using the whole allocation slot.
 	c.nextSample -= int64(size)
 	if c.nextSample < 0 || MemProfileRate != c.memProfRate {
-		profilealloc(mp, x, size)
+		profilealloc(mp, c, x, size)
 	}
+	releaseIsolateAllocCache(c)
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1785,7 +1795,9 @@ func mallocgcLarge(size uintptr, typ *_type, needzero bool) (unsafe.Pointer, uin
 	mp = acquirem()
 	if typ != nil && typ.Pointers() {
 		// Finish storing the type information, now that we're certain the memory is zeroed.
-		getMCache(mp).scanAlloc += heapSetTypeLarge(uintptr(x), size, typ, span)
+		c := acquireIsolateAllocCache(mp)
+		c.scanAlloc += heapSetTypeLarge(uintptr(x), size, typ, span)
+		releaseIsolateAllocCache(c)
 	}
 	// Publish the object again, now with zeroed memory and initialized type information.
 	//
@@ -1916,6 +1928,13 @@ const (
 // or roughly when the liveness analysis of the compiler
 // would otherwise have determined ptr's object is reclaimable by the GC.
 func freegc(ptr unsafe.Pointer, size uintptr, noscan bool) bool {
+	if getg().isolateOwner != 0 {
+		return false
+	}
+	if span := spanOfHeap(uintptr(ptr)); span != nil && span.isolateAllocOwner != 0 {
+		return false
+	}
+
 	if !runtimeFreegcEnabled || !reusableSize(size) {
 		return false
 	}
@@ -2224,8 +2243,7 @@ func maps_newarray(typ *_type, n int) unsafe.Pointer {
 // records a memory profile sample.
 //
 // The caller must be non-preemptible and have a P.
-func profilealloc(mp *m, x unsafe.Pointer, size uintptr) {
-	c := getMCache(mp)
+func profilealloc(mp *m, c *mcache, x unsafe.Pointer, size uintptr) {
 	if c == nil {
 		throw("profilealloc called without a P or outside bootstrapping")
 	}

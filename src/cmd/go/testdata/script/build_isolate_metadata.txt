@@ -1,0 +1,84 @@
+# Metadata service privileges require audited module sources. None of these
+# fixtures downloads a module or compiles the fake implementation.
+[short] skip
+
+# Local replacements cannot impersonate an audited metadata implementation.
+! go build -mod=mod ./host
+stderr 'metadata services require google.golang.org/protobuf@v1.36.11 without a replacement, nested module, or vendored source'
+
+# Vendor metadata cannot claim privileges by changing only modules.txt.
+cp vendor.go.mod go.mod
+! go build -mod=vendor ./host
+stderr 'metadata services require google.golang.org/protobuf@v1.36.11 without a replacement, nested module, or vendored source'
+
+# An unaudited version also fails before compilation.
+cp old.go.mod go.mod
+cp old.modules.txt vendor/modules.txt
+! go build -mod=vendor ./host
+stderr 'metadata services require google.golang.org/protobuf@v1.36.11'
+
+# Nested modules cannot inherit the trusted namespace.
+cp nested.go.mod go.mod
+! go build -mod=mod ./host
+stderr 'metadata services require google.golang.org/protobuf@v1.36.11'
+
+-- go.mod --
+module example.org/isolateMetadata
+
+go 1.26
+
+require google.golang.org/protobuf v1.36.11
+replace google.golang.org/protobuf => ./fake
+-- vendor.go.mod --
+module example.org/isolateMetadata
+
+go 1.26
+
+require google.golang.org/protobuf v1.36.11
+-- old.go.mod --
+module example.org/isolateMetadata
+
+go 1.26
+
+require google.golang.org/protobuf v1.36.10
+-- nested.go.mod --
+module example.org/isolateMetadata
+
+go 1.26
+
+require google.golang.org/protobuf/probe v0.0.0
+replace google.golang.org/protobuf/probe => ./nested
+-- fake/go.mod --
+module google.golang.org/protobuf
+
+go 1.26
+-- fake/probe/probe.go --
+package probe
+func Value() int { return 1 }
+-- nested/go.mod --
+module google.golang.org/protobuf/probe
+
+go 1.26
+-- nested/probe.go --
+package probe
+func Value() int { return 1 }
+-- vendor/modules.txt --
+# google.golang.org/protobuf v1.36.11
+## explicit; go 1.26
+google.golang.org/protobuf/probe
+-- old.modules.txt --
+# google.golang.org/protobuf v1.36.10
+## explicit; go 1.26
+google.golang.org/protobuf/probe
+-- vendor/google.golang.org/protobuf/probe/probe.go --
+package probe
+func Value() int { return 1 }
+-- jobs/jobs.go --
+package jobs
+import "google.golang.org/protobuf/probe"
+//go:isolate
+func Work() (int, error) { return probe.Value(), nil }
+-- host/main.go --
+package main
+import "example.org/isolateMetadata/jobs"
+func main() { jobs.Work() }

@@ -43,25 +43,67 @@ does not include freezing cached heaps or implementing a separate collector.
   treat arbitrary process-owned heap objects as immutable merely because their
   owner is zero.
 
-## Process metadata services: design decision
+## Process metadata services: accepted policy
 
 Reflection and protobuf use process-wide type registries and lazy caches. Some
 hold locks shared with the host, and some allocate metadata on their first use.
 The POC currently classifies the default converter dependency graph as a process
 service; that broad exemption is insufficient for enforced heap ownership.
 
-The proposed policy is a small audited set of trusted metadata operations:
+The user approved a small audited set of trusted metadata operations:
 their shared caches and immutable metadata remain process-owned, decoded user
 values remain instance-owned, and revocation waits until a service has released
 its process locks before discarding the caller. Ordinary application locks and
-mutable objects remain private to an instance. This needs a decision because
-the earlier no-shared-locks rule must distinguish application locks from
-process metadata services. Alternatives are isolating the caches and rejecting
-APIs that require global type identity, or routing all shared service access
-through host operations.
+mutable objects remain private to an instance. The no-shared-locks rule applies to application locks.
+Shared service access is not an application privilege: only compiler/runtime-approved metadata operations
+may enter it. Arbitrary converters, callbacks, and mutable workflow values may
+not inherit the service scope. Service entry precedes acquiring any shared lock;
+exit follows releasing every such lock. Nested calls restore the original owner
+and a pending Kill takes effect at the outermost exit.
 
-Allocator separation can proceed independently of that policy. Do not enable
-unchecked shared mutable access while the service decision is pending.
+Keep the service manifest narrow and versioned. Auditing a new dependency version
+is required before granting its implementation service access. The broad POC
+converter dependency exemption must not be mistaken for a completed ownership
+audit.
+## Implemented foundation
+
+The runtime now gives each instance its own allocator cache. Generated fast paths
+and generic/race allocation paths select the same cache; small and large spans
+retain a single owner, including interior pointers. Instance tiny packing is
+disabled. GC sweep preparation, scan/allocation accounting, profiling and
+`ReadMemStats` include these caches. An acyclic finalizable handle retires an
+unreachable cache without freeing still-live heap objects.
+
+Metadata scopes preserve the instance's group, clock and process restrictions,
+while switching allocation and cache access to the process owner. They keep the
+dispatch token while waiting on shared service locks. Kill remains pending until
+outermost service exit, after lock cleanup; application continuation and defers
+then remain discarded. A scope cannot start goroutines, call the host or exit
+the process. Nested scopes and panic unwinding restore the original owner.
+
+### Initial service manifest
+
+- Reflection type construction: `PointerTo`, `ChanOf`, `FuncOf`, `SliceOf`,
+  `StructOf`, `ArrayOf` and `MapOf`. Canonical type descriptions are shared;
+  reflected values and caller callbacks keep instance ownership.
+- Protobuf `google.golang.org/protobuf@v1.36.11`: explicitly listed lazy
+  descriptor/index builders, message/extension type initialization, and registry
+  lookup/count methods. The exact function list is in
+  `src/cmd/internal/isolatepolicy/metadata.go`.
+- Generated Temporal descriptors: `go.temporal.io/api@v1.63.6`. Both modules
+  require these audited versions, without replacements, nested modules or vendored source.
+- Shared operations reject instance/stack receivers. Message initialization
+  accepts only the built-in protobuf descriptor implementation. Dynamic call
+  targets inside scopes must belong to the reviewed runtime/library or pinned
+  metadata namespaces; custom descriptor callbacks are rejected before execution.
+- Registry mutation/visitors, legacy descriptor implementations, lazy option
+  decoders and custom descriptors remain unsupported inside instances. Ordinary
+  host registration, visitors and custom descriptors retain their behavior.
+
+This foundation does **not** complete feature 2. General pointer access and
+publication checks, immutable metadata provenance, and replacement of the broad
+POC converter/activity package exemptions still require implementation and audit.
+An owner-zero allocation alone is not proof of safe immutable sharing.
 
 ## Initial audit
 
@@ -86,6 +128,12 @@ unchecked shared mutable access while the service decision is pending.
 1. Allocation tests cover tiny/small/large, scan/noscan, interior pointers,
    processor migration, concurrent instances, repeated GC, cache retirement,
    and allocation statistics. Test both generated fast paths and race paths.
+   `isolate.TestIsolateCachedEviction` additionally holds 1,024 real deterministic
+   instances suspended with 64 KiB of live heap state each, forces repeated GC,
+   resumes instances to verify state, then evicts them. Three batches check weak
+   instance references, zero live members, allocator-registry counts, goroutine
+   counts and live heap reclamation. Short runs use 256 instances/two batches.
+   Freed pages retained by Go for reuse are excluded from the live-object test.
 2. Negative tests reject host/instance and instance/instance crossings through
    every supported language and reflection operation. Positive tests retain
    immutable sharing and copied-byte transport.
@@ -96,3 +144,29 @@ unchecked shared mutable access while the service decision is pending.
    work must preserve the item 1 trace and ordinary Temporal workflows.
 5. Check in results and all three repositories; publish the supported service
    manifest and any remaining exclusions before claiming feature 2 complete.
+
+## Foundation validation (2026-10-05)
+
+- Full `src/all.bash`: `ALL TESTS PASSED` on Linux arm64. This run preceded
+  addition of the read-only allocator-count diagnostic and cached-eviction test;
+  those additions passed the focused normal/race/lock-ranking gates below.
+- Cached eviction: three batches of 1,024 suspended instances passed. Each
+  retained approximately 69.6 MB of live heap; after eviction, all weak instance
+  references cleared, allocator-cache count returned to zero, goroutine count
+  returned to two, and live heap returned to approximately 1.1 MB.
+- `go test -race runtime isolate -run
+  'TestIsolateAlloc|TestIsolateMetadata|TestIsolateCachedEviction|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates'
+  -count=5`: passed. The cached test alone created/evicted 15,360 instances.
+- The same filter with `GOEXPERIMENT=staticlockranking`, `-short -count=5`:
+  passed. Metadata revocation/suspension also passed ten ordinary repeated runs.
+- Marked/legacy compiler scripts and the new metadata-source policy script:
+  passed. SDK tests, tracked sample packages, and the real SDK dispatcher driver
+  passed; the dispatcher driver also passed under the race detector.
+- Six fresh-process saved-history replays (`GOMAXPROCS=1/2/8`, default/disabled
+  CPU features, host `TZ=America/Los_Angeles`): all retained 195 observations and
+  SHA-256 `12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
+
+The native CI workflow now includes cached eviction, allocation/metadata race
+and lock-ranking gates, rejected metadata-source builds, and the SDK driver
+under the race detector. Its next run validates this ownership foundation on
+Linux/macOS arm64/amd64; these results do not close the remaining feature 2 gates.

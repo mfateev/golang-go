@@ -2056,6 +2056,8 @@ func gcMark(startTime int64) {
 		c.scanAlloc = 0
 	}
 
+	isolateVisitAllocCaches(func(c *mcache) { c.scanAlloc = 0 })
+
 	// Reset controller state.
 	gcController.resetLive(work.bytesMarked)
 }
@@ -2085,6 +2087,10 @@ func gcSweep(mode gcMode) bool {
 	unlock(&mheap_.lock)
 
 	sweep.centralIndex.clear()
+
+	// Inactive instances cannot rely on acquirep to flush their caches.
+	// Flush them while stopped, before any allocation or sweeping restarts.
+	isolateVisitAllocCaches(func(c *mcache) { c.prepareForSweep() })
 
 	if !concurrentSweep || mode == gcForceBlockMode {
 		// Special case synchronous sweep.

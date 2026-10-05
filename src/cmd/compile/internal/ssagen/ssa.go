@@ -5139,6 +5139,18 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 			s.rtcall(ir.Syms.Racefuncexit, true, nil)
 		}
 
+		// An audited operation may invoke an interface method or closure from a
+		// supplied descriptor. Validate its target before granting caller code
+		// the service's process owner and revocation mask. Runtime internals have
+		// their own callback contracts and cannot grow stacks at these sites.
+		if base.Debug.IsolateMetadata != 0 && !base.Flag.CompilingRuntime && (k == callNormal || k == callTail) {
+			if closure != nil {
+				codeptr = s.rawLoad(types.Types[types.TUINTPTR], closure)
+			}
+			if codeptr != nil {
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckMetadataCall"), true, nil, codeptr)
+			}
+		}
 		callArgs = append(callArgs, s.mem())
 
 		// call target
@@ -5159,7 +5171,9 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 			// can't always figure that out currently, and it's
 			// critical that we not clobber any arguments already
 			// stored onto the stack.
-			codeptr = s.rawLoad(types.Types[types.TUINTPTR], closure)
+			if codeptr == nil {
+				codeptr = s.rawLoad(types.Types[types.TUINTPTR], closure)
+			}
 			aux := ssa.ClosureAuxCall(callABI.ABIAnalyzeTypes(ACArgs, ACResults))
 			call = s.newValue2A(ssaop.OpClosureLECall, aux.LateExpansionResultType(), aux, codeptr, closure)
 		case codeptr != nil:

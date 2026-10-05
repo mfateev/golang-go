@@ -20,6 +20,7 @@ import (
 	"cmd/go/internal/isolatecfg"
 	"cmd/go/internal/load"
 	"cmd/go/internal/modload"
+	"cmd/internal/isolatepolicy"
 )
 
 type isolateDirsFlag []string
@@ -239,6 +240,28 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 			selected[p.ImportPath] = true
 		}
 	}
+	// Compiler service scopes and their dynamic calls are valid only for the
+	// reviewed module versions. Replacements and nested modules cannot inherit
+	// a trusted namespace without a source audit.
+	metadataServices := false
+	for _, p := range allReachable {
+		for _, trusted := range []struct{ path, version string }{
+			{isolatepolicy.ProtobufModule, isolatepolicy.ProtobufVersion},
+			{isolatepolicy.TemporalAPIModule, isolatepolicy.TemporalAPIVersion},
+		} {
+			if p.ImportPath != trusted.path && !strings.HasPrefix(p.ImportPath, trusted.path+"/") {
+				continue
+			}
+			if p.Module == nil || p.Module.Path != trusted.path || p.Module.Version != trusted.version || p.Module.Replace != nil || cfg.BuildMod == "vendor" {
+				base.Fatalf("isolate: metadata services require %s@%s without a replacement, nested module, or vendored source; audit the service manifest before upgrading", trusted.path, trusted.version)
+			}
+			metadataServices = true
+		}
+	}
+	if metadataServices {
+		forcedGcflags = append(forcedGcflags, "-d=isolatemetadata=1")
+	}
+
 	hostReachable := make(map[string]bool)
 	for _, p := range load.PackageList([]*load.Package{host}) {
 		hostReachable[p.ImportPath] = true

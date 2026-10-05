@@ -28,6 +28,8 @@ func (t *rtype) Key() Type {
 // If the key type is not a valid map key type (that is, if it does
 // not implement Go's == operator), MapOf panics.
 func MapOf(key, elem Type) Type {
+	owner := isolateEnterMetadata()
+	defer isolateLeaveMetadata(owner)
 	ktyp := key.common()
 	etyp := elem.common()
 	key = toType(ktyp)

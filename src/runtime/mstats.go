@@ -638,6 +638,7 @@ func flushallmcaches() {
 	for i := 0; i < int(gomaxprocs); i++ {
 		flushmcache(i)
 	}
+	isolateVisitAllocCaches(func(c *mcache) { c.releaseAll() })
 }
 
 // sysMemStat represents a global system statistic that is managed atomically.

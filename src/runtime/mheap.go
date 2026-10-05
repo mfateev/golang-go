@@ -513,7 +513,7 @@ type mspan struct {
 	specials              *special      // linked list of special records sorted by offset.
 	userArenaChunkFree    addrRange     // interval for managing chunk allocation
 	largeType             *_type        // malloc header for large objects.
-	isolateAllocOwner     uintptr       // allocation-origin ID for a large object; zero is process context
+	isolateAllocOwner     uintptr       // homogeneous heap span owner; zero is process context
 }
 
 func (s *mspan) base() uintptr {

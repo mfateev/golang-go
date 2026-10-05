@@ -149,7 +149,7 @@ func semacquire1(addr *uint32, lifo bool, profile semaProfileFlags, skipframes i
 		throw("semacquire not on the G stack")
 	}
 	group := gp.isolateGroup
-	isolateWait := group != nil && isolateOwnedSemaWait(reason)
+	isolateWait := group != nil && gp.isolateMetadataDepth == 0 && isolateOwnedSemaWait(reason)
 	if isolateWait {
 		isolateDiscardIfRevoked()
 	}
@@ -703,6 +703,9 @@ func notifyListAdd(l *notifyList) uint32 {
 func notifyListWait(l *notifyList, t uint32) {
 	gp := getg()
 	group := gp.isolateGroup
+	if gp.isolateMetadataDepth != 0 {
+		group = nil // Process service waits must finish through ordinary notification.
+	}
 	if group != nil {
 		// Publish the list before registering the G. The revoker takes the
 		// group lock before l.lock and must never inspect a recycled sudog.

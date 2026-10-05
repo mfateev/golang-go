@@ -79,7 +79,7 @@ func (c *mcentral) fullSwept(sweepgen uint32) *spanSet {
 }
 
 // Allocate a span to use in an mcache.
-func (c *mcentral) cacheSpan() *mspan {
+func (c *mcentral) cacheSpan(owner uintptr) *mspan {
 	// Deduct credit for this span allocation and sweep if necessary.
 	spanBytes := uintptr(gc.SizeClassToNPages[c.spanclass.sizeclass()]) * pageSize
 	deductSweepCredit(spanBytes, 0)
@@ -111,8 +111,20 @@ func (c *mcentral) cacheSpan() *mspan {
 
 	// Try partial swept spans first.
 	sg := mheap_.sweepgen
-	if s = c.partialSwept(sg).pop(); s != nil {
-		goto havespan
+	// Bound the owner search by the initial queue length as well as the
+	// sweep budget. Otherwise pushing one foreign span back could repeatedly
+	// pop it forever. A foreign live span is never retagged.
+	swept := c.partialSwept(sg)
+	index := swept.index.load()
+	for remaining := min(uint32(spanBudget), index.tail()-index.head()); remaining != 0; remaining-- {
+		s = swept.pop()
+		if s == nil {
+			break
+		}
+		if s.isolateAllocOwner == owner || s.allocCount == 0 {
+			goto havespan
+		}
+		swept.push(s)
 	}
 
 	sl = sweep.active.begin()
@@ -126,8 +138,11 @@ func (c *mcentral) cacheSpan() *mspan {
 			if s, ok := sl.tryAcquire(s); ok {
 				// We got ownership of the span, so let's sweep it and use it.
 				s.sweep(true)
-				sweep.active.end(sl)
-				goto havespan
+				if s.isolateAllocOwner == owner || s.allocCount == 0 {
+					sweep.active.end(sl)
+					goto havespan
+				}
+				c.partialSwept(sg).push(s.mspan)
 			}
 			// We failed to get ownership of the span, which means it's being or
 			// has been swept by an asynchronous sweeper that just couldn't remove it
@@ -148,13 +163,20 @@ func (c *mcentral) cacheSpan() *mspan {
 				s.sweep(true)
 				// Check if there's any free space.
 				freeIndex := s.nextFreeIndex()
-				if freeIndex != s.nelems {
-					s.freeindex = freeIndex
+				// nextFreeIndex consumes the candidate in the cursor. This is
+				// only a probe: restore it even when another owner gets the
+				// span later, or that owner would permanently lose one slot.
+				s.freeindex = freeIndex
+				if freeIndex != s.nelems && (s.isolateAllocOwner == owner || s.allocCount == 0) {
 					sweep.active.end(sl)
 					goto havespan
 				}
 				// Add it to the swept list, because sweeping didn't give us any free space.
-				c.fullSwept(sg).push(s.mspan)
+				if freeIndex == s.nelems {
+					c.fullSwept(sg).push(s.mspan)
+				} else {
+					c.partialSwept(sg).push(s.mspan)
+				}
 			}
 			// See comment for partial unswept spans.
 		}
@@ -175,6 +197,12 @@ func (c *mcentral) cacheSpan() *mspan {
 
 	// At this point s is a span that should have free slots.
 havespan:
+	if s.isolateAllocOwner != owner {
+		if s.allocCount != 0 {
+			throw("isolate: retagging a live allocation span")
+		}
+		s.isolateAllocOwner = owner
+	}
 	if !traceDone {
 		trace := traceAcquire()
 		if trace.ok() {

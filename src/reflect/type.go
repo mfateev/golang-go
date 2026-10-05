@@ -1400,6 +1400,8 @@ func PointerTo(t Type) Type {
 }
 
 func (t *rtype) ptrTo() *abi.Type {
+	owner := isolateEnterMetadata()
+	defer isolateLeaveMetadata(owner)
 	at := &t.t
 	if at.PtrToThis != 0 {
 		return t.typeOff(at.PtrToThis)
@@ -1820,6 +1822,8 @@ var funcLookupCache struct {
 // The gc runtime imposes a limit of 64 kB on channel element types.
 // If t's size is equal to or exceeds this limit, ChanOf panics.
 func ChanOf(dir ChanDir, t Type) Type {
+	owner := isolateEnterMetadata()
+	defer isolateLeaveMetadata(owner)
 	typ := t.common()
 	t = toType(typ) // for #80332, ensure t's exported methods are not shadowed
 
@@ -1913,6 +1917,8 @@ func initFuncTypes(n int) Type {
 // panics if the in[len(in)-1] does not represent a slice and variadic is
 // true.
 func FuncOf(in, out []Type, variadic bool) Type {
+	owner := isolateEnterMetadata()
+	defer isolateLeaveMetadata(owner)
 	if variadic && (len(in) == 0 || toType(in[len(in)-1].common()).Kind() != Slice) {
 		panic("reflect.FuncOf: last arg of variadic func must be slice")
 	}
@@ -2128,6 +2134,8 @@ func emitGCMask(out []byte, base uintptr, typ *abi.Type, n uintptr) {
 // SliceOf returns the slice type with element type t.
 // For example, if t represents int, SliceOf(t) represents []int.
 func SliceOf(t Type) Type {
+	owner := isolateEnterMetadata()
+	defer isolateLeaveMetadata(owner)
 	typ := t.common()
 	t = toType(typ) // for #80332, ensure t's exported methods are not shadowed
 
@@ -2254,6 +2262,8 @@ func isPaddedField(t Type, i int) bool {
 // StructOf currently does not support promoted methods of embedded fields
 // and panics if passed unexported StructFields.
 func StructOf(fields []StructField) Type {
+	owner := isolateEnterMetadata()
+	defer isolateLeaveMetadata(owner)
 	var (
 		hash       = fnv1(0, []byte("struct {")...)
 		size       uintptr
@@ -2653,6 +2663,8 @@ func typeptrdata(t *abi.Type) uintptr {
 // If the resulting type would be larger than the available address space,
 // ArrayOf panics.
 func ArrayOf(length int, elem Type) Type {
+	owner := isolateEnterMetadata()
+	defer isolateLeaveMetadata(owner)
 	if length < 0 {
 		panic("reflect: negative length passed to ArrayOf")
 	}

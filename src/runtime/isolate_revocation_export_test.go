@@ -9,7 +9,7 @@ package runtime
 import "unsafe"
 
 func IsolateTestNewGroup() unsafe.Pointer {
-	return unsafe.Pointer(new(isolateRevocationGroup))
+	return isolateNewGroup()
 }
 
 func IsolateTestEnterGroup(p unsafe.Pointer) {

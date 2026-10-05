@@ -400,7 +400,7 @@ func forcegchelper() {
 //go:nosplit
 func Gosched() {
 	isolateDiscardIfRevoked()
-	getg().isolateExplicitYield = true
+	getg().isolateExplicitYield = getg().isolateMetadataDepth == 0
 	checkTimeouts()
 	mcall(gosched_m)
 	isolateDiscardIfRevoked()
@@ -4609,6 +4609,7 @@ func gdestroy(gp *g) {
 	gp.isolateE4Base = nil
 	gp.isolateE4Bases = nil
 	gp.isolateOwner = 0
+	gp.isolateMetadataDepth = 0
 	gp.isolateBoundary = nil
 	gp.timer = nil
 	gp.bubble = nil
@@ -5416,6 +5417,9 @@ func malg(stacksize int32) *g {
 // Put it on the queue of g's waiting to run.
 // The compiler turns a go statement into a call to this.
 func newproc(fn *funcval) {
+	if getg().isolateMetadataDepth != 0 {
+		panic("isolate: metadata services cannot start goroutines")
+	}
 	gp := getg()
 	pc := sys.GetCallerPC()
 	systemstack(func() {
@@ -5481,6 +5485,7 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	newg.isolateE4Base = nil
 	newg.isolateE4Bases = nil
 	newg.isolateOwner = 0
+	newg.isolateMetadataDepth = 0
 	newg.isolateBoundary = nil
 	newg.isolateGroup = nil
 	newg.isolateStarted = false

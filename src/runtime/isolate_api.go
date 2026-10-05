@@ -4,13 +4,19 @@
 
 package runtime
 
-import "unsafe"
+import (
+	"internal/runtime/atomic"
+	"unsafe"
+)
 
 // These hooks bind the provisional isolate host transport to one goroutine.
 // A child goroutine inherits the pointer in newproc.
 
 //go:linkname isolateGetBoundary
 func isolateGetBoundary() unsafe.Pointer {
+	if getg().isolateMetadataDepth != 0 {
+		panic("isolate: metadata services cannot call the host")
+	}
 	return getg().isolateBoundary
 }
 
@@ -25,7 +31,7 @@ func isolateSetBoundary(p unsafe.Pointer) unsafe.Pointer {
 //go:linkname isolateActive
 func isolateActive() bool {
 	gp := getg()
-	return gp.isolateOwner != 0 || gp.isolateBoundary != nil || gp.isolateE4Bases != nil
+	return gp.isolateOwner != 0 || gp.isolateGroup != nil || gp.isolateBoundary != nil || gp.isolateE4Bases != nil
 }
 
 func isolateRejectProcessAPI(name string) {
@@ -43,6 +49,17 @@ func isolateGetOwner() uintptr {
 func isolateSetOwner(id uintptr) uintptr {
 	gp := getg()
 	old := gp.isolateOwner
+	if id != 0 && gp.isolateGroup != nil {
+		cache := gp.isolateGroup.alloc.cache
+		lock(&cache.isolateLock)
+		if cache.isolateOwner != 0 && cache.isolateOwner != id {
+			throw("isolate: group allocation owner changed")
+		}
+		if cache.isolateOwner == 0 {
+			atomic.Storeuintptr(&cache.isolateOwner, id)
+		}
+		unlock(&cache.isolateLock)
+	}
 	gp.isolateOwner = id
 	return old
 }
@@ -52,7 +69,10 @@ func isolateSetOwner(id uintptr) uintptr {
 
 //go:linkname isolateNewGroup
 func isolateNewGroup() unsafe.Pointer {
-	return unsafe.Pointer(new(isolateRevocationGroup))
+	if isolateActive() {
+		panic("isolate: cannot create a runtime group inside an isolate")
+	}
+	return unsafe.Pointer(&isolateRevocationGroup{alloc: newIsolateAllocHandle()})
 }
 
 //go:linkname isolateEnableDeterminism
@@ -68,7 +88,7 @@ func isolateEnableDeterminism(p unsafe.Pointer) bool {
 //go:linkname isolateDeterministic
 func isolateDeterministic() bool {
 	group := getg().isolateGroup
-	return group != nil && group.deterministic
+	return group != nil && group.deterministic && getg().isolateMetadataDepth == 0
 }
 
 //go:linkname isolateSetClock
@@ -189,13 +209,24 @@ func isolateWakeRevoked(p unsafe.Pointer) {
 	(*isolateRevocationGroup)(p).wakeRevoked()
 }
 
-// isolateLargeAllocOrigin is a diagnostic for live large heap objects. Small
-// object spans still mix allocation contexts and cannot report an owner.
+// isolateLargeAllocOrigin preserves the original large-object diagnostic.
 //
 //go:linkname isolateLargeAllocOrigin
 func isolateLargeAllocOrigin(p unsafe.Pointer) (uintptr, bool) {
 	s := spanOfHeap(uintptr(p))
 	if s == nil || s.spanclass.sizeclass() != 0 {
+		return 0, false
+	}
+	return s.isolateAllocOwner, true
+}
+
+// isolateAllocOrigin reports an object's homogeneous span owner, including
+// small objects and interior pointers. Static and stack addresses are excluded.
+//
+//go:linkname isolateAllocOrigin
+func isolateAllocOrigin(p unsafe.Pointer) (uintptr, bool) {
+	s := spanOfHeap(uintptr(p))
+	if s == nil {
 		return 0, false
 	}
 	return s.isolateAllocOwner, true

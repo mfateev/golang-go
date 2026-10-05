@@ -98,6 +98,9 @@ func isolateE4PackageBase(table, key unsafe.Pointer) unsafe.Pointer {
 //go:linkname isolateE4GetPackageBase
 func isolateE4GetPackageBase(key unsafe.Pointer) unsafe.Pointer {
 	gp := getg()
+	if gp.isolateMetadataDepth != 0 {
+		return nil // Only audited metadata operations may select process state.
+	}
 	if gp.isolateE4Bases != nil {
 		return (*isolateE4PackageBases)(gp.isolateE4Bases).base(key)
 	}
@@ -107,6 +110,9 @@ func isolateE4GetPackageBase(key unsafe.Pointer) unsafe.Pointer {
 //go:linkname isolateE4GetImportedPackageBase
 func isolateE4GetImportedPackageBase(key unsafe.Pointer) unsafe.Pointer {
 	gp := getg()
+	if gp.isolateMetadataDepth != 0 {
+		return nil // Only audited metadata operations may select process state.
+	}
 	if gp.isolateE4Bases != nil {
 		return (*isolateE4PackageBases)(gp.isolateE4Bases).base(key)
 	}

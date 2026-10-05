@@ -313,3 +313,11 @@ func asanregisterglobals(unsafe.Pointer, uintptr)
 
 // used by testing.B.Loop
 func KeepAlive(interface{})
+
+func isolateEnterMetadata() uintptr
+func isolateLeaveMetadata(uintptr)
+func isolateRejectMetadataAPI(string)
+
+func isolateCheckMetadataReceiver(unsafe.Pointer)
+func isolateCheckMetadataDescriptor(any)
+func isolateCheckMetadataCall(uintptr)
