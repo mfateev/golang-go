@@ -5223,6 +5223,29 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapAccess"), true, nil, callArgs[0], callArgs[2], s.constBool(true))
 			case name == "memclrNoHeapPointers", name == "memclrHasPointers":
 				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapAccess"), true, nil, callArgs[0], callArgs[1], s.constBool(true))
+			case name == "convT", name == "convTnoptr":
+				// Boxing copies a typed value into a new allocation. Check its
+				// source and references before the uninstrumented helper copies it.
+				one := s.constInt(types.Types[types.TINT], 1)
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapSliceCopy"), true, nil,
+					callArgs[0], s.constNil(types.Types[types.TUNSAFEPTR]), one, callArgs[1], one, s.constBool(base.Debug.IsolateHeap > 1))
+			case name == "convTstring", name == "convTslice":
+				if base.Debug.IsolateHeap > 1 {
+					var ptr *ssa.Value
+					if name == "convTstring" {
+						text := callArgs[0]
+						ptr = s.newValue1(ssaop.OpStringPtr, s.f.Config.Types.BytePtr, text)
+						length := s.newValue1(ssaop.OpStringLen, types.Types[types.TINT], text)
+						// convTstring uses static zero storage for an empty string;
+						// its original backing pointer is never retained.
+						nonempty := s.newValue2(s.ssaOp(ir.ONE, types.Types[types.TINT]), types.Types[types.TBOOL], length, s.constInt(types.Types[types.TINT], 0))
+						ptr = s.ternary(nonempty, ptr, s.constNil(ptr.Type))
+					} else {
+						ptr = s.newValue1(ssaop.OpSlicePtr, s.f.Config.Types.BytePtr, callArgs[0])
+					}
+					s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapReference"), true, nil,
+						s.constNil(types.Types[types.TUNSAFEPTR]), ptr)
+				}
 			case name == "slicebytetostring", name == "slicebytetostringtmp":
 				first := 1
 				if name == "slicebytetostringtmp" {

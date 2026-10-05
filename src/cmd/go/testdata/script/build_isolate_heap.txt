@@ -182,6 +182,20 @@ exec ./publication.exe map-key-generic
 stdout '^isolate: foreign heap reference publication$'
 exec ./publication.exe map-key-own
 stdout '^allowed$'
+exec ./publication.exe box-string
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe box-slice
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe box-empty-slice
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe box-peer-string
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe box-instance-string
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe box-bulk
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe box-own
+stdout '^allowed$'
 
 # Race builds use ordinary calls rather than atomic intrinsics.
 [race] go build -race -gcflags=example.org/isolateheap=-d=isolateheap=2 -o atomic-race.exe .
@@ -195,6 +209,12 @@ stdout '^allowed$'
 # Level two can reject construction of the temporary operand array first.
 [race] stdout '^isolate: (read from foreign heap|foreign heap reference publication)$'
 [race] exec ./atomic-race.exe atomic-own
+[race] stdout '^allowed$'
+[race] exec ./atomic-race.exe box-string
+[race] stdout '^isolate: foreign heap reference publication$'
+[race] exec ./atomic-race.exe box-slice
+[race] stdout '^isolate: foreign heap reference publication$'
+[race] exec ./atomic-race.exe box-own
 [race] stdout '^allowed$'
 
 -- go.mod --
@@ -312,6 +332,12 @@ func stringByteAlias(a string) int { sum := 0; for _, b := range []byte(a) { sum
 //go:noinline
 func bytesStringAlias(a []byte, b string) bool { return string(a) == b }
 //go:noinline
+func boxString(a string) any { return a }
+//go:noinline
+func boxSlice(a []byte) any { return a }
+//go:noinline
+func boxHolder(a *holder) any { return *a }
+//go:noinline
 func mapMissing(m map[string]int) int { return m["missing"] }
 //go:noinline
 func mapLen(m map[string]int) int { return len(m) }
@@ -422,7 +448,8 @@ func main() {
     hostPointer := allocatePointer()
     atomic.StorePointer(hostPointer, unsafe.Pointer(host))
     var owned *record
-    run(101, func() { owned = allocate() })
+    var ownedText string
+    run(101, func() { owned = allocate(); ownedText = strings.Repeat("PrivateKey", 17) })
     defer func() {
         if got := recover(); got != nil {
             // The rejected operation must not have mutated the host object.
@@ -447,6 +474,32 @@ func main() {
         }
     }()
     switch os.Args[1] {
+    case "box-string": run(104, func() { p := allocatePanic(); *p = boxString(hostKey) })
+    case "box-slice": run(104, func() { p := allocatePanic(); *p = boxSlice(hostBytes) })
+    case "box-empty-slice": run(104, func() { p := allocatePanic(); *p = boxSlice(hostBytes[:0]) })
+    case "box-peer-string": run(104, func() { p := allocatePanic(); *p = boxString(ownedText) })
+    case "box-instance-string": _ = boxString(ownedText)
+    case "box-bulk": run(104, func() {
+        source := new(holder)
+        bridge.Set((*unsafe.Pointer)(unsafe.Pointer(&source.Pointer)), unsafe.Pointer(host))
+        p := allocatePanic(); *p = boxHolder(source)
+    })
+    case "box-own": run(104, func() {
+        text := strings.Repeat("Privateλ", 17)
+        bytes := []byte(text)
+        p := allocatePanic()
+        *p = boxString(text)
+        if (*p).(string) != text { panic("boxed string changed") }
+        *p = boxSlice(bytes)
+        if string((*p).([]byte)) != text { panic("boxed slice changed") }
+        *p = boxSlice(bytes[:0]); if len((*p).([]byte)) != 0 || (*p).([]byte) == nil { panic("boxed empty slice changed") }
+        *p = boxSlice(nil); if (*p).([]byte) != nil { panic("boxed nil slice changed") }
+        *p = boxString(hostKey[:0]); if (*p).(string) != "" { panic("empty string retained backing") }
+        source := &holder{Pointer: allocate(), Bytes: bytes, Any: allocate(), Function: capture(31)}
+        *p = boxHolder(source)
+        value := (*p).(holder)
+        if value.Pointer != source.Pointer || value.Function() != 31 || value.Bytes[0] != bytes[0] { panic("generic boxing changed") }
+    })
     case "string-equal": run(104, func() { stringEqual(hostKey, hostKey) })
     case "string-unequal": run(104, func() { stringUnequal(hostKey, hostKey) })
     case "string-order": run(104, func() { stringOrder(hostKey, "local") })

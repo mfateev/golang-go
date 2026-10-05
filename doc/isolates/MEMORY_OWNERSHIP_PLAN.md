@@ -613,3 +613,29 @@ replays retained 195 observations and SHA-256
 `12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
 Interface boxing, indirect library/assembly paths, recursive value graphs,
 stack/static policy and whole dependency enforcement remain incomplete.
+
+## Interface boxing helpers
+
+Typed `convT`/`convTnoptr` boxing validates the source range and, at level two,
+every reference copied into its new allocation. Specialized string and slice
+boxing validates the retained backing reference. Creating an owned interface
+box never authorizes retaining another owner's backing memory. Empty string
+boxing uses the runtime's static zero representation and retains no source
+pointer; nonnil empty slices still retain their backing allocation and require
+the same ownership check as nonempty slices.
+
+Separate strict reproducers previously retained host strings/slices in private
+interface boxes; both now reject publication before boxing. Compiler cases also
+cover peer/host crossings, nonnil empty slices, pointer-bearing generic values,
+owned/nil/empty inputs and ordinary/race paths. Source checks remain level one;
+reference checks remain level two. Recursive graphs, indirect helper calls,
+static/stack policy and dependency enforcement still need their separate audit.
+
+Validation: full bootstrap, four compiler scripts, short runtime/isolate/bridge,
+reflection/compiler SSA/generation/typecheck suites and SDK full suite passed.
+The strict SDK driver passed at `GOMAXPROCS=1/2/8`, `GOGC=1`, plus race detection
+at `GOMAXPROCS=8`, `GOGC=1`. Six fresh-process strict replays retained the same
+195 observations and trace hash. A broader audit build instrumenting the pinned
+converter, protobuf and Temporal API packages compiled successfully, then
+rejected `MessageInfo.Descriptor` reading shared metadata outside a service.
+That dependency audit failure is not an environment issue or a passed gate.
