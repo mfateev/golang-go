@@ -279,7 +279,14 @@ var reflectOffs struct {
 	// Canonical reflection descriptor roots share this registry's lock and
 	// process lifetime. The pointers also prevent address reuse from making an
 	// unrelated object inherit immutable provenance.
+	// Exact approved metadata roots, including reflection descriptors and
+	// canonical protobuf MessageInfo elements. Their reachable graphs are not
+	// approved implicitly.
 	isolateTypes map[unsafe.Pointer]uintptr
+	// Canonical protobuf MessageInfo arrays from the default process registry.
+	// Exact element roots are in isolateTypes; only their immutable exported
+	// prefixes may be read outside a metadata service.
+	isolateMessageInfoArrays map[unsafe.Pointer]isolateMessageInfoLayout
 }
 
 func reflectOffsLock() {

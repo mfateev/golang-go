@@ -266,6 +266,7 @@ var runtimeDecls = [...]struct {
 	{"isolateCheckHeapAccess", funcTag, 167},
 	{"isolateCheckHeapSelect", funcTag, 168},
 	{"isolateCheckHeapStrings", funcTag, 169},
+	{"isolatePublishMessageInfos", funcTag, 32},
 	{"isolateCheckHeapMap", funcTag, 170},
 	{"isolateCheckHeapMapKey", funcTag, 171},
 	{"isolateCheckHeapReference", funcTag, 172},

@@ -44,6 +44,25 @@ func IsolateHeapReferenceForTest(dst, value unsafe.Pointer) {
 	isolateCheckHeapReference(dst, value)
 }
 
+// Test-only provenance fixtures exercise array bounds and excluded mutable
+// cells without importing the external protobuf module into runtime tests.
+func IsolateMessageInfoLayoutForTest(p unsafe.Pointer, stride, readonly, count uintptr, roots []bool) {
+	reflectOffsLock()
+	defer reflectOffsUnlock()
+	if reflectOffs.isolateTypes == nil {
+		reflectOffs.isolateTypes = make(map[unsafe.Pointer]uintptr)
+	}
+	if reflectOffs.isolateMessageInfoArrays == nil {
+		reflectOffs.isolateMessageInfoArrays = make(map[unsafe.Pointer]isolateMessageInfoLayout)
+	}
+	reflectOffs.isolateMessageInfoArrays[p] = isolateMessageInfoLayout{stride, readonly, count}
+	for i, allowed := range roots {
+		if allowed {
+			reflectOffs.isolateTypes[add(p, uintptr(i)*stride)] = readonly
+		}
+	}
+}
+
 func IsolateHeapMoveForTest(dst, src any) {
 	d, s := efaceOf(&dst), efaceOf(&src)
 	if d._type != s._type || d._type.Kind() != abi.Pointer {

@@ -14,7 +14,8 @@ import (
 
 // isolateCheckHeapAccess is the initial compiler diagnostic for ordinary heap
 // loads, stores and typed moves. It grants read-only sharing only to explicitly
-// registered canonical reflection descriptor roots. Static/stack memory, pointer publication, runtime
+// registered canonical reflection descriptors and protobuf MessageInfo headers.
+// Static/stack memory, pointer publication, runtime
 // collection operations and trusted transport need their separate policies;
 // this diagnostic is not yet enabled by normal isolate builds.
 func isolateCheckHeapAccess(p unsafe.Pointer, size uintptr, write bool) {
@@ -217,8 +218,16 @@ func isolateReadOnlyTypeRange(p unsafe.Pointer, size uintptr) bool {
 	}
 	reflectOffsLock()
 	extent := reflectOffs.isolateTypes[unsafe.Pointer(base)]
+	messageInfos := reflectOffs.isolateMessageInfoArrays[unsafe.Pointer(base)]
 	reflectOffsUnlock()
 	offset := uintptr(p) - base
+	if messageInfos.stride != 0 {
+		if offset/messageInfos.stride >= messageInfos.count {
+			return false
+		}
+		within := offset % messageInfos.stride
+		return within < messageInfos.readonly && size <= messageInfos.readonly-within
+	}
 	return offset < extent && size <= extent-offset
 }
 

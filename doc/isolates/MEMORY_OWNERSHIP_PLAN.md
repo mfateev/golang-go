@@ -666,3 +666,53 @@ Six replays built with those same flags retained 195 observations and the same
 trace hash. Native CI uses these broader driver/replay flags. This gate covers
 the exercised JSON workflow values and metadata operations; it does not prove
 general protobuf message-value containment or a complete dependency audit.
+
+## Canonical protobuf message-info roots
+
+The pinned `filetype.Builder.Build` now publishes completed message-info tables
+only after successful registration through its default process registry. The
+compiler captures whether `TypeRegistry` was initially nil and invokes the
+trusted publisher immediately before the builder's final return. A panic during
+construction does not publish the table. Builders inside an instance are
+rejected before execution; custom registries gain no provenance. Static tables
+and interior slices retain their separate policies.
+
+The publisher verifies the exact pinned `impl.MessageInfo` layout, built-in
+process-owned message descriptors, and the owner of every reference in the
+table's headers. Canonical non-map-entry element pointers may be retained by
+private message state and application interfaces. Strong GC-visible provenance
+records have the same process lifetime as the default registry. No instance or
+decoded value is added to this registry.
+
+Ordinary reads are limited to the immutable exported prefix: `GoReflectType`,
+`Desc`, `Exporter` and `OneofWrappers`. Protobuf's contract forbids mutation of
+these fields after initialization. Private initialization locks/counters and
+coder/reflection caches are excluded; accessing them still requires their
+audited service policy. Per-element bounds prevent reads across that prefix,
+into later mutable cells, or past the table. Only exact populated element roots
+receive publication permission; empty map-entry slots and interior pointers do
+not. Instance writes remain rejected. The reachable descriptor/callback/cache
+graph receives no implicit approval.
+
+The SDK metadata workflow retains `Payload` and `Header` message types in
+heap-backed private slots, creates a private message through a retained type,
+and keeps its payload/map live during concurrent lazy-cache allocations with
+frequent GC. It also rejects private message-info receivers and type builders.
+`TestIsolateHeapMessageInfoPrefixes` exercises immutable/mutable read boundaries,
+later elements, writes, empty slots, interior publication and excluded trailing
+bytes using privileged test-only layout fixtures. Those fixtures do not grant
+production provenance to arbitrary objects. An initial fixture failure came
+from allocating `testing.T.Helper` state under a synthetic owner; the test now
+keeps testing bookkeeping under the process owner.
+
+Validation: full bootstrap, four compiler scripts, full short
+runtime/isolate/bridge/reflection/maps/compiler suites and five race and
+static-lock-ranking ownership runs passed. Race cached eviction created and
+evicted 15,360 instances. Full SDK and all tracked sample packages passed. The
+strict driver with converter/protobuf/API instrumentation passed at
+`GOMAXPROCS=1/2/8`, `GOGC=1`, and with race detection at `GOMAXPROCS=8`, `GOGC=1`.
+Six strict replays retained 195 observations and SHA-256
+`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
+This resolves the observed message-state retention crossing. Full protobuf
+value operations, metadata graph access, reflected/indirect operations and
+whole-program enforcement remain open; feature 2 is not complete.

@@ -26,6 +26,10 @@ func ScopeIsolateMetadata() {
 			continue
 		}
 		ir.CurFunc = fn
+		if pkg == isolatepolicy.ProtobufModule+"/internal/filetype" && name == "Builder.Build" {
+			publishIsolateMessageInfos(fn)
+			continue
+		}
 		if isolatepolicy.RejectedMetadata(pkg, name) {
 			fn.Pragma |= ir.Noinline
 			call := Call(fn.Pos(), LookupRuntime("isolateRejectMetadataAPI"), []ir.Node{ir.NewString(fn.Pos(), pkg+"."+name)}, false)
@@ -59,4 +63,26 @@ func ScopeIsolateMetadata() {
 			fn.Body = append(guards, fn.Body...)
 		}
 	}
+}
+
+// The pinned builder populates and registers MessageInfos before its final
+// return. Only its default process registry grants canonical sharing. Private
+// builders and custom registries do not gain this privilege.
+func publishIsolateMessageInfos(fn *ir.Func) {
+	fn.Pragma |= ir.Noinline
+	rcvr := fn.Type().Recv().Nname.(*ir.Name)
+	registry := Expr(ir.NewSelectorExpr(fn.Pos(), ir.ODOT, rcvr, types.LocalPkg.Lookup("TypeRegistry")))
+	global := TempAt(fn.Pos(), fn, types.Types[types.TBOOL])
+	assignment := Stmt(ir.NewAssignStmt(fn.Pos(), global, Expr(ir.NewBinaryExpr(fn.Pos(), ir.OEQ, registry, NodNil()))))
+	reject := Stmt(Call(fn.Pos(), LookupRuntime("isolateRejectMetadataAPI"), []ir.Node{ir.NewString(fn.Pos(), "google.golang.org/protobuf/internal/filetype.Builder.Build")}, false))
+	fn.Body.Prepend(reject, assignment)
+	last, ok := fn.Body[len(fn.Body)-1].(*ir.ReturnStmt)
+	if !ok {
+		base.FatalfAt(fn.Pos(), "isolate: audited protobuf builder must finish with a return")
+	}
+	infos := Expr(ir.NewSelectorExpr(fn.Pos(), ir.ODOT, rcvr, types.LocalPkg.Lookup("MessageInfos")))
+	value := AssignConv(infos, types.Types[types.TINTER], "canonical message infos")
+	publish := Stmt(Call(fn.Pos(), LookupRuntime("isolatePublishMessageInfos", types.Types[types.TINTER]), []ir.Node{value}, false))
+	conditional := ir.NewIfStmt(fn.Pos(), global, []ir.Node{publish}, nil)
+	last.PtrInit().Append(Stmt(conditional))
 }
