@@ -88,6 +88,12 @@ exec ./heap.exe atomic-pointer-load
 stdout '^isolate: read from foreign heap$'
 exec ./heap.exe atomic-pointer-store
 stdout '^isolate: write to foreign heap$'
+exec ./heap.exe map-key-string-insert
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe map-key-string-read
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe map-key-string-delete
+stdout '^isolate: read from foreign heap$'
 
 # Level two also checks the references stored in an otherwise owned object.
 go build -gcflags=example.org/isolateheap=-d=isolateheap=2 -o publication.exe .
@@ -140,6 +146,12 @@ exec ./publication.exe atomic-instance-publish
 stdout '^isolate: foreign heap reference publication$'
 exec ./publication.exe atomic-own
 stdout '^allowed$'
+exec ./publication.exe map-key-pointer
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe map-key-generic
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe map-key-own
+stdout '^allowed$'
 
 # Race builds use ordinary calls rather than atomic intrinsics.
 [race] go build -race -gcflags=example.org/isolateheap=-d=isolateheap=2 -o atomic-race.exe .
@@ -162,6 +174,7 @@ import (
     "reflect"
     "runtime"
     "sync/atomic"
+    "strings"
     "unsafe"
     "example.org/isolateheap/bridge"
 )
@@ -181,6 +194,7 @@ type holder struct {
     Function func() int
     Padding [64]int
 }
+type mapKey struct { A, B *record }
 var published *record
 //go:noinline
 func allocate() *record { return &record{Data: [64]int{11}} }
@@ -190,6 +204,10 @@ func allocateTypes() *[7]reflect.Type { return new([7]reflect.Type) }
 func allocatePanic() *any { return new(any) }
 //go:noinline
 func allocateFields() *[2]reflect.StructField { return new([2]reflect.StructField) }
+//go:noinline
+func allocateKey() *mapKey { return new(mapKey) }
+//go:noinline
+func assignGenericKey(m map[mapKey]int, p *mapKey) { m[*p] = 19 }
 //go:noinline
 func allocatePointers(p *record, length int) []*record {
     result := make([]*record, length)
@@ -335,6 +353,7 @@ func main() {
     hostBytes[0] = 7
     hostPointers := allocatePointers(host, 2)
     hostFunction := capture(11)
+    hostKey := strings.Repeat("ForeignKey", 17)
     hostAtomic := allocateAtomic()
     hostPointer := allocatePointer()
     atomic.StorePointer(hostPointer, unsafe.Pointer(host))
@@ -364,6 +383,54 @@ func main() {
         }
     }()
     switch os.Args[1] {
+    case "map-key-string-insert": run(104, func() {
+        m := make(map[string]int)
+        defer func() { if len(m) != 0 { panic("foreign string key inserted") } }()
+        m[hostKey] = 19
+    })
+    case "map-key-string-read": run(104, func() {
+        m := map[string]int{"local": 27}
+        _ = m[hostKey]
+    })
+    case "map-key-string-delete": run(104, func() {
+        m := map[string]int{"local": 27}
+        defer func() { if len(m) != 1 || m["local"] != 27 { panic("map changed before key validation") } }()
+        delete(m, hostKey)
+    })
+    case "map-key-pointer": run(104, func() {
+        m := make(map[*record]int)
+        defer func() { if len(m) != 0 { panic("foreign pointer key inserted") } }()
+        m[host] = 19
+    })
+    case "map-key-generic": run(104, func() {
+        m := make(map[mapKey]int)
+        defer func() { if len(m) != 0 { panic("foreign generic key inserted") } }()
+        key := allocateKey()
+        bridge.Set((*unsafe.Pointer)(unsafe.Pointer(&key.A)), unsafe.Pointer(host))
+        assignGenericKey(m, key)
+    })
+    case "map-key-own": run(104, func() {
+        value := allocate()
+        pointers := make(map[*record]int)
+        pointers[value] = 19
+        if pointers[value] != 19 { panic("owned pointer key changed") }
+        delete(pointers, value)
+        generic := make(map[mapKey]int)
+        key := allocateKey()
+        key.A, key.B = value, value
+        assignGenericKey(generic, key)
+        if generic[*key] != 19 { panic("owned generic key changed") }
+        delete(generic, *key)
+        text := strings.Repeat("PrivateKey", 17)
+        texts := make(map[string]int)
+        texts[text] = 27
+        if texts[text] != 27 { panic("owned string key changed") }
+        delete(texts, text)
+        canonical := reflect.ArrayOf(31, reflect.TypeFor[int]())
+        types := make(map[reflect.Type]int)
+        types[canonical] = 39
+        if types[canonical] != 39 { panic("canonical type key changed") }
+    })
     case "atomic-load": run(104, func() { atomic.LoadInt64(atomicAddress(host)) })
     case "atomic-store": run(104, func() { atomic.StoreInt64(atomicAddress(host), 19) })
     case "atomic-add": run(104, func() { atomic.AddInt64(atomicAddress(host), 19) })

@@ -511,3 +511,42 @@ detection. The SDK level-two driver passed at `GOMAXPROCS=1/2/8`, `GOGC=1`,
 and under race detection at `GOMAXPROCS=8`, `GOGC=1`. The full SDK suite and
 all tracked sample packages passed. These local checks do not establish the
 complete memory-ownership or native platform gates.
+
+## Map helper keys
+
+The compiler now validates keys at the map-helper boundary as well as the map
+itself. Fast string lookup, assignment and deletion validate the backing bytes
+before hashing. Level-two pointer and string assignment paths validate the
+reference copied into the map. Generic helpers validate the complete inline key
+range, then assignment scans its GC bitmap for every copied reference.
+
+Every copied reference uses the map header's owner. Key slots may live in a
+different allocation and large keys are indirect; adding a key-field offset to
+the header would inspect unrelated memory. Runtime tests cover the process and
+two instances, a 10,000-pointer key with a foreign last reference, and preventing
+a metadata service from retaining a borrowed private key in its process map.
+The map/key fixtures are forced to the heap so stack exclusions cannot hide a
+missing check. Compiler cases verify rejection before insertion, permitted owned
+keys and the existing canonical-type sharing policy.
+
+This fixes an observed publication of a host-owned pointer through an instance
+map key. Recursive hashing/equality, references inside interface boxes and
+uninstrumented library map operations still need their own coverage. The
+diagnostic remains opt-in; these checks do not complete feature 2.
+
+Map-key validation: toolchain bootstrap, full short runtime/isolate/bridge,
+reflection/maps and compiler SSA/generation/typecheck suites passed. Marked,
+legacy, metadata and heap compiler scripts passed. Five runtime ownership and
+metadata repetitions passed under both race detection and static lock ranking.
+The SDK full suite passed; its level-two driver passed normally at
+`GOMAXPROCS=1/2/8`, `GOGC=1` and under race detection at `GOMAXPROCS=8`, `GOGC=1`.
+Six level-two fresh-process replays retained 195 observations and SHA-256
+`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
+
+The preceding reflection/entry fix, Go `326c773270`, passed Linux arm64/amd64
+and macOS arm64 in
+[native run 37365715782](https://github.com/mfateev/golang-go/actions/runs/37365715782).
+Its macOS Intel job never acquired a hosted runner and was cancelled by GitHub;
+no matrix entry was removed. It therefore does not establish the four-platform
+gate. The later atomic revision has a separate native run; map-key changes need
+their own complete matrix results.

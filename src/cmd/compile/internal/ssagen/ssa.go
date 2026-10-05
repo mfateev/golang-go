@@ -5193,8 +5193,14 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 				check(0, false)
 			case strings.HasPrefix(name, "mapaccess"), name == "mapIterStart":
 				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapMap"), true, nil, callArgs[1], s.constBool(false))
+				if strings.HasPrefix(name, "mapaccess") {
+					s.isolateCheckMapKey(name, callArgs, false)
+				}
 			case strings.HasPrefix(name, "mapassign"), strings.HasPrefix(name, "mapdelete"), name == "mapclear":
 				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapMap"), true, nil, callArgs[1], s.constBool(true))
+				if name != "mapclear" {
+					s.isolateCheckMapKey(name, callArgs, strings.HasPrefix(name, "mapassign"))
+				}
 			case name == "typedslicecopy":
 				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapSliceCopy"), true, nil,
 					callArgs[0], callArgs[1], callArgs[2], callArgs[3], callArgs[4], s.constBool(base.Debug.IsolateHeap > 1))

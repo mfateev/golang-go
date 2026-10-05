@@ -253,3 +253,76 @@ func TestIsolateHeapSliceCopies(t *testing.T) {
 	runtime.KeepAlive(values)
 	runtime.KeepAlive(groups)
 }
+
+//go:noinline
+func isolateHeapMapFixture[K comparable, V any]() map[K]V { return make(map[K]V) }
+
+func TestIsolateHeapMapKeys(t *testing.T) {
+	type key struct{ Pointers [10000]*int }
+	groups := []unsafe.Pointer{runtime.IsolateMetadataGroupForTest(), runtime.IsolateMetadataGroupForTest()}
+	owners := []uintptr{nextAllocTestOwner(), nextAllocTestOwner()}
+	maps := []map[key]bool{isolateHeapMapFixture[key, bool](), nil, nil}
+	keys := []*key{new(key), nil, nil}
+	pointees := []*int{new(int), nil, nil}
+	for i, group := range groups {
+		runtime.IsolateMetadataRunForTest(group, owners[i], func() {
+			maps[i+1], keys[i+1], pointees[i+1] = isolateHeapMapFixture[key, bool](), new(key), new(int)
+		})
+	}
+	for i := range keys {
+		keys[i].Pointers[9999] = pointees[i]
+		// A key larger than the map header exposes an incorrect implementation
+		// that checks header+field-offset instead of the destination map owner.
+		if got, ok := runtime.IsolateAllocOriginForTest(reflect.ValueOf(maps[i]).UnsafePointer()); !ok || i > 0 && got != owners[i-1] || i == 0 && got != 0 {
+			t.Fatal("map fixture is not heap-owned")
+		}
+	}
+	check := func(want string, fn func()) {
+		t.Helper()
+		defer func() {
+			if got := recover(); want == "" && got != nil || want != "" && got != want {
+				t.Errorf("got %v, want %q", got, want)
+			}
+		}()
+		fn()
+	}
+	for current := range maps {
+		run := func() {
+			for target, dst := range maps {
+				for source, src := range keys {
+					for _, publish := range []bool{false, true} {
+						want := ""
+						if target != current {
+							want = "isolate: map read crosses owner boundary"
+							if publish {
+								want = "isolate: map write crosses owner boundary"
+							}
+						} else if source != current {
+							want = "isolate: read from foreign heap"
+						}
+						check(want, func() { runtime.IsolateHeapMapKeyForTest(dst, src, publish) })
+					}
+				}
+			}
+		}
+		if current == 0 {
+			run()
+		} else {
+			runtime.IsolateMetadataRunForTest(groups[current-1], owners[current-1], run)
+		}
+	}
+	runtime.IsolateMetadataRunForTest(groups[0], owners[0], func() {
+		keys[1].Pointers[9999] = pointees[0] // Test-only invalid graph.
+		check("isolate: foreign heap reference publication", func() { runtime.IsolateHeapMapKeyForTest(maps[1], keys[1], true) })
+		keys[1].Pointers[9999] = pointees[1]
+		runtime.IsolateMetadataScopeForTest(func() {
+			check("", func() { runtime.IsolateHeapMapKeyForTest(maps[0], keys[1], false) })
+			check("isolate: foreign heap reference publication", func() { runtime.IsolateHeapMapKeyForTest(maps[0], keys[1], true) })
+		})
+	})
+	runtime.GC()
+	runtime.KeepAlive(keys)
+	runtime.KeepAlive(pointees)
+	runtime.KeepAlive(maps)
+	runtime.KeepAlive(groups)
+}

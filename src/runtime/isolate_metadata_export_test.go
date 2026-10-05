@@ -52,6 +52,19 @@ func IsolateHeapMoveForTest(dst, src any) {
 	isolateCheckHeapMove((*ptrtype)(unsafe.Pointer(d._type)).Elem, d.data, s.data)
 }
 
+func IsolateHeapMapKeyForTest(dst, key any, publish bool) {
+	d, k := efaceOf(&dst), efaceOf(&key)
+	if d._type.Kind() != abi.Map || k._type.Kind() != abi.Pointer {
+		panic("invalid heap map key test arguments")
+	}
+	typ := (*abi.MapType)(unsafe.Pointer(d._type))
+	if (*ptrtype)(unsafe.Pointer(k._type)).Elem != typ.Key {
+		panic("incorrect heap map key test type")
+	}
+	isolateCheckHeapMap(d.data, publish)
+	isolateCheckHeapMapKey(typ, d.data, k.data, publish)
+}
+
 //go:noinline
 func IsolateMetadataBytesForTest(size int) []byte { return make([]byte, size) }
 

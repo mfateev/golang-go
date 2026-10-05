@@ -86,6 +86,24 @@ func isolateCheckHeapMap(p unsafe.Pointer, write bool) {
 	panic("isolate: map read crosses owner boundary")
 }
 
+// Generic map helpers read a typed key and copy its references into map-owned
+// storage during assignment. The actual slots may be indirect or live in a
+// different span from the header, so use the map's owner for every reference;
+// never pretend that its slots start at dst + the key field's offset.
+func isolateCheckHeapMapKey(typ *abi.MapType, dst, key unsafe.Pointer, publish bool) {
+	isolateCheckHeapAccess(key, typ.Key.Size_, false)
+	if !publish || typ.Key.PtrBytes == 0 || key == nil {
+		return
+	}
+	mask := getGCMask(typ.Key)
+	for word := uintptr(0); word < typ.Key.PtrBytes/goarch.PtrSize; word++ {
+		if *addb(mask, word/8)&(1<<(word%8)) != 0 {
+			value := *(*unsafe.Pointer)(add(key, word*goarch.PtrSize))
+			isolateCheckHeapReference(dst, value)
+		}
+	}
+}
+
 // The level-two diagnostic validates stored references as well as the memory
 // accessed by the store. A builder's read-only borrowing does not authorize
 // retaining the borrowed object in a process cache.
