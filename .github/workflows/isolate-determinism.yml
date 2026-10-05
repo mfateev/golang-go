@@ -104,7 +104,13 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/driver.log"
             exit 1
           fi
-          if ! ../golang-go/bin/go build -race '-gcflags=github.com/mfateev/sdk-go-poc/...=-d=isolateheap=2' -o "$RUNNER_TEMP/isolate-driver-race" ./example/driver > "$POC_LOG_DIR/driver-race-build.log" 2>&1; then
+          ownership_gcflags=(
+            '-gcflags=github.com/mfateev/sdk-go-poc/...=-d=isolateheap=2'
+            '-gcflags=go.temporal.io/sdk/converter=-d=isolateheap=2'
+            '-gcflags=google.golang.org/protobuf/...=-d=isolateheap=2'
+            '-gcflags=go.temporal.io/api/...=-d=isolateheap=2'
+          )
+          if ! ../golang-go/bin/go build -race "${ownership_gcflags[@]}" -o "$RUNNER_TEMP/isolate-driver-race" ./example/driver > "$POC_LOG_DIR/driver-race-build.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/driver-race-build.log"
             exit 1
           fi
@@ -112,7 +118,7 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/driver-race.log"
             exit 1
           fi
-          if ! ../golang-go/bin/go build '-gcflags=github.com/mfateev/sdk-go-poc/...=-d=isolateheap=2' -o "$RUNNER_TEMP/isolate-driver-heap" ./example/driver > "$POC_LOG_DIR/driver-heap-build.log" 2>&1; then
+          if ! ../golang-go/bin/go build "${ownership_gcflags[@]}" -o "$RUNNER_TEMP/isolate-driver-heap" ./example/driver > "$POC_LOG_DIR/driver-heap-build.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/driver-heap-build.log"
             exit 1
           fi
@@ -122,7 +128,7 @@ jobs:
               exit 1
             fi
           done
-          if ! ../golang-go/bin/go build -o "$RUNNER_TEMP/isolate-replay" ./example/determinism/check > "$POC_LOG_DIR/replay-build.log" 2>&1; then
+          if ! ../golang-go/bin/go build "${ownership_gcflags[@]}" -o "$RUNNER_TEMP/isolate-replay" ./example/determinism/check > "$POC_LOG_DIR/replay-build.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/replay-build.log"
             exit 1
           fi

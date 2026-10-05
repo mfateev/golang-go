@@ -19,10 +19,11 @@ const TemporalAPIVersion = "v1.63.6"
 func MetadataScope(pkg, function string) bool {
 	switch pkg {
 	case ProtobufModule + "/internal/impl":
-		return function == "(*MessageInfo).initOnce" || function == "needsInitCheck" || function == "(*ExtensionInfo).lazyInitSlow"
+		return function == "(*MessageInfo).initOnce" || function == "(*MessageInfo).Descriptor" || function == "needsInitCheck" || function == "(*ExtensionInfo).lazyInitSlow"
 	case ProtobufModule + "/internal/filedesc":
 		switch function {
 		case "(*File).lazyInitOnce", "(*stringName).lazyInit",
+			"(*Message).Fields", "(*Fields).ByName",
 			"(*Names).lazyInit", "(*EnumRanges).lazyInit", "(*FieldRanges).lazyInit",
 			"(*FieldNumbers).Has", "(*OneofFields).lazyInit", "(*SourceLocations).lazyInit",
 			"(*Enums).lazyInit", "(*EnumValues).lazyInit", "(*Messages).lazyInit",

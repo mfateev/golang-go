@@ -639,3 +639,30 @@ at `GOMAXPROCS=8`, `GOGC=1`. Six fresh-process strict replays retained the same
 converter, protobuf and Temporal API packages compiled successfully, then
 rejected `MessageInfo.Descriptor` reading shared metadata outside a service.
 That dependency audit failure is not an environment issue or a passed gate.
+
+## Protobuf accessor audit
+
+The pinned manifest now also scopes `MessageInfo.Descriptor`, `Message.Fields`
+and `Fields.ByName`. These methods inspect process metadata or its lazy indexes;
+they do not marshal/unmarshal values or invoke application callbacks. Receiver
+checks precede scope entry. `MessageInfo`'s built-in descriptor guard now reads
+the shared `Desc` field after entry, with Leave already deferred, so strict
+instrumentation can safely validate it. Private message-info receivers remain
+rejected and panic paths restore the caller's owner.
+
+The SDK driver now identifies each negative operation and reports unexpected
+panics accurately. Its registry-mutation fixture uses a registered message type
+directly, rather than first constructing a reflected message. This reaches the
+mutation guard. The old argument's `Payload.ProtoReflect` instead exposed a
+separate ownership crossing: message state retains the shared `MessageInfo`
+pointer. Canonical protobuf message-info provenance and value paths remain open;
+the fixture change does not fix or approve that crossing.
+
+The compiler scripts, short runtime/isolate/bridge/typecheck suites, full SDK
+suite and five static-lock-ranking runs passed. The stricter driver now passes
+with level-two checks inside the pinned converter, protobuf and Temporal API
+packages as well as SDK application packages, normally and under race detection.
+Six replays built with those same flags retained 195 observations and the same
+trace hash. Native CI uses these broader driver/replay flags. This gate covers
+the exercised JSON workflow values and metadata operations; it does not prove
+general protobuf message-value containment or a complete dependency audit.

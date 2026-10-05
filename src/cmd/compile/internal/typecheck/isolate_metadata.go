@@ -33,14 +33,17 @@ func ScopeIsolateMetadata() {
 		} else if isolatepolicy.MetadataScope(pkg, name) {
 			fn.Pragma |= ir.Noinline
 			var guards ir.Nodes
+			var descriptorGuards ir.Nodes
 			if receiver := fn.Type().Recv(); receiver != nil {
 				rcvr := receiver.Nname.(*ir.Name)
 				ptr := Expr(ir.NewConvExpr(fn.Pos(), ir.OCONV, types.Types[types.TUNSAFEPTR], rcvr))
 				guards.Append(Stmt(Call(fn.Pos(), LookupRuntime("isolateCheckMetadataReceiver"), []ir.Node{ptr}, false)))
-				if name == "(*MessageInfo).initOnce" {
+				if name == "(*MessageInfo).initOnce" || name == "(*MessageInfo).Descriptor" {
 					descriptor := Expr(ir.NewSelectorExpr(fn.Pos(), ir.ODOT, rcvr, types.LocalPkg.Lookup("Desc")))
 					descriptor = AssignConv(descriptor, types.Types[types.TINTER], "metadata descriptor")
-					guards.Append(Stmt(Call(fn.Pos(), LookupRuntime("isolateCheckMetadataDescriptor", types.Types[types.TINTER]), []ir.Node{descriptor}, false)))
+					// The receiver guard precedes service entry. Its shared Desc
+					// field must be read after entry, with Leave already deferred.
+					descriptorGuards.Append(Stmt(Call(fn.Pos(), LookupRuntime("isolateCheckMetadataDescriptor", types.Types[types.TINTER]), []ir.Node{descriptor}, false)))
 				}
 			} else if name == "needsInitCheck" {
 				descriptor := AssignConv(fn.Type().Param(0).Nname.(*ir.Name), types.Types[types.TINTER], "metadata descriptor")
@@ -52,6 +55,7 @@ func ScopeIsolateMetadata() {
 			leave := Call(fn.Pos(), LookupRuntime("isolateLeaveMetadata"), []ir.Node{owner}, false)
 			deferred := Stmt(ir.NewGoDeferStmt(fn.Pos(), ir.ODEFER, leave))
 			guards.Append(assignment, deferred)
+			guards = append(guards, descriptorGuards...)
 			fn.Body = append(guards, fn.Body...)
 		}
 	}
