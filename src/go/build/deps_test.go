@@ -874,10 +874,10 @@ var depsRules = `
 	< internal/isolateproto;
 
 	# Experimental source-level isolate API and trusted host transport.
-	bytes, errors, runtime, strings, sync, sync/atomic, unsafe
+	bytes, errors, reflect, runtime, strconv, strings, sync, sync/atomic, unsafe
 	< internal/isolatebridge;
 
-	context, errors, internal/isolatebridge, strconv, sync, sync/atomic, time
+	context, errors, internal/isolatebridge, reflect, strconv, sync, sync/atomic, time
 	< isolate;
 
 	# Test-only packages can have anything they want

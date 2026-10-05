@@ -36,6 +36,9 @@ func time_runtimeNow() (sec int64, nsec int32, mono int64) {
 		}
 		return sec, nsec, 0
 	}
+	if isolateDeterministic() {
+		panic("time: deterministic isolate requires a host clock")
+	}
 	return time_now()
 }
 
@@ -53,6 +56,9 @@ func time_runtimeNano() int64 {
 	}
 	if group := gp.isolateGroup; group != nil && group.clockSet.Load() {
 		return group.clockNS.Load()
+	}
+	if isolateDeterministic() {
+		panic("time: deterministic isolate requires a host clock")
 	}
 	return nanotime()
 }
@@ -492,13 +498,15 @@ func timeSleep(ns int64) {
 		// We don't need to worry about the timer function running before the goroutine
 		// is parked, because time won't advance until we park.
 		resetForSleep(gp, nil)
-		gopark(nil, nil, waitReasonSleep, traceBlockSleep, 1)
+		gopark(nil, nil, waitReasonSleep, traceBlockSleep, 2)
 	} else {
 		if group := gp.isolateGroup; group != nil && !group.registerPark(gp, isolateSleepRegistered, nil) {
 			isolateDiscardIfRevoked()
 			throw("isolate: rejected sleep without revocation")
 		}
-		gopark(resetForSleep, nil, waitReasonSleep, traceBlockSleep, 1)
+		// Skip time.runtimeSleep and keep the public time.Sleep wrapper as the
+		// first user frame, preserving Go's trace stack contract.
+		gopark(resetForSleep, nil, waitReasonSleep, traceBlockSleep, 2)
 		if group := gp.isolateGroup; group != nil && gp.isolateParkState != isolateParkNone {
 			group.unregisterPark(gp)
 		}

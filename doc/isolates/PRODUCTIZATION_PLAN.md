@@ -33,6 +33,58 @@ module/import path. Independently loaded `.so` programs, two versions behind
 the same import path, snapshots, migration, hostile-code containment, and
 forceful termination of non-yielding code remain separate future work.
 
+## High-level productization features
+
+For the first production release supporting trusted Temporal workflow code:
+
+1. **Complete determinism:** harden map iteration, select, goroutine scheduling,
+   time, and cancellation; verify replay across supported platforms and runtime
+   versions. The POC implements the core mechanisms; release work expands their
+   coverage and validation.
+2. **Memory ownership:** isolate-owned package state and heaps, with checks
+   preventing mutable objects from crossing isolate boundaries.
+3. **Efficient GC for cached workflows:** freeze suspended isolates, avoid
+   repeatedly tracing their internal memory, and reclaim an entire isolate safely
+   on eviction. This requires heap ownership first. Frozen memory still counts
+   toward memory limits, and references to shared objects must remain visible to
+   GC.
+4. **Enforced effect restrictions:** reject unsupported I/O, randomness, process
+   state changes, and unsafe operations; provide replay-aware logging.
+5. **Reliable lifecycle:** handle startup failures, panics, exit, cancellation,
+   shutdown, and eviction across every goroutine and pending operation.
+6. **Resource controls:** account for memory and goroutines, enforce limits, and
+   diagnose CPU loops or stuck isolates.
+7. **Complete Temporal integration:** support retry and failure semantics,
+   continue-as-new, workflow versioning, queries, updates, and child workflows.
+   Publish explicit exclusions for any features deferred beyond the first release.
+8. **Converter support:** safely use worker-configured data converters and codecs
+   inside isolates, including protobuf and type validation.
+9. **Stable integration contracts:** version the compiler metadata, isolate API,
+   and host protocol; establish a supported Temporal SDK integration.
+10. **Operational visibility:** metrics, isolate stack traces, replay diagnostics,
+    and tools for investigating hangs and memory growth.
+11. **Release and compatibility testing:** reproducible toolchains, native platform
+    CI, stress and soak tests, saved-history replay, and upgrade/rollback checks.
+
+The highest-priority foundations are **memory ownership, lifecycle safety, and
+enforced effect restrictions**. Dynamic loading, independent dependency versions,
+snapshots, and hostile-code containment remain later enhancements.
+
+### Current implementation sequence
+
+Implement high-level feature **1 (complete determinism)** first. Its acceptance
+gates include runtime/library and compiler regression tests, repeated dispatcher
+race tests, SDK/sample tests, real-server recording, and fresh-process replay of
+the same history on native Linux/macOS arm64/amd64. The implementation, fixtures,
+CI, documentation, and validation results must be checked in before beginning
+high-level feature **2 (memory ownership)**. These feature numbers refer to the
+list above, not to the milestone numbers below.
+
+See [Native isolate determinism](./NATIVE_DETERMINISM_PLAN.md) for the supported
+operations and reproducibility contract. Unsupported map key kinds and
+machine-dependent effects require explicit restrictions rather than an implied
+promise that arbitrary Go code can replay.
+
 ## Milestones and gates
 
 | Order | Owner | Deliverable | Exit gate |
@@ -69,13 +121,12 @@ cannot skip an unmet runtime gate.
 
 The trusted POC implements the core FIFO/suspension/select/map work. The
 following release gate expands and validates it across supported APIs and
-platforms, including currently rejected sync.Map.Range and iter.Pull.
+platforms, including the new deterministic sync.Map.Range and iter.Pull paths.
 
-- Replace the SDK's one-command-at-a-time timeout loop with `Resume` (or an
-  equivalent runtime-owned hook) that returns only when no isolate goroutine
-  can make progress without a host event. Distinguish completed, awaiting
-  `Call`, timer-only, and deadlocked states. Remove millisecond polling from
-  the host lifecycle.
+- Validate the implemented `Resume`/`Suspend` fence and SDK command batching:
+  return only when no isolate goroutine can make progress without a host event.
+  Distinguish completed, awaiting `Call`, timer-only, and deadlocked states.
+  Keep millisecond polling out of the host lifecycle.
 - Account for every runnable, running, parked, and waking goroutine, including
   scheduler handoffs, preemption, GC assist, `sync.Cond`, network poll, and
   runtime-internal callbacks. A host command must not leak into a later

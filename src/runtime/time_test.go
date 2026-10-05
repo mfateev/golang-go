@@ -131,6 +131,12 @@ func TestTimeTimerType(t *testing.T) {
 				if t1 == runtimeTimeTimerPtr && t2 == typPtr {
 					ok = true
 				}
+
+				// The runtime carries package time's private isolate state as
+				// an opaque pointer, just as it does the timer channel above.
+				if f1.Name == "iso" && f2.Name == "iso" && t1.Kind() == reflect.UnsafePointer && t2.Kind() == reflect.Pointer {
+					ok = true
+				}
 			}
 			if !ok {
 				t.Errorf("runtime.Timer field %s %v incompatible with %s field %s %v", f1.Name, t1, name, f2.Name, t2)

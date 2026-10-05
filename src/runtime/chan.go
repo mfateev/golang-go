@@ -32,18 +32,19 @@ const (
 )
 
 type hchan struct {
-	qcount   uint           // total data in the queue
-	dataqsiz uint           // size of the circular queue
-	buf      unsafe.Pointer // points to an array of dataqsiz elements
-	elemsize uint16
-	closed   uint32
-	timer    *timer // timer feeding this chan
-	elemtype *_type // element type
-	sendx    uint   // send index
-	recvx    uint   // receive index
-	recvq    waitq  // list of recv waiters
-	sendq    waitq  // list of send waiters
-	bubble   *synctestBubble
+	qcount       uint           // total data in the queue
+	dataqsiz     uint           // size of the circular queue
+	buf          unsafe.Pointer // points to an array of dataqsiz elements
+	elemsize     uint16
+	isolateTimer bool // Host-driven time.Timer channel; buffered storage, synchronous API.
+	closed       uint32
+	timer        *timer // timer feeding this chan
+	elemtype     *_type // element type
+	sendx        uint   // send index
+	recvx        uint   // receive index
+	recvq        waitq  // list of recv waiters
+	sendq        waitq  // list of send waiters
+	bubble       *synctestBubble
 
 	// lock protects all fields in hchan, as well as several
 	// fields in sudogs blocked on this channel.
@@ -917,7 +918,7 @@ func reflect_chanrecv(c *hchan, nb bool, elem unsafe.Pointer) (selected bool, re
 }
 
 func chanlen(c *hchan) int {
-	if c == nil || c.timer != nil {
+	if c == nil || c.timer != nil || c.isolateTimer {
 		// timer channels have a buffered implementation
 		// but present to users as unbuffered, so that we can
 		// undo sends without users noticing.
@@ -927,7 +928,7 @@ func chanlen(c *hchan) int {
 }
 
 func chancap(c *hchan) int {
-	if c == nil || c.timer != nil {
+	if c == nil || c.timer != nil || c.isolateTimer {
 		// timer channels have a buffered implementation
 		// but present to users as unbuffered, so that we can
 		// undo sends without users noticing.

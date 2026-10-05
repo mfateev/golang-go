@@ -54,8 +54,9 @@ running it or replying to commands. `time.Now`, `time.Since`, and `time.Until`
 read that clock locally; the runtime scheduler keeps using real time. Native
 `time.Sleep`, `time.NewTimer`, and `time.After` send the SDK's durable timer
 operation through the isolate boundary. Timer completion is delivered after
-the host advances the clock for the next task. `time.AfterFunc` and tickers are
-outside this POC's workflow-time subset. `Timer.Stop` and `Timer.Reset` suppress
+the host advances the clock for the next task. `time.AfterFunc` and standard
+context deadlines use isolate-owned callbacks; tickers remain outside this
+POC's workflow-time subset. `Timer.Stop` and `Timer.Reset` suppress
 local delivery but do not yet cancel an already scheduled Temporal timer; that
 can cause extra history events. Concurrent timer, activity, and signal handling now uses the deterministic
 dispatcher and exact suspension fence described in
@@ -98,8 +99,12 @@ The trusted subset now has FIFO native goroutines, reproducible select,
 canonical integer/string map iteration, logical time, and exact host
 suspension. Live concurrent activity/timer execution and SleepForDays signal
 completion replayed in fresh Linux arm64 processes with GOMAXPROCS 1, 2, and 8.
-Cross-architecture replay remains a release gate; unsupported map key kinds,
-sync.Map.Range, and iter.Pull are rejected in deterministic mode. `internalbindings` is an unstable Go SDK API;
+Cross-architecture replay remains a release gate. Supported `sync.Map.Range`
+keys now use canonical ordering, and `iter.Pull` uses dispatcher-aware channel
+handshakes. Unsupported map key kinds and mixed sync.Map key types remain
+rejected. Top-level random streams are isolate-local, and deterministic Local
+time resolves to UTC. See the native determinism plan for the full contract.
+`internalbindings` is an unstable Go SDK API;
 the POC pins a tested SDK version and will need an adapter update when that
 version changes. The follow-on release gates are in
 [PRODUCTIZATION_PLAN.md](./PRODUCTIZATION_PLAN.md).

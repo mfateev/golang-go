@@ -1,0 +1,125 @@
+name: Isolate determinism
+
+on:
+  push:
+    branches: [task/modify-go-runtime-for-isolates]
+    paths:
+      - '.github/workflows/isolate-determinism.yml'
+      - 'src/**'
+      - 'test/**'
+      - 'misc/**'
+      - 'lib/**'
+      - 'VERSION'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-replay:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: golang-go
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: mfateev/sdk-go-poc
+          ref: task/modify-go-runtime-for-isolates
+          path: sdk-go-poc
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: mfateev/samples-go-poc
+          ref: task/modify-go-runtime-for-isolates
+          path: samples-go-poc
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.7'
+          cache: false
+      - name: Build the fork
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GOCACHE="$RUNNER_TEMP/isolate-go-cache"
+          export POC_LOG_DIR="$RUNNER_TEMP/isolate-logs"
+          echo "GOCACHE=$GOCACHE" >> "$GITHUB_ENV"
+          echo "POC_LOG_DIR=$POC_LOG_DIR" >> "$GITHUB_ENV"
+          mkdir -p "$POC_LOG_DIR"
+          export GOROOT_BOOTSTRAP="$(go env GOROOT)"
+          for repo in golang-go sdk-go-poc samples-go-poc; do
+            git -C "$repo" rev-parse HEAD >> "$POC_LOG_DIR/revisions.txt"
+          done
+          cd golang-go/src
+          if ! ./make.bash > "$POC_LOG_DIR/bootstrap.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/bootstrap.log"
+            exit 1
+          fi
+      - name: Runtime and compiler conformance
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd golang-go
+          if ! ./bin/go test -short runtime isolate go/build internal/trace context time sync iter reflect internal/runtime/maps math/rand math/rand/v2 > "$POC_LOG_DIR/runtime.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/runtime.log"
+            exit 1
+          fi
+          if ! GODEBUG=cpu.all=off ./bin/go test isolate -run TestDeterministic -count=5 > "$POC_LOG_DIR/cpu-disabled.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/cpu-disabled.log"
+            exit 1
+          fi
+          if ! ./bin/go test -race isolate -run TestDeterministic -count=5 > "$POC_LOG_DIR/race.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/race.log"
+            exit 1
+          fi
+          if ! ./bin/go test cmd/go -run 'TestScript/build_isolate_(functions|programs)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/compiler.log"
+            exit 1
+          fi
+          ./bin/go clean -cache
+      - name: SDK and samples
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd sdk-go-poc
+          if ! ../golang-go/bin/go test ./... > "$POC_LOG_DIR/sdk.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/sdk.log"
+            exit 1
+          fi
+          ../golang-go/bin/go build -o "$RUNNER_TEMP/isolate-driver" ./example/driver
+          if ! "$RUNNER_TEMP/isolate-driver" > "$POC_LOG_DIR/driver.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/driver.log"
+            exit 1
+          fi
+          ../golang-go/bin/go build -o "$RUNNER_TEMP/isolate-replay" ./example/determinism/check
+          cd ../samples-go-poc
+          if ! ../golang-go/bin/go test ./... > "$POC_LOG_DIR/samples.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/samples.log"
+            exit 1
+          fi
+      - name: Fresh-process replay of the same history
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd sdk-go-poc
+          for procs in 1 2 8; do
+            for cpu in default disabled; do
+              if [ "$cpu" = disabled ]; then export GODEBUG=cpu.all=off; else unset GODEBUG; fi
+              if ! GOMAXPROCS="$procs" TZ=America/Los_Angeles "$RUNNER_TEMP/isolate-replay" >> "$POC_LOG_DIR/replay.log" 2>&1; then
+                tail -n 100 "$POC_LOG_DIR/replay.log"
+                exit 1
+              fi
+            done
+          done
+      - name: Preserve all output
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: isolate-determinism-${{ matrix.runner }}
+          path: ${{ runner.temp }}/isolate-logs

@@ -319,6 +319,9 @@ var randseednop = godebug.New("randseednop")
 // globalRand returns the generator to use for the top-level convenience
 // functions.
 func globalRand() *Rand {
+	if r, ok := isolateGlobalRand(); ok {
+		return r
+	}
 	if r := globalRandGenerator.Load(); r != nil {
 		return r
 	}
@@ -398,6 +401,11 @@ func (fs *runtimeSource) read(p []byte, readVal *int64, readPos *int8) (n int, e
 // As of Go 1.24 [Seed] is a no-op. To restore the previous behavior set
 // GODEBUG=randseednop=0.
 func Seed(seed int64) {
+	if _, deterministic := isolateRandLegacy(); deterministic {
+		// Preserve Go 1.24's no-op contract without consulting process GODEBUG.
+		// Explicitly seeded generators remain available through NewSource.
+		return
+	}
 	if randseednop.Value() != "0" {
 		return
 	}

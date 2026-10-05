@@ -1346,6 +1346,9 @@ var startNano int64 = runtimeNano() - 1
 // Now returns the current local time.
 func Now() Time {
 	sec, nsec, mono := runtimeNow()
+	if runtime_isolateDeterministic() {
+		return Time{uint64(nsec), sec + unixToInternal, nil} // UTC, no wall-clock monotonic reading.
+	}
 	if mono == 0 {
 		return Time{uint64(nsec), sec + unixToInternal, Local}
 	}

@@ -5,22 +5,26 @@
 package time
 
 import (
-	"internal/isolatebridge"
 	"sync"
 	"unsafe"
 )
 
 // Sleep pauses the current goroutine for at least the duration d.
 // A negative or zero duration causes Sleep to return immediately.
+//
+//go:linkname Sleep
 func Sleep(d Duration) {
 	if d <= 0 {
 		return
 	}
-	if isolatebridge.ClockEnabled() {
-		if err := isolatebridge.Current().TimerSleep(int64(d)); err != nil {
+	if runtime_isolateClockEnabled() {
+		if err := runtime_isolateTimerSleep(int64(d)); err != nil {
 			panic("time: durable Sleep failed: " + err.Error())
 		}
 		return
+	}
+	if runtime_isolateDeterministic() {
+		panic("time: deterministic isolate requires a host clock")
 	}
 	runtimeSleep(d)
 }
@@ -89,9 +93,13 @@ type isolateTimer struct {
 }
 
 func (state *isolateTimer) wait(d Duration, generation uint64) {
-	if err := isolatebridge.Current().TimerSleep(int64(d)); err != nil {
+	if err := runtime_isolateTimerSleep(int64(d)); err != nil {
 		panic("time: durable timer failed: " + err.Error())
 	}
+	state.fire(generation)
+}
+
+func (state *isolateTimer) fire(generation uint64) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	if !state.active || state.generation != generation {
@@ -112,6 +120,13 @@ func (state *isolateTimer) stop() bool {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	wasActive := state.active
+	select {
+	case <-state.c:
+		// A buffered value has not yet been observed by the program. Undo
+		// delivery and report it as active, matching Go's synchronous timers.
+		wasActive = true
+	default:
+	}
 	state.active = false
 	state.generation++
 	return wasActive
@@ -125,10 +140,15 @@ func (state *isolateTimer) reset(d Duration) bool {
 	state.active = true
 	select {
 	case <-state.c:
+		wasActive = true
 	default:
 	}
 	state.mu.Unlock()
-	go state.wait(d, generation)
+	if d <= 0 && state.c != nil {
+		state.fire(generation)
+	} else {
+		go state.wait(d, generation)
+	}
 	return wasActive
 }
 
@@ -187,12 +207,17 @@ func (t *Timer) Stop() bool {
 // As of Go 1.23, the channel is synchronous (unbuffered, capacity 0),
 // eliminating the possibility of those stale values.
 func NewTimer(d Duration) *Timer {
-	if isolatebridge.ClockEnabled() {
+	if runtime_isolateClockEnabled() {
 		c := make(chan Time, 1)
+		runtime_isolateTimerChannel(syncTimer(c))
 		state := &isolateTimer{c: c, generation: 1, active: true}
 		t := &Timer{C: c, iso: state}
 		t.self = t
-		go state.wait(d, 1)
+		if d <= 0 {
+			state.fire(1)
+		} else {
+			go state.wait(d, 1)
+		}
 		return t
 	}
 	c := make(chan Time, 1)
@@ -263,7 +288,7 @@ func After(d Duration) <-chan Time {
 // be used to cancel the call using its Stop method.
 // The returned Timer's C field is not used and will be nil.
 func AfterFunc(d Duration, f func()) *Timer {
-	if isolatebridge.ClockEnabled() {
+	if runtime_isolateClockEnabled() {
 		state := &isolateTimer{f: f, generation: 1, active: true}
 		t := &Timer{iso: state}
 		t.self = t
@@ -280,6 +305,18 @@ func AfterFunc(d Duration, f func()) *Timer {
 
 //go:linkname runtime_isolateActive runtime.isolateActive
 func runtime_isolateActive() bool
+
+//go:linkname runtime_isolateDeterministic runtime.isolateDeterministic
+func runtime_isolateDeterministic() bool
+
+//go:linkname runtime_isolateTimerChannel runtime.isolateTimerChannel
+func runtime_isolateTimerChannel(unsafe.Pointer)
+
+//go:linkname runtime_isolateClockEnabled runtime.isolateClockEnabled
+func runtime_isolateClockEnabled() bool
+
+//go:linkname runtime_isolateTimerSleep runtime.isolateTimerSleep
+func runtime_isolateTimerSleep(int64) error
 
 func goFunc(arg any, seq uintptr, delta int64) {
 	go arg.(func())()

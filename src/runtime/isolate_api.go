@@ -92,6 +92,43 @@ func isolateClockEnabled() bool {
 	return group != nil && group.clockSet.Load()
 }
 
+//go:linkname isolateSetTimerSleep
+func isolateSetTimerSleep(p unsafe.Pointer, fn func(int64) error) bool {
+	group := (*isolateRevocationGroup)(p)
+	if group.live.Load() != 0 || group.timerSleep != nil || fn == nil {
+		return false
+	}
+	group.timerSleep = fn
+	return true
+}
+
+// The time package must not import the higher-level byte transport. Its
+// runtime hook calls the immutable service registered on the current group.
+//
+//go:linkname isolateTimerSleep
+func isolateTimerSleep(ns int64) error {
+	gp := getg()
+	group := gp.isolateGroup
+	if group == nil || !group.clockSet.Load() || group.timerSleep == nil {
+		panic("time: isolate timer transport is not configured")
+	}
+	if gp.isolateBoundary == nil {
+		// Initializers have an owner and clock but no host command consumer.
+		// Preserve Call's entry requirement instead of deadlocking New.
+		panic("isolate: Call outside an active isolate")
+	}
+	return group.timerSleep(ns)
+}
+
+//go:linkname isolateTimerChannel
+func isolateTimerChannel(p unsafe.Pointer) {
+	c := (*hchan)(p)
+	if !isolateClockEnabled() || c == nil || c.dataqsiz != 1 || c.qcount != 0 {
+		throw("isolate: invalid timer channel")
+	}
+	c.isolateTimer = true // Before publishing the timer or its channel.
+}
+
 //go:linkname isolateSetGroupExit
 func isolateSetGroupExit(p unsafe.Pointer, fn func(int)) {
 	(*isolateRevocationGroup)(p).exit = fn

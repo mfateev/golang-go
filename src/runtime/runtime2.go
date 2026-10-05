@@ -25,14 +25,17 @@ import (
 type isolateRevocationGroup struct {
 	admission      atomic.Uint64
 	live           atomic.Int32
-	running        atomic.Int32  // Goroutines associated with an M, including syscalls.
-	runnable       atomic.Int32  // Conservative count of group Gs in or entering _Grunnable.
-	exit           func(int)     // Trusted host callback, installed before instance execution.
-	clockSet       atomic.Bool   // Host-injected workflow time is available.
-	clockNS        atomic.Int64  // Unix nanoseconds; runtime scheduler time stays real.
-	selectSeq      atomic.Uint64 // Reproducible select shuffle, independent of the M.
-	deterministic  bool          // Set before any group member is attached.
-	dispatchLock   mutex         // Leaf lock: only non-allocating queue/token operations.
+	running        atomic.Int32      // Goroutines associated with an M, including syscalls.
+	runnable       atomic.Int32      // Conservative count of group Gs in or entering _Grunnable.
+	exit           func(int)         // Trusted host callback, installed before instance execution.
+	clockSet       atomic.Bool       // Host-injected workflow time is available.
+	clockNS        atomic.Int64      // Unix nanoseconds; runtime scheduler time stays real.
+	timerSleep     func(int64) error // Trusted durable-timer transport, installed before entry.
+	selectSeq      atomic.Uint64     // Reproducible select shuffle, independent of the M.
+	randSeq        atomic.Uint64     // math/rand/v2 stream, separate from select polling.
+	randLegacy     unsafe.Pointer    // Lazily created isolate-owned math/rand generator.
+	deterministic  bool              // Set before any group member is attached.
+	dispatchLock   mutex             // Leaf lock: only non-allocating queue/token operations.
 	dispatchToken  guintptr
 	dispatchQueue  gQueue
 	dispatchPaused bool

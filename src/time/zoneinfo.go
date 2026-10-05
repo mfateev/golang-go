@@ -93,6 +93,11 @@ func (l *Location) get() *Location {
 		return &utcLoc
 	}
 	if l == &localLoc {
+		if runtime_isolateDeterministic() {
+			// Workflow-local time must not depend on TZ or /etc/localtime.
+			// Explicit FixedZone and LoadLocationFromTZData values are unaffected.
+			return &utcLoc
+		}
 		localOnce.Do(initLocal)
 	}
 	return l
@@ -671,6 +676,9 @@ func LoadLocation(name string) (*Location, error) {
 	}
 	if name == "Local" {
 		return Local, nil
+	}
+	if runtime_isolateDeterministic() {
+		return nil, errors.New("time: deterministic isolate requires explicit time zone data")
 	}
 	if containsDotDot(name) || name[0] == '/' || name[0] == '\\' {
 		// No valid IANA Time Zone name contains a single dot,

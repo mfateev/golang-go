@@ -103,7 +103,13 @@
 // ends with a slash or backslash, then any resulting executables
 // will be written to that directory.
 //
-// The experimental -isolate-dir flag selects a directory containing a package
+// Functions marked //go:isolate in a host's import graph are experimental isolate
+// entry points. An ordinary single-executable build generates typed invokers,
+// function handles, and per-instance package state without directory configs.
+// The function retains its Go signature; its SDK supplies the byte protocol.
+// See doc/isolates/STATIC_PROGRAMS.md for the current subset and state selection.
+//
+// The legacy experimental -isolate-dir flag selects a directory containing a package
 // main and an isolate.json file. It may be repeated to link several programs
 // into one executable with the host package main. The build command generates
 // the program lookup table; see doc/isolates/STATIC_PROGRAMS.md for its current

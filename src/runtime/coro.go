@@ -32,6 +32,13 @@ type coro struct {
 	mp        *m
 	lockedExt uint32 // mp's external LockOSThread counter at coro creation time.
 	lockedInt uint32 // mp's internal lockOSThread counter at coro creation time.
+
+	// Deterministic isolates use ordinary channel handshakes so coroutine
+	// parks, wakeups, suspension, and revocation all pass through dispatch.
+	isolateGroup   *isolateRevocationGroup
+	isolateRunner  *g
+	isolateRequest chan struct{}
+	isolateReply   chan struct{}
 }
 
 //go:linknamestd newcoro
@@ -41,7 +48,7 @@ type coro struct {
 // and returns that coro.
 func newcoro(f func(*coro)) *coro {
 	if isolateDeterministic() {
-		panic("isolate: iter.Pull requires deterministic coroutine dispatch support")
+		return newIsolateCoro(f)
 	}
 	c := new(coro)
 	c.f = f
@@ -73,6 +80,10 @@ func corostart() {
 	gp := getg()
 	c := gp.coroarg
 	gp.coroarg = nil
+	if c.isolateGroup != nil {
+		isolateCorostart(c)
+		return
+	}
 
 	defer coroexit(c)
 	c.f(c)
@@ -93,7 +104,11 @@ func coroexit(c *coro) {
 // and then blocks the current goroutine on c.
 func coroswitch(c *coro) {
 	if isolateDeterministic() {
-		panic("isolate: iter.Pull requires deterministic coroutine dispatch support")
+		isolateCoroSwitch(c)
+		return
+	}
+	if c.isolateGroup != nil {
+		panic("isolate: coroutine crosses owner boundary")
 	}
 	gp := getg()
 	gp.coroarg = c

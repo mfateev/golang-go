@@ -268,7 +268,7 @@ func (r *Rand) Shuffle(n int, swap func(i, j int)) {
 // convenience functions.
 var globalRand = &Rand{src: runtimeSource{}}
 
-//go:linkname runtime_rand runtime.rand
+//go:linkname runtime_rand runtime.isolateRand
 func runtime_rand() uint64
 
 // runtimeSource is a Source that uses the runtime fastrand functions.

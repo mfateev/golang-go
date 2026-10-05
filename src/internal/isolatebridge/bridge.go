@@ -123,12 +123,18 @@ func (b *Boundary) ConfigureTime(unixNano int64, timerOp uint32) error {
 	if timerOp == 0 {
 		return errors.New("isolate: timer operation is required for a host clock")
 	}
+	if !setTimerSleep(b.group, b.TimerSleep) {
+		return errors.New("isolate: host clock must be configured once before program initialization")
+	}
 	b.timerOp = timerOp
 	if !setClock(b.group, unixNano) {
 		return errors.New("isolate: clock moved backwards")
 	}
 	return nil
 }
+
+//go:linkname setTimerSleep runtime.isolateSetTimerSleep
+func setTimerSleep(unsafe.Pointer, func(int64) error) bool
 
 // AdvanceTime publishes a history timestamp before the host resumes a task.
 func (b *Boundary) AdvanceTime(unixNano int64) error {

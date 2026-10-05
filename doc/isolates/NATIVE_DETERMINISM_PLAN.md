@@ -24,16 +24,33 @@ Legacy runtime probes can retain ordinary dispatch for their revocation tests.
   retain it, so elapsed wall time cannot choose another isolate goroutine.
   Different isolates and host goroutines can run concurrently.
 - Workflow time requires Config.InitialTime and TimerOp in addition to
-  Deterministic; the Temporal adapter supplies both. Real OS timers without
-  that clock are outside the deterministic workflow contract.
+  Deterministic; the Temporal adapter supplies both. Clock reads and sleeps
+  without a host clock fail closed in deterministic mode. Now returns UTC,
+  and the default Local location resolves to UTC without reading TZ or the
+  machine's timezone database. LoadLocation accepts UTC/Local names and rejects
+  database lookups; explicit FixedZone and LoadLocationFromTZData values remain
+  available.
 - Host events are delivered in history order while an isolate is suspended.
   A runtime suspension barrier parks host control until the token and runnable
   queue are idle, then fences dispatch until the host resumes the instance.
   The SDK processes every emitted command and repeats resume/suspend until
   transport handshakes finish and no additional command is produced.
-- `sync.Map.Range` and `iter.Pull`/`iter.Pull2` fail closed in deterministic
-  mode. Their hash-trie iteration and direct coroutine switches need separate
-  implementations. Ordinary host calls remain available.
+- `sync.Map.Range` snapshots and sorts keys of one concrete integer or string
+  type, including named types, then loads current values as native range does.
+  Mixed key types and other kinds fail before any callback runs. Empty maps
+  remain valid. The host retains ordinary hash-trie iteration.
+- `iter.Pull`/`iter.Pull2` use channel handshakes through the isolate dispatcher.
+  Their goroutines inherit ownership, yield through FIFO dispatch, participate
+  in suspension, and can be discarded during revocation. Ordinary host
+  iterators retain Go's direct coroutine switches.
+- Top-level `math/rand` uses an isolate-owned Go 1 generator seeded with 1,
+  including byte-read remainder. Top-level Seed is a no-op independently of
+  host GODEBUG. `math/rand/v2` uses its own SplitMix64 stream starting from
+  sequence zero. Neither stream consumes select or runtime hashing entropy;
+  suspension preserves state. Explicit seeded generators retain their Go API.
+  These fixed default streams are for replay, never security or unique IDs.
+- `sync.Pool` behaves as empty inside isolates: Put drops values and Get uses
+  New or returns nil. GC cycles and P assignment cannot choose cached values.
 - Package initialization uses the same dispatch rules. Unsupported process I/O,
   CPU-only infinite loops, mutable host sharing, and unreviewed library effects
   remain outside the trusted POC contract; this is not general containment.
@@ -91,3 +108,50 @@ by the Temporal adapter.
 - Native cross-architecture replay and the remaining productization gates have
   not been completed. Deterministic code must still follow Go synchronization
   rules for shared values; the race detector's memory model is unchanged.
+
+## Productization item 1
+
+The follow-up adds the random streams, UTC policy, supported sync.Map range,
+dispatcher-aware iterators, and synchronous timer behavior described above.
+Non-positive channel timers are immediately ready; Stop and Reset undo pending
+delivery, and native/reflected channel length and capacity remain zero.
+Native Timer.Stop/Reset still do not cancel an already issued host timer; that
+Temporal integration work is tracked separately.
+
+The SDK's `example/determinism` records one workflow's full map, select,
+goroutine, iterator, random, floating-point distribution, cancellation, and
+clock observations in its activity input and result. On replay the workflow
+compares its freshly computed trace with the recorded activity result, and the
+checker compares completion with history. This avoids relying on the Temporal
+SDK to compare activity input payloads. A negative test changes both recorded
+results and verifies rejection. The original saved history is retained.
+`.github/workflows/isolate-determinism.yml` runs the same corpus on native
+Linux and macOS arm64/amd64, with normal and disabled optional CPU features,
+plus runtime/compiler, SDK/sample, and repeated race gates. Logs are preserved
+for every run. A platform is verified only after its native job passes.
+
+Item 2 (memory ownership) must not begin until item 1's local and native gates
+pass and all changes are checked in. The CI and history corpus establish replay
+compatibility for the covered operations; future runtime algorithm changes
+must pass old histories or introduce an explicit compatibility/version policy.
+
+### Local validation, 2026-10-05
+
+- `src/all.bash` completed with `ALL TESTS PASSED`, including standard-library
+  and compiler tests, tagged/experimental configurations, cgo, runtime processor
+  configurations, the race detector, and the language regression corpus.
+- After the final named-zone lookup guard, `go test -short time isolate go/build`
+  passed, including UTC/Local lookup, rejection of machine database lookups,
+  and explicit TZif data decoding.
+- `go test -race isolate -run TestDeterministic -count=5`, SDK `go test ./...`,
+  and the serial/concurrent SDK driver passed. The SDK suite includes the
+  positive saved-history replay and corrupted-result rejection test.
+- The saved 195-observation history replayed in fresh processes at GOMAXPROCS
+  1, 2, and 8, with optional CPU features enabled/disabled and host TZ set to
+  America/Los_Angeles. The race-instrumented checker also passed. All returned
+  SHA-256 `12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
+- Every tracked sample package passed. The local wildcard samples command
+  still reports a vet error in an unrelated, untracked root `main.go`; that
+  user file is excluded from commits. Native CI runs the full samples command
+  from clean branch checkouts.
+- Native Linux/macOS arm64/amd64 jobs remain pending. Item 2 has not started.

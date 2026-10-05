@@ -87,6 +87,21 @@ func TestDeterministicSuspendBatchReplies(t *testing.T) {
 	}
 }
 
+func TestDeterministicInitializerCannotRequestTimer(t *testing.T) {
+	clock := time.Unix(0, 0)
+	program := Program{entry: isolatebridge.ProgramEntry{
+		NewState: func() (func(func()), error) {
+			time.Sleep(time.Hour)
+			return func(fn func()) { fn() }, nil
+		},
+		Main: func() {},
+	}}
+	instance, err := New(Config{Program: program, Deterministic: true, InitialTime: &clock, TimerOp: 77})
+	if instance != nil || err != errInitializerPanicked {
+		t.Fatalf("New=(%v,%v)", instance, err)
+	}
+}
+
 // Revocation must release a host suspension waiter and drain runnable members
 // even when the host has fenced dispatch after replying to their Calls.
 func TestDeterministicSuspendRevocation(t *testing.T) {

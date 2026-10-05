@@ -6,7 +6,6 @@ package isolate_test
 
 import (
 	"internal/isolatebridge"
-	"iter"
 	"reflect"
 	"runtime"
 	"runtime/debug"
@@ -335,16 +334,16 @@ func TestDeterministicMapUnsupportedKeys(t *testing.T) {
 	}
 }
 
-// These APIs bypass the native select/map/FIFO contracts and are explicitly
-// rejected until their own deterministic implementations are available.
+// Dynamic sync.Map keys must satisfy the same ordering restriction as native
+// maps. Reject the complete snapshot before invoking any callback.
 func TestDeterministicUnsupportedAPIs(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		run     func()
 		message string
 	}{
-		{"sync.Map.Range", func() { var m sync.Map; m.Range(func(_, _ any) bool { return true }) }, "sync.Map.Range"},
-		{"iter.Pull", func() { next, stop := iter.Pull(func(yield func(int) bool) { yield(1) }); defer stop(); next() }, "iter.Pull"},
+		{"sync.Map.Range.pointer", func() { var m sync.Map; m.Store(new(int), 1); m.Range(func(_, _ any) bool { return true }) }, "sync.Map.Range"},
+		{"sync.Map.Range.mixed", func() { var m sync.Map; m.Store(1, 1); m.Store("a", 2); m.Range(func(_, _ any) bool { return true }) }, "sync.Map.Range"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			b := isolatebridge.New()
