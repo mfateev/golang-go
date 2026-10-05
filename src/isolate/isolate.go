@@ -7,9 +7,9 @@
 // by go build and exposed as handles; legacy package main programs remain
 // available for runtime probes.
 //
-// The native runtime boundary is still under construction. The current
-// transport is a trusted Phase 2B probe; it does not provide heap isolation or
-// deterministic scheduling.
+// This trusted POC offers opt-in deterministic native dispatch and host
+// suspension through Config.Deterministic. It does not provide heap isolation
+// or general containment.
 package isolate
 
 import "internal/isolatebridge"

@@ -1,27 +1,32 @@
 # Productization plan for Go isolates and the Temporal SDK
 
-Status: proposed plan, 2026-10-04. This follows the trusted Temporal POC in
+Status: proposed release plan; POC baseline updated 2026-10-05. This follows the trusted Temporal POC in
 [TEMPORAL_POC.md](./TEMPORAL_POC.md) and the runtime contract in
 [ISOLATE_API.md](./ISOLATE_API.md).
 
 ## Release target and current baseline
 
 The first supported release is for **reviewed Temporal workflow code**. A
-worker statically links workflow `package main` programs, runs many executions
+worker statically links workflow functions marked `//go:isolate`, runs many executions
 in one Go runtime, and sends external effects through the host and Temporal
 Go SDK. Replay must work across supported CPU architectures. The release must
 say which Go and standard-library APIs are supported and reject unsupported
 effects before they reach process state. It must not claim safety for hostile
 tenants or bounded termination of uninterrupted CPU loops.
 
-Today `golang-go` supplies static `-isolate-dir` builds, selected per-instance
-package globals, a copied-byte `Call` boundary, and provisional revocation.
-`sdk-go-poc` adapts serial workflow programs to a pinned Temporal Go SDK via
-`internalbindings`; `samples-go-poc` has activity, timer, signal, and replay
-examples. The serial examples have run against a local server and replayed in
-fresh processes. The runtime still uses the ordinary Go heap and scheduler.
-Its live-goroutine count is not an exact quiescence barrier. Child failures,
-some runtime waits, process-owned state, and effects remain uncontained.
+Today `golang-go` discovers marked functions during ordinary builds, supplies
+selected per-instance package globals, a copied-byte `Call` boundary, and
+provisional revocation. Opt-in deterministic mode now provides FIFO native
+goroutines, reproducible select, canonical integer/string map iteration, and
+exact suspend/resume fences. The Temporal adapter enables it and handles all
+concurrent commands before ending a workflow task. Its concurrent activity and
+timer example and the SleepForDays signal path completed on a local server and
+replayed in fresh Linux arm64 processes at different GOMAXPROCS settings.
+Dispatcher stress and race tests passed. See
+[NATIVE_DETERMINISM_PLAN.md](./NATIVE_DETERMINISM_PLAN.md) for the contract and
+evidence. Native cross-architecture CI remains open. The runtime still uses
+the ordinary shared Go heap; child failures, unreviewed runtime waits,
+process-owned state, and effects remain uncontained.
 
 The first release keeps static linking and one selected dependency version per
 module/import path. Independently loaded `.so` programs, two versions behind
@@ -61,6 +66,10 @@ cannot skip an unmet runtime gate.
   currently describes setup, but native macOS execution has not been verified.
 
 ### 1. Exact suspension and deterministic execution
+
+The trusted POC implements the core FIFO/suspension/select/map work. The
+following release gate expands and validates it across supported APIs and
+platforms, including currently rejected sync.Map.Range and iter.Pull.
 
 - Replace the SDK's one-command-at-a-time timeout loop with `Resume` (or an
   equivalent runtime-owned hook) that returns only when no isolate goroutine

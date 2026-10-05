@@ -34,15 +34,20 @@ now contains a byte-oriented isolate workflow API and a Temporal Go SDK
 `WorkflowDefinitionFactory` adapter. Its static
 worker build and local activity/timer/signal driver pass. Both example
 workflows completed on a Temporal CLI development server, and fresh isolate
-processes replayed their exported histories. Native quiescence and
-deterministic scheduling remain open; see
+processes replayed their exported histories. Native FIFO dispatch, reproducible
+select, canonical integer/string maps, and exact suspension now pass local
+stress and replay gates. Concurrent activity/timer workflows and SleepForDays
+signal completion replayed at GOMAXPROCS 1, 2, and 8 on Linux arm64; see
+[NATIVE_DETERMINISM_PLAN.md](./NATIVE_DETERMINISM_PLAN.md) and
 [TEMPORAL_POC.md](./TEMPORAL_POC.md).
 
 The separate
 [`samples-go-poc` repository](https://github.com/mfateev/samples-go-poc/tree/task/modify-go-runtime-for-isolates)
 ports the upstream `helloworld` and `choice-exclusive` samples to the POC API.
-Both workers built with the forked
-toolchain; live workflows and fresh-process history replay passed.
+The workers built with the forked
+toolchain; live workflows and fresh-process history replay passed. The native
+GreetAll goroutine/channel/WaitGroup sample also completed and replayed, and
+its driver covers reordered completions, empty input, and activity failures.
 
 🟡 **Phase 0 selects the Phase 2B compiler/runtime path for the trusted MVP.
 Phase 2B implementation has begun with an opt-in initialized-global probe;
@@ -71,9 +76,10 @@ ordinary-Go execution remains unproved.**
       pass; about 2.8–2.9x native cost in the current 1k-key run
 - [ ] Tier 1 entry-point guard enumeration
 - [x] Isolate API + boundary ABI — drafted, see ISOLATE_API.md
-- [ ] Goroutine scheduling determinism (the largest remaining piece)
-- [ ] **Build the runtime quiescence hook** — deadlock detection, clock advance,
-      and the host suspend point are all the same mechanism
+- [x] Trusted POC native goroutine FIFO dispatch with GC/preemption retaining
+      the token; repeated full-trace stress and race tests pass
+- [x] Trusted POC exact suspend/resume fence, batched history delivery,
+      and deadlock reporting; native cross-architecture release gates remain
 - [ ] Floor measurement + nursery prototype
 - [x] A reproducible 10,000-instance prepared-state floor measured about
       9.40 KB retained per JSON-importing instance versus 0.54 KB for an

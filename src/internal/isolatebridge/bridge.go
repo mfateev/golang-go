@@ -21,17 +21,19 @@ import (
 // Boundary is one host command transport. Its channel is
 // infrastructure for the Phase 2B API probe, not a contained isolate heap.
 type Boundary struct {
-	owner      uintptr
-	group      unsafe.Pointer
-	calls      chan *Command
-	next       atomic.Uint64
-	halt       chan struct{}
-	stop       sync.Once
-	wake       sync.Once
-	wakeNeeded bool
-	stopped    atomic.Bool
-	onExit     func(int)
-	timerOp    uint32
+	owner         uintptr
+	group         unsafe.Pointer
+	calls         chan *Command
+	next          atomic.Uint64
+	halt          chan struct{}
+	stop          sync.Once
+	wake          sync.Once
+	wakeNeeded    bool
+	stopped       atomic.Bool
+	onExit        func(int)
+	timerOp       uint32
+	deterministic bool
+	pendingCalls  atomic.Int64
 }
 
 var nextOwner atomic.Uintptr
@@ -68,6 +70,52 @@ func New() *Boundary {
 	setGroupExit(b.group, b.exit)
 	return b
 }
+
+// EnableDeterminism opts into the native isolate FIFO/token scheduler. It
+// must be called before initializers or any other group members run.
+func (b *Boundary) EnableDeterminism() error {
+	if !enableDeterminism(b.group) {
+		return errors.New("isolate: cannot enable determinism after attaching goroutines")
+	}
+	b.deterministic = true
+	return nil
+}
+
+// Suspend fences native dispatch when all members are blocked or finished.
+// The host must service outstanding Commands concurrently while waiting.
+func (b *Boundary) Suspend() error {
+	if !b.deterministic {
+		return errors.New("isolate: suspension requires deterministic dispatch")
+	}
+	suspend(b.group)
+	if b.Stopped() {
+		return errors.New("isolate: suspension interrupted by revocation")
+	}
+	return nil
+}
+
+// PendingCalls counts host calls that have not returned to instance code.
+// After suspension it distinguishes host-event waits from native deadlock.
+// Revocation may discard defers, so this count is not a teardown diagnostic.
+func (b *Boundary) PendingCalls() int64 { return b.pendingCalls.Load() }
+
+// Resume releases the suspension fence after host events have been delivered.
+func (b *Boundary) Resume() error {
+	if !b.deterministic {
+		return errors.New("isolate: resume requires deterministic dispatch")
+	}
+	resume(b.group)
+	return nil
+}
+
+//go:linkname suspend runtime.isolateSuspend
+func suspend(unsafe.Pointer)
+
+//go:linkname resume runtime.isolateResume
+func resume(unsafe.Pointer)
+
+//go:linkname enableDeterminism runtime.isolateEnableDeterminism
+func enableDeterminism(unsafe.Pointer) bool
 
 // ConfigureTime gives this boundary a host-controlled clock and a Call
 // operation for durable timers. It must run before program initialization.
@@ -126,8 +174,8 @@ func (b *Boundary) exit(code int) {
 }
 
 // Run binds b to the current goroutine for fn. Ordinary child goroutines
-// inherit that binding. A native isolate scheduler will own this binding
-// instead of a Go host call.
+// inherit that binding. Deterministic mode also claims the group execution
+// token before running fn.
 func (b *Boundary) Run(fn func()) {
 	if b == nil || fn == nil {
 		panic("isolate: nil boundary or entry")
@@ -248,6 +296,8 @@ func Current() *Boundary {
 // Call copies one request to the host and waits for its response.
 func (b *Boundary) Call(op uint32, payload []byte) ([]byte, error) {
 	b.stopIfRevoked()
+	b.pendingCalls.Add(1)
+	defer b.pendingCalls.Add(-1)
 	id := b.next.Add(1)
 	if id == 0 {
 		panic("isolate: command ID exhausted")

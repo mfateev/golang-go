@@ -400,9 +400,19 @@ func forcegchelper() {
 //go:nosplit
 func Gosched() {
 	isolateDiscardIfRevoked()
+	getg().isolateExplicitYield = true
 	checkTimeouts()
 	mcall(gosched_m)
 	isolateDiscardIfRevoked()
+}
+
+// goschedRuntime yields to runtime housekeeping without advancing an isolate
+// execution token. Only an explicit user Gosched is a deterministic yield.
+//
+//go:nosplit
+func goschedRuntime() {
+	checkTimeouts()
+	mcall(gosched_m)
 }
 
 // gosched is also used by runtime paths that cannot run user defers.
@@ -4300,6 +4310,9 @@ func parkunlock_c(gp *g, lock unsafe.Pointer) bool {
 // park continuation on g0.
 func park_m(gp *g) {
 	mp := getg().m
+	// Retained-token runtime waits may resume and even reuse gp before the
+	// commit callback returns. Only token-transfer parks keep gp unpublished.
+	isolatePark := isolateDispatchParkBegin(gp)
 
 	trace := traceAcquire()
 
@@ -4332,6 +4345,9 @@ func park_m(gp *g) {
 		mp.waitunlockf = nil
 		mp.waitlock = nil
 		if !ok {
+			if isolatePark {
+				isolateDispatchParkEnd(gp, false)
+			}
 			trace := traceAcquire()
 			casgstatus(gp, _Gwaiting, _Grunnable)
 			if bubble != nil {
@@ -4347,6 +4363,9 @@ func park_m(gp *g) {
 
 	if bubble != nil {
 		bubble.decActive()
+	}
+	if isolatePark {
+		isolateDispatchParkEnd(gp, true)
 	}
 
 	schedule()
@@ -4376,6 +4395,12 @@ func goschedImpl(gp *g, preempted bool) {
 	}
 
 	dropg()
+	if gp.isolateExplicitYield && gp.isolateGroup != nil && gp.isolateGroup.deterministic {
+		gp.isolateExplicitYield = false
+		isolateDispatchRelease(gp, true)
+		schedule()
+	}
+	gp.isolateExplicitYield = false
 	if preempted && sched.gcwaiting.Load() {
 		// If preempted for STW, keep the G on the local P in runnext
 		// so it can keep running immediately after the STW.
@@ -4602,6 +4627,7 @@ func gdestroy(gp *g) {
 
 	dropg()
 	if gp.isolateGroup != nil {
+		isolateDispatchRelease(gp, false)
 		if gp.isolateAdmitted {
 			gp.isolateGroup.admission.Add(-1)
 		}
@@ -5459,6 +5485,10 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	newg.isolateGroup = nil
 	newg.isolateStarted = false
 	newg.isolateAdmitted = false
+	newg.isolateDispatchPark = false
+	newg.isolateDispatchQueued = false
+	newg.isolateExplicitYield = false
+	newg.isolateRuntimeWait = false
 	if isSystemGoroutine(newg, false) {
 		sched.ngsys.Add(1)
 	} else {
@@ -7392,6 +7422,9 @@ func mgetSpecific(mp *m) *m {
 //go:nowritebarrierrec
 func globrunqput(gp *g) {
 	assertLockHeld(&sched.lock)
+	if !isolateDispatchReady(gp) {
+		return
+	}
 
 	sched.runq.pushBack(gp)
 }
@@ -7403,6 +7436,9 @@ func globrunqput(gp *g) {
 //go:nowritebarrierrec
 func globrunqputhead(gp *g) {
 	assertLockHeld(&sched.lock)
+	if !isolateDispatchReady(gp) {
+		return
+	}
 
 	sched.runq.push(gp)
 }
@@ -7416,8 +7452,18 @@ func globrunqputhead(gp *g) {
 func globrunqputbatch(batch *gQueue) {
 	assertLockHeld(&sched.lock)
 
-	sched.runq.pushBackAll(*batch)
-	*batch = gQueue{}
+	// Batches assembled from local run queues may retain an old tail link.
+	// The former pushBackAll cleared it; preserve that invariant before
+	// walking members individually for deterministic dispatch.
+	if batch.tail != 0 {
+		batch.tail.ptr().schedlink = 0
+	}
+	for !batch.empty() {
+		gp := batch.pop()
+		if isolateDispatchReady(gp) {
+			sched.runq.pushBack(gp)
+		}
+	}
 }
 
 // Try get a single G from the global runnable queue.
@@ -7620,6 +7666,9 @@ const randomizeScheduler = raceenabled
 // If the run queue is full, runnext puts g on the global queue.
 // Executed only by the owner P.
 func runqput(pp *p, gp *g, next bool) {
+	if !isolateDispatchReady(gp) {
+		return
+	}
 	if !haveSysmon && next {
 		// A runnext goroutine shares the same time slice as the
 		// current goroutine (inheritTime from runqget). To prevent a
@@ -7715,6 +7764,9 @@ func runqputbatch(pp *p, q *gQueue) {
 	n := uint32(0)
 	for !q.empty() && t-h < uint32(len(pp.runq)) {
 		gp := q.pop()
+		if !isolateDispatchReady(gp) {
+			continue
+		}
 		pp.runq[t%uint32(len(pp.runq))].set(gp)
 		t++
 		n++
@@ -8115,6 +8167,9 @@ func internal_sync_runtime_doSpin() {
 //go:linkname sync_runtime_canSpin sync.runtime_canSpin
 //go:nosplit
 func sync_runtime_canSpin(i int) bool {
+	if isolateDeterministic() {
+		return false
+	}
 	return internal_sync_runtime_canSpin(i)
 }
 

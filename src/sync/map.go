@@ -111,5 +111,8 @@ func (m *Map) CompareAndDelete(key, old any) (deleted bool) {
 // Range may be O(N) with the number of elements in the map even if f returns
 // false after a constant number of calls.
 func (m *Map) Range(f func(key, value any) bool) {
+	if runtime_isolateDeterministic() {
+		panic("isolate: sync.Map.Range has no deterministic iteration contract")
+	}
 	m.m.Range(f)
 }

@@ -183,14 +183,14 @@ func signalWaitUntilIdle() {
 	// and has not yet woken up the processor thread. We need to wait
 	// until all current signal deliveries have completed.
 	for sig.delivering.Load() != 0 {
-		Gosched()
+		goschedRuntime()
 	}
 
 	// Although WaitUntilIdle seems like the right name for this
 	// function, the state we are looking for is sigReceiving, not
 	// sigIdle.  The sigIdle state is really more like sigProcessing.
 	for sig.state.Load() != sigReceiving {
-		Gosched()
+		goschedRuntime()
 	}
 }
 

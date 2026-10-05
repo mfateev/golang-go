@@ -563,7 +563,7 @@ func GC() {
 	// as part of tests and benchmarks to get the system into a
 	// relatively stable and isolated state.
 	for work.cycles.Load() == n+1 && sweepone() != ^uintptr(0) {
-		Gosched()
+		goschedRuntime()
 	}
 
 	// Callers may assume that the heap profile reflects the
@@ -578,7 +578,7 @@ func GC() {
 	// more spans on the sweep queue, but we may be concurrently
 	// sweeping spans, so we have to wait.)
 	for work.cycles.Load() == n+1 && !isSweepDone() {
-		Gosched()
+		goschedRuntime()
 	}
 
 	// Now we're really done with sweeping, so we can publish the
@@ -936,7 +936,7 @@ func gcStart(trigger gcTrigger) {
 		gcCPULimiter.finishGCTransition(now)
 	})
 
-	// Release the world sema before Gosched() in STW mode
+	// Release the world sema before goschedRuntime() in STW mode
 	// because we will need to reacquire it later but before
 	// this goroutine becomes runnable again, and we could
 	// self-deadlock otherwise.
@@ -946,7 +946,7 @@ func gcStart(trigger gcTrigger) {
 	// Make sure we block instead of returning to user code
 	// in STW mode.
 	if mode != gcBackgroundMode {
-		Gosched()
+		goschedRuntime()
 	}
 
 	semrelease(&work.startSema)
@@ -1678,7 +1678,7 @@ func gcMarkTermination(stw worldStop) {
 	// now that gc is done, kick off finalizer thread if needed
 	if !concurrentSweep {
 		// give the queued finalizers, if any, a chance to run
-		Gosched()
+		goschedRuntime()
 	}
 }
 
@@ -1687,6 +1687,11 @@ func gcMarkTermination(stw worldStop) {
 // the work is not stopped and from a regular G stack. The caller must hold
 // worldsema.
 func gcBgMarkStartWorkers() {
+	// This channel handshake is runtime housekeeping, not an isolate yield.
+	// GC startup must not choose a different workflow goroutine.
+	gp := getg()
+	gp.isolateRuntimeWait = true
+	defer func() { gp.isolateRuntimeWait = false }()
 	// Background marking is performed by per-P G's. Ensure that each P has
 	// a background GC G.
 	//

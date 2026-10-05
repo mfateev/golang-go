@@ -55,6 +55,22 @@ func isolateNewGroup() unsafe.Pointer {
 	return unsafe.Pointer(new(isolateRevocationGroup))
 }
 
+//go:linkname isolateEnableDeterminism
+func isolateEnableDeterminism(p unsafe.Pointer) bool {
+	group := (*isolateRevocationGroup)(p)
+	if group.live.Load() != 0 {
+		return false
+	}
+	group.deterministic = true
+	return true
+}
+
+//go:linkname isolateDeterministic
+func isolateDeterministic() bool {
+	group := getg().isolateGroup
+	return group != nil && group.deterministic
+}
+
 //go:linkname isolateSetClock
 func isolateSetClock(p unsafe.Pointer, unixNano int64) bool {
 	group := (*isolateRevocationGroup)(p)
@@ -93,6 +109,7 @@ func isolateSetGroup(p unsafe.Pointer) unsafe.Pointer {
 		panic("isolate: cannot nest different goroutine groups")
 	}
 	if old != nil {
+		isolateDispatchLeave(gp)
 		old.running.Add(-1)
 		old.live.Add(-1)
 	}
@@ -100,6 +117,7 @@ func isolateSetGroup(p unsafe.Pointer) unsafe.Pointer {
 	if next != nil {
 		next.live.Add(1)
 		next.running.Add(1)
+		isolateDispatchEnter(gp)
 	}
 	return unsafe.Pointer(old)
 }

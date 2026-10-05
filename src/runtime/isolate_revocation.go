@@ -47,6 +47,7 @@ func (group *isolateRevocationGroup) markRevoked() bool {
 			return false
 		}
 		if group.admission.CompareAndSwap(state, state|isolateRevokedBit) {
+			isolateDispatchRevoke(group)
 			return true
 		}
 	}

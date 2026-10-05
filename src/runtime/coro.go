@@ -40,6 +40,9 @@ type coro struct {
 // goroutine blocked waiting to run f
 // and returns that coro.
 func newcoro(f func(*coro)) *coro {
+	if isolateDeterministic() {
+		panic("isolate: iter.Pull requires deterministic coroutine dispatch support")
+	}
 	c := new(coro)
 	c.f = f
 	pc := sys.GetCallerPC()
@@ -89,6 +92,9 @@ func coroexit(c *coro) {
 // coroswitch switches to the goroutine blocked on c
 // and then blocks the current goroutine on c.
 func coroswitch(c *coro) {
+	if isolateDeterministic() {
+		panic("isolate: iter.Pull requires deterministic coroutine dispatch support")
+	}
 	gp := getg()
 	gp.coroarg = c
 	mcall(coroswitch_m)

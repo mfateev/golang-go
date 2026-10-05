@@ -656,7 +656,7 @@ retry:
 		// If this is because we were preempted, reschedule
 		// and try some more.
 		if gp.preempt {
-			Gosched()
+			goschedRuntime()
 			goto retry
 		}
 

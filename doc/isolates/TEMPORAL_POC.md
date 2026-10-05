@@ -20,8 +20,9 @@ history processing.
 
 `Execute` only stores input and registers a signal handler. It starts no
 application code. `OnWorkflowTaskStarted` delivers queued callbacks to the
-isolate, lets the workflow run until it reaches a host operation, then emits
-Temporal commands through `WorkflowEnvironment`. Callbacks only queue results;
+isolate while dispatch is fenced, resumes its FIFO dispatcher, and services
+all commands until the runtime reports exact suspension. It emits Temporal
+commands through `WorkflowEnvironment`. Callbacks only queue results;
 they never run isolate code themselves. A new factory instance is created per
 workflow execution, and replay reconstructs its isolate from the beginning.
 
@@ -52,8 +53,9 @@ operation through the isolate boundary. Timer completion is delivered after
 the host advances the clock for the next task. `time.AfterFunc` and tickers are
 outside this POC's workflow-time subset. `Timer.Stop` and `Timer.Reset` suppress
 local delivery but do not yet cancel an already scheduled Temporal timer; that
-can cause extra history events. Concurrent timer and signal handling still
-needs the exact quiescence and scheduling work below.
+can cause extra history events. Concurrent timer, activity, and signal handling now uses the deterministic
+dispatcher and exact suspension fence described in
+[NATIVE_DETERMINISM_PLAN.md](./NATIVE_DETERMINISM_PLAN.md).
 
 The first implementation is in `sdk-go-poc`. Its local driver runs the serial
 activity/timer/completion path and a signal path through the actual statically
@@ -74,11 +76,11 @@ server, and their exported histories replayed in fresh isolate processes.
 2. **Replay — passed locally for both examples:** run the same history with a fresh isolate and verify the same
    Temporal commands and result. This covers the actual worker/server path and
    a local bridge driver; it does not cover cross-architecture replay.
-3. **Native quiescence:** give `OnWorkflowTaskStarted` an exact suspend point
+3. **Native quiescence — passed locally for the trusted subset:** give `OnWorkflowTaskStarted` an exact suspend point
    after all runnable isolate goroutines have blocked. A channel receive,
    `sync.WaitGroup`, and concurrent `Call`s must work without polling delays or
    host commands leaking into a later workflow task.
-4. **Deterministic execution:** virtualize time and scheduler choices needed by
+4. **Deterministic execution — passed locally:** virtualize time and scheduler choices needed by
    the example; prove fan-out/replay with real `go`, channels, `select`, and
    `sync.WaitGroup`. The host records external effects, not internal goroutine
    scheduling.
@@ -88,9 +90,12 @@ server, and their exported histories replayed in fresh isolate processes.
 The first slice is a trusted POC. Workflow code is selected and reviewed; it
 must not use unsafe I/O APIs. Complete I/O interception, broad standard
 library ownership, heap containment, and production security are deferred.
-The provisional isolate runtime currently lacks deterministic scheduling and
-an exact quiescence barrier, so the serial adapter must not be presented as
-the completed steel thread. `internalbindings` is an unstable Go SDK API;
+The trusted subset now has FIFO native goroutines, reproducible select,
+canonical integer/string map iteration, logical time, and exact host
+suspension. Live concurrent activity/timer execution and SleepForDays signal
+completion replayed in fresh Linux arm64 processes with GOMAXPROCS 1, 2, and 8.
+Cross-architecture replay remains a release gate; unsupported map key kinds,
+sync.Map.Range, and iter.Pull are rejected in deterministic mode. `internalbindings` is an unstable Go SDK API;
 the POC pins a tested SDK version and will need an adapter update when that
 version changes. The follow-on release gates are in
 [PRODUCTIZATION_PLAN.md](./PRODUCTIZATION_PLAN.md).

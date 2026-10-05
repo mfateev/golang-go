@@ -230,7 +230,7 @@ func selectgo(cas0 *scase, order0 *uint16, pc0 *uintptr, nsends, nrecvs int, blo
 			cas.c.timer.maybeRunChan(cas.c)
 		}
 
-		j := cheaprandn(uint32(norder + 1))
+		j := isolateSelectRandn(gp, uint32(norder+1))
 		pollorder[norder] = pollorder[j]
 		pollorder[j] = uint16(i)
 		norder++

@@ -8,6 +8,9 @@ import "unsafe"
 
 // defined in package runtime
 
+//go:linkname runtime_isolateDeterministic runtime.isolateDeterministic
+func runtime_isolateDeterministic() bool
+
 // Semacquire waits until *s > 0 and then atomically decrements it.
 // It is intended as a simple sleep primitive for use by the synchronization
 // library and should not be used directly.

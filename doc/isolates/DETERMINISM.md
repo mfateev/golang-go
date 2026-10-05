@@ -1,6 +1,9 @@
 # Determinism — Required Runtime Changes
 
-Status: **analysis**. Verified against the worktree at `2ff5743d9f`.
+Status: **historical analysis**. Verified against the worktree at `2ff5743d9f`.
+The implementation sequence and current contracts are in
+[NATIVE_DETERMINISM_PLAN.md](./NATIVE_DETERMINISM_PLAN.md). In particular,
+canonical map iteration removes the need to make map hashing deterministic.
 Companion to [ISOLATES_DESIGN.md](./ISOLATES_DESIGN.md) (decision 6) and
 [ISOLATE_SUBSET.md](./ISOLATE_SUBSET.md) (section D).
 

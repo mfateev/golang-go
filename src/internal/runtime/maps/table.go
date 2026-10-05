@@ -735,11 +735,19 @@ type Iter struct {
 	// The lower 3 bits of the index are the slot index, and the upper bits
 	// are the group index.
 	entryIdx uint64
+
+	// Isolate iteration snapshots keys, then looks up current values in order.
+	isolateKeys []unsafe.Pointer
+	isolateIdx  int
 }
 
 // Init initializes Iter for iteration.
 func (it *Iter) Init(typ *abi.MapType, m *Map) {
 	it.typ = typ
+	deterministic := isolateMapOwner() != 0 && isolateDeterministic()
+	if deterministic {
+		isolateCheckKeyKind(typ.Key.Kind())
+	}
 	if m != nil {
 		m.checkIsolateRead()
 	}
@@ -763,6 +771,9 @@ func (it *Iter) Init(typ *abi.MapType, m *Map) {
 	it.dirIdx = dirIdx
 	it.group = groupSmall
 	it.clearSeq = m.clearSeq
+	if deterministic {
+		it.initIsolateKeys()
+	}
 }
 
 func (it *Iter) Initialized() bool {
@@ -890,6 +901,18 @@ func (it *Iter) Next() {
 
 	if it.m.writing != 0 {
 		fatal("concurrent map iteration and map write")
+		return
+	}
+	if it.isolateKeys != nil {
+		for it.isolateIdx < len(it.isolateKeys) {
+			key := it.isolateKeys[it.isolateIdx]
+			it.isolateIdx++
+			if k, elem, ok := it.m.getWithKey(it.typ, key); ok {
+				it.key, it.elem = k, elem
+				return
+			}
+		}
+		it.key, it.elem = nil, nil
 		return
 	}
 

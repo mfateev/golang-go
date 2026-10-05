@@ -249,6 +249,8 @@ func MapIterType() *types.Type {
 	//    group unsafe.Pointer // actually groupReference.data
 	//
 	//    entryIdx uint64
+	//    isolateKeys []unsafe.Pointer
+	//    isolateIdx int
 	// }
 	// must match internal/runtime/maps/table.go:Iter.
 	fields := []*types.Field{
@@ -264,6 +266,8 @@ func MapIterType() *types.Type {
 		makefield("tab", types.NewPtr(mapTableType())),
 		makefield("group", types.Types[types.TUNSAFEPTR]),
 		makefield("entryIdx", types.Types[types.TUINT64]),
+		makefield("isolateKeys", types.NewSlice(types.Types[types.TUNSAFEPTR])),
+		makefield("isolateIdx", types.Types[types.TINT]),
 	}
 
 	// build iterator struct holding the above fields
@@ -275,9 +279,9 @@ func MapIterType() *types.Type {
 	iter.SetUnderlying(types.NewStruct(fields))
 	types.CalcSize(iter)
 
-	// The size of Iter should be 96 bytes on 64 bit
-	// and 64 bytes on 32 bit platforms.
-	if size := 8*types.PtrSize /* one extra for globalDepth + padding */ + 4*8; iter.Size() != int64(size) {
+	// The size of Iter should be 128 bytes on 64 bit
+	// and 80 bytes on 32 bit platforms.
+	if size := 12*types.PtrSize /* one extra for globalDepth + padding */ + 4*8; iter.Size() != int64(size) {
 		base.Fatalf("internal/runtime/maps.Iter size not correct: got %d, want %d", iter.Size(), size)
 	}
 

@@ -128,7 +128,7 @@ func signalWaitUntilIdle() {
 		if sleeping {
 			return
 		}
-		Gosched()
+		goschedRuntime()
 	}
 }
 

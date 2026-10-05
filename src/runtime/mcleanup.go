@@ -776,7 +776,7 @@ func (q *cleanupQueue) blockUntilEmpty(timeout int64) bool {
 			return true
 		}
 		unlock(&q.lock)
-		Gosched()
+		goschedRuntime()
 	}
 	return false
 }

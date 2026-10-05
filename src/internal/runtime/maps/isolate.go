@@ -9,6 +9,9 @@ import _ "unsafe" // for go:linkname
 //go:linkname isolateMapOwner runtime.isolateGetOwner
 func isolateMapOwner() uintptr
 
+//go:linkname isolateDeterministic runtime.isolateDeterministic
+func isolateDeterministic() bool
+
 func (m *Map) checkIsolateWrite() {
 	if m.owner != isolateMapOwner() {
 		panic("isolate: map write crosses owner boundary")

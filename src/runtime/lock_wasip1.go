@@ -100,7 +100,7 @@ func notetsleepg(n *note, ns int64) bool {
 		if sched_yield() != 0 {
 			throw("sched_yield failed")
 		}
-		Gosched()
+		goschedRuntime()
 		if ns >= 0 && nanotime() >= deadline {
 			return false
 		}

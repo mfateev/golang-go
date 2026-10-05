@@ -914,5 +914,10 @@ func notifyListCheck(sz uintptr) {
 
 //go:linkname internal_sync_nanotime internal/sync.runtime_nanotime
 func internal_sync_nanotime() int64 {
+	if isolateDeterministic() {
+		// Mutex starvation policy must not depend on elapsed process time.
+		// FIFO dispatch already makes waiters fair within this instance.
+		return 0
+	}
 	return nanotime()
 }

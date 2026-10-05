@@ -34,16 +34,18 @@ func LookupProgram(name string) (Program, bool) {
 
 // Config selects one program.
 type Config struct {
-	Program     Program
-	InitialTime *time.Time // Enables the host clock before package initialization.
-	TimerOp     uint32     // Call operation used for durable timer waits.
+	Program       Program
+	Deterministic bool       // FIFO native goroutines and deterministic select/map iteration.
+	InitialTime   *time.Time // Enables the host clock before package initialization.
+	TimerOp       uint32     // Call operation used for durable timer waits.
 }
 
 // Command is one host request made by Call. Reply must be called once.
 type Command = isolatebridge.Command
 
 // Isolate is a trusted instance of one statically linked program. This POC
-// uses the ordinary Go heap and scheduler; it does not provide containment.
+// uses the ordinary Go heap. Deterministic mode gates its native goroutines
+// through a FIFO execution token; it does not provide containment.
 type Isolate struct {
 	entry         func()
 	runState      func(func())
@@ -95,6 +97,11 @@ func New(cfg Config) (*Isolate, error) {
 		return nil, errors.New("isolate: unknown program")
 	}
 	boundary := isolatebridge.New()
+	if cfg.Deterministic {
+		if err := boundary.EnableDeterminism(); err != nil {
+			return nil, err
+		}
+	}
 	if cfg.InitialTime != nil {
 		clock, err := isolateTimeNanos(*cfg.InitialTime)
 		if err != nil {
@@ -180,7 +187,7 @@ func (i *Isolate) AdvanceTime(t time.Time) error {
 }
 
 // Start runs the program's ordinary main on a new goroutine. It may be called
-// once. A future runtime scheduler will replace this trusted POC lifecycle.
+// once. Deterministic mode also applies to its children and initialization.
 func (i *Isolate) Start() error {
 	if i == nil {
 		return errors.New("isolate: instance already started or nil")
@@ -256,6 +263,29 @@ func (i *Isolate) watchRevokedCompletion() {
 // Commands returns host requests from the program. The host must reply to
 // each request using Command.Reply.
 func (i *Isolate) Commands() <-chan *Command { return i.boundary.Commands() }
+
+// Suspend waits for every deterministic instance goroutine to block, then
+// fences dispatch. Service Commands concurrently until this returns. Deliver
+// host event replies while suspended, then call Resume to run the next task.
+func (i *Isolate) Suspend() error {
+	if i == nil || !i.started.Load() {
+		return errors.New("isolate: instance not started")
+	}
+	return i.boundary.Suspend()
+}
+
+// Resume allows suspended instance work to run in FIFO order.
+func (i *Isolate) Resume() error {
+	if i == nil || !i.started.Load() {
+		return errors.New("isolate: instance not started")
+	}
+	return i.boundary.Resume()
+}
+
+// PendingCalls counts outstanding host operations. Inspect after Suspend;
+// a live instance with no pending host calls cannot progress without native
+// synchronization and is deadlocked under the trusted deterministic contract.
+func (i *Isolate) PendingCalls() int64 { return i.boundary.PendingCalls() }
 
 // Done is closed when the program's main goroutine exits.
 func (i *Isolate) Done() <-chan struct{} { return i.done }

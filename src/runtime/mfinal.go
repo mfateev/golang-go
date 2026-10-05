@@ -333,7 +333,7 @@ func blockUntilEmptyFinalizerQueue(timeout int64) bool {
 		if empty {
 			return true
 		}
-		Gosched()
+		goschedRuntime()
 	}
 	return false
 }
