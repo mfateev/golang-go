@@ -14,8 +14,9 @@ func IsolateMetadataRevokeForTest(p unsafe.Pointer)        { isolateRevokeUnstar
 func IsolateMetadataLiveForTest(p unsafe.Pointer) int32    { return isolateGroupLive(p) }
 func IsolateMetadataRunningForTest(p unsafe.Pointer) int32 { return isolateGroupRunning(p) }
 
-func IsolateMetadataOwnerForTest() uintptr { return isolateGetOwner() }
-func IsolateMetadataDepthForTest() uint32  { return getg().isolateMetadataDepth }
+func IsolateMetadataOwnerForTest() uintptr   { return isolateGetOwner() }
+func IsolateMetadataDepthForTest() uint32    { return getg().isolateMetadataDepth }
+func IsolateMetadataGCWorkersForTest() int32 { return gcBgMarkWorkerCount }
 func IsolateMetadataScopeForTest(fn func()) {
 	owner := isolateEnterMetadata()
 	defer isolateLeaveMetadata(owner)

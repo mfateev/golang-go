@@ -5,14 +5,70 @@
 package runtime_test
 
 import (
+	"internal/testenv"
+	"os"
 	"reflect"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
 )
+
+func TestIsolateMetadataGCStartup(t *testing.T) {
+	const child = "GO_ISOLATE_METADATA_GC_STARTUP"
+	if os.Getenv(child) != "1" {
+		cmd := testenv.Command(t, testenv.Executable(t), "-test.run=^TestIsolateMetadataGCStartup$", "-test.v")
+		cmd.Env = append(cmd.Environ(), child+"=1", "GOGC=off", "GOMAXPROCS=1")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("cold GC startup: %v\n%s", err, output)
+		}
+		return
+	}
+	if got := runtime.IsolateMetadataGCWorkersForTest(); got != 0 {
+		t.Fatalf("cold process already has %d GC workers", got)
+	}
+	group := runtime.IsolateMetadataGroupForTest()
+	for _, procs := range []int{1, 4} {
+		runtime.GOMAXPROCS(procs)
+		debug.SetGCPercent(1)
+		runtime.IsolateMetadataRunForTest(group, 709, func() {
+			runtime.IsolateMetadataScopeForTest(func() {
+				// This allocation must start the first workers, and subsequently
+				// add workers after GOMAXPROCS increases, on the service caller.
+				value := runtime.IsolateMetadataBytesForTest(64 << 20)
+				if got := runtime.IsolateMetadataGCWorkersForTest(); got < int32(procs) {
+					t.Fatalf("GC workers=%d, want at least %d", got, procs)
+				}
+				if got := runtime.IsolateMetadataLiveForTest(group); got != 1 {
+					t.Fatalf("runtime workers inherited the isolate: live=%d", got)
+				}
+				if runtime.IsolateMetadataOwnerForTest() != 0 || runtime.IsolateMetadataDepthForTest() != 1 {
+					t.Fatal("GC startup changed metadata privileges")
+				}
+				runtime.KeepAlive(value)
+			})
+		})
+		debug.SetGCPercent(-1)
+		runtime.GC()
+	}
+}
+
+func TestIsolateMetadataRejectUserGoroutine(t *testing.T) {
+	runtime.IsolateMetadataRunForTest(runtime.IsolateMetadataGroupForTest(), 710, func() {
+		defer func() {
+			if got := recover(); got != "isolate: metadata services cannot start goroutines" {
+				t.Fatalf("goroutine restriction: got %v", got)
+			}
+			if runtime.IsolateMetadataOwnerForTest() != 710 || runtime.IsolateMetadataDepthForTest() != 0 {
+				t.Fatal("goroutine rejection leaked metadata privileges")
+			}
+		}()
+		runtime.IsolateMetadataScopeForTest(func() { go func() {}() })
+	})
+}
 
 func TestIsolateMetadataOwnership(t *testing.T) {
 	group := runtime.IsolateMetadataGroupForTest()

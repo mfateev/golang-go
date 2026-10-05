@@ -5417,10 +5417,14 @@ func malg(stacksize int32) *g {
 // Put it on the queue of g's waiting to run.
 // The compiler turns a go statement into a call to this.
 func newproc(fn *funcval) {
-	if getg().isolateMetadataDepth != 0 {
+	gp := getg()
+	// Allocation inside a metadata service can start GC workers. Match the
+	// system-goroutine classification used by newproc1: those workers never
+	// inherit the caller's isolate, while application goroutines must not
+	// escape the service scope.
+	if gp.isolateMetadataDepth != 0 && (fn == nil || !isSystemGoroutine(&g{startpc: fn.fn}, false)) {
 		panic("isolate: metadata services cannot start goroutines")
 	}
-	gp := getg()
 	pc := sys.GetCallerPC()
 	systemstack(func() {
 		newg := newproc1(fn, gp, pc, false, waitReasonZero)

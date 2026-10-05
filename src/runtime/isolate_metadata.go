@@ -15,7 +15,8 @@ import (
 // Enter before taking a service lock and defer Leave before deferring Unlock:
 // the locks must be released before the outermost Leave discards a revoked G.
 // The group and boundary remain attached, so process API restrictions and live
-// accounting still apply. A service may not start goroutines or call the host.
+// accounting still apply. A service may not start application goroutines or
+// call the host. Runtime housekeeping goroutines retain process ownership.
 //
 //go:linkname isolateEnterMetadata
 func isolateEnterMetadata() uintptr {

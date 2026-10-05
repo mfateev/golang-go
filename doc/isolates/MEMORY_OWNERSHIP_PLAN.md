@@ -85,8 +85,10 @@ Metadata scopes preserve the instance's group, clock and process restrictions,
 while switching allocation and cache access to the process owner. They keep the
 dispatch token while waiting on shared service locks. Kill remains pending until
 outermost service exit, after lock cleanup; application continuation and defers
-then remain discarded. A scope cannot start goroutines, call the host or exit
-the process. Nested scopes and panic unwinding restore the original owner.
+then remain discarded. A scope cannot start application goroutines, call the
+host or exit the process. Runtime housekeeping goroutines, including GC workers
+started by service allocations, remain outside the instance. Nested scopes and
+panic unwinding restore the original owner.
 
 ### Initial service manifest
 
@@ -187,3 +189,16 @@ The corrected DAG places `execR` after `allp`; a regression exercises this order
 on every platform. Full runtime/isolate short suites with static lock ranking
 passed locally after the correction. The native rerun must pass before this
 foundation's platform validation is complete.
+
+The second native run (`37348765744`, Go `52aa269caa`, SDK `52210a4`)
+passed macOS arm64 and exposed a GC startup regression in both Linux SDK driver
+jobs. The service goroutine restriction also rejected runtime GC workers when
+the first collection was triggered by a reflection metadata allocation. The
+restriction now uses the same system-goroutine classification as creation;
+runtime workers never inherit the instance, while application starts still fail.
+A fresh-process regression covers cold startup and additional workers after
+increasing `GOMAXPROCS`, checks instance membership and scope restoration, and
+separately tests application goroutine rejection. The allocation/metadata,
+determinism and cached-eviction race and static-lock-ranking gates passed five
+local repetitions after this fix. The SDK driver also passed at
+`GOMAXPROCS=1/2/8` with both default GC and `GOGC=1`.
