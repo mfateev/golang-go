@@ -1,0 +1,183 @@
+# Initial heap diagnostic checks compiler-emitted accesses independently of
+# the package-state builder. These deliberately privileged test helpers attach
+# runtime groups and expose foreign pointers; application transport cannot do so.
+[short] skip
+go build -gcflags=example.org/isolateheap=-d=isolateheap=1 -o heap.exe .
+exec ./heap.exe own
+stdout '^allowed$'
+exec ./heap.exe host-read
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe host-write
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe instance-read
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe instance-write
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe peer-read
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe bulk-read
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe bulk-write
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe slice-read
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe slice-write
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe map-missing
+stdout '^isolate: map read crosses owner boundary$'
+exec ./heap.exe map-len
+stdout '^isolate: map read crosses owner boundary$'
+exec ./heap.exe map-range
+stdout '^isolate: map read crosses owner boundary$'
+exec ./heap.exe map-write
+stdout '^isolate: map write crosses owner boundary$'
+exec ./heap.exe map-delete
+stdout '^isolate: map write crosses owner boundary$'
+exec ./heap.exe map-clear
+stdout '^isolate: map write crosses owner boundary$'
+exec ./heap.exe chan-send
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe chan-recv
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe chan-close
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe chan-len
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe select
+stdout '^isolate: write to foreign heap$'
+
+-- go.mod --
+module example.org/isolateheap
+go 1.26
+-- main.go --
+package main
+
+import (
+    "fmt"
+    "os"
+    "unsafe"
+)
+
+//go:linkname newGroup runtime.isolateNewGroup
+func newGroup() unsafe.Pointer
+//go:linkname setGroup runtime.isolateSetGroup
+func setGroup(unsafe.Pointer) unsafe.Pointer
+//go:linkname setOwner runtime.isolateSetOwner
+func setOwner(uintptr) uintptr
+
+type record struct { Data [64]int }
+//go:noinline
+func allocate() *record { return &record{Data: [64]int{11}} }
+//go:noinline
+func read(p *record) int { return p.Data[7] }
+//go:noinline
+func write(p *record) { p.Data[7] = 19 }
+//go:noinline
+func move(dst, src *record) { *dst = *src }
+//go:noinline
+func sliceRead(p []int) int { return p[7] }
+//go:noinline
+func sliceWrite(p []int) { p[7] = 19 }
+//go:noinline
+func tuple() (record, int, error) { return *allocate(), 27, nil }
+//go:noinline
+func tupleHeap(p *record, number *int, err *error) { *p, *number, *err = tuple() }
+//go:noinline
+func mapMissing(m map[string]int) int { return m["missing"] }
+//go:noinline
+func mapLen(m map[string]int) int { return len(m) }
+//go:noinline
+func mapRange(m map[string]int) { for range m {} }
+//go:noinline
+func mapWrite(m map[string]int) { m["key"] = 27 }
+//go:noinline
+func mapDelete(m map[string]int) { delete(m, "key") }
+//go:noinline
+func mapClear(m map[string]int) { clear(m) }
+//go:noinline
+func chanSend(c chan int) { c <- 27 }
+//go:noinline
+func chanRecv(c chan int) int { return <-c }
+//go:noinline
+func chanClose(c chan int) { close(c) }
+//go:noinline
+func chanLen(c chan int) int { return len(c) + cap(c) }
+//go:noinline
+func channelSelect(local, foreign chan int) {
+    select { case <-local: case <-foreign: default: }
+}
+
+func run(owner uintptr, fn func()) {
+    group := newGroup()
+    previousGroup := setGroup(group)
+    previousOwner := setOwner(owner)
+    defer setGroup(previousGroup)
+    defer setOwner(previousOwner)
+    fn()
+}
+
+func main() {
+    host := allocate()
+    hostMap := map[string]int{"key": 42}
+    hostChan := make(chan int, 2)
+    hostChan <- 11
+    var owned *record
+    run(101, func() { owned = allocate() })
+    defer func() {
+        if got := recover(); got != nil {
+            // The rejected operation must not have mutated the host object.
+            if host.Data[7] != 0 { panic("foreign write happened before checking") }
+            if len(hostChan) != 1 { panic("foreign channel changed before checking") }
+            if hostMap["key"] != 42 { panic("foreign map changed before checking") }
+            hostChan <- 12 // A rejected close must not have closed this channel.
+            fmt.Println(got)
+        }
+    }()
+    switch os.Args[1] {
+    case "own":
+        run(102, func() { p := allocate(); write(p); if read(p) != 19 { panic("own state") } })
+        run(103, func() {
+            p, number, err := new(record), new(int), new(error)
+            tupleHeap(p, number, err)
+            if p.Data[0] != 11 || *number != 27 || *err != nil { panic("tuple result") }
+            m := map[string]int{"key": 42}
+            if mapMissing(m) != 0 || mapLen(m) != 1 { panic("own map") }
+            mapRange(m)
+            mapWrite(m)
+            mapDelete(m)
+            mapClear(m)
+            c := make(chan int, 2)
+            chanSend(c)
+            if chanRecv(c) != 27 || chanLen(c) != 2 { panic("own channel") }
+            channelSelect(c, nil)
+            chanClose(c)
+            if mapMissing(nil) != 0 || mapLen(nil) != 0 || chanLen(nil) != 0 { panic("nil semantics") }
+        })
+    case "host-read": run(102, func() { read(host) })
+    case "host-write": run(102, func() { write(host) })
+    case "instance-read": read(owned)
+    case "instance-write": write(owned)
+    case "peer-read": run(102, func() { read(owned) })
+    case "bulk-read": run(102, func() { move(allocate(), host) })
+    case "bulk-write": run(102, func() { move(host, allocate()) })
+    case "slice-read": run(102, func() { sliceRead(host.Data[:]) })
+    case "slice-write": run(102, func() { sliceWrite(host.Data[:]) })
+    case "map-missing": run(102, func() { mapMissing(hostMap) })
+    case "map-len": run(102, func() { mapLen(hostMap) })
+    case "map-range": run(102, func() { mapRange(hostMap) })
+    case "map-write": run(102, func() { mapWrite(hostMap) })
+    case "map-delete": run(102, func() { mapDelete(hostMap) })
+    case "map-clear": run(102, func() { mapClear(hostMap) })
+    case "chan-send": run(102, func() { chanSend(hostChan) })
+    case "chan-recv": run(102, func() { chanRecv(hostChan) })
+    case "chan-close": run(102, func() { chanClose(hostChan) })
+    case "chan-len": run(102, func() { chanLen(hostChan) })
+    case "select": run(102, func() {
+        ready := make(chan int, 1)
+        ready <- 1
+        channelSelect(ready, hostChan)
+    })
+    default: panic("unknown test")
+    }
+    fmt.Println("allowed")
+}

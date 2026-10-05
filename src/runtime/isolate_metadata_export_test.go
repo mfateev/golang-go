@@ -35,6 +35,10 @@ func IsolateAllocOriginForTest(p unsafe.Pointer) (uintptr, bool) {
 	return isolateAllocOrigin(p)
 }
 
+func IsolateHeapAccessForTest(p unsafe.Pointer, size uintptr, write bool) {
+	isolateCheckHeapAccess(p, size, write)
+}
+
 //go:noinline
 func IsolateMetadataBytesForTest(size int) []byte { return make([]byte, size) }
 

@@ -1510,6 +1510,24 @@ func (s *state) instrumentMove(t *types.Type, dst, src *ssa.Value) {
 }
 
 func (s *state) instrument2(t *types.Type, addr, addr2 *ssa.Value, kind instrumentKind) {
+	if base.Debug.IsolateHeap != 0 && !base.Flag.CompilingRuntime && t.Size() != 0 {
+		check := func(p *ssa.Value, write bool) {
+			if ssa.IsStackAddr(p) {
+				return
+			}
+			// Walk can extract several results from one call with stores
+			// between them. Diagnostic calls must not replace that call's
+			// identity while those ORESULT expressions are being lowered.
+			previous := s.prevCall
+			s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapAccess"), true, nil,
+				p, s.constInt(types.Types[types.TUINTPTR], t.Size()), s.constBool(write))
+			s.prevCall = previous
+		}
+		if kind == instrumentMove {
+			check(addr2, false)
+		}
+		check(addr, kind != instrumentRead)
+	}
 	if !s.instrumentMemory {
 		return
 	}
@@ -5128,6 +5146,27 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 		for i, n := range args {
 			callArgs = append(callArgs, s.putArg(n, t.Param(i).Type))
 		}
+		if base.Debug.IsolateHeap != 0 && !base.Flag.CompilingRuntime &&
+			(k == callNormal || k == callTail) && n.Fun.Op() == ir.ONAME && n.Fun.Sym().Pkg == ir.Pkgs.Runtime {
+			name := n.Fun.Sym().Name
+			check := func(arg int, write bool) {
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapAccess"), true, nil,
+					callArgs[arg], s.constInt(types.Types[types.TUINTPTR], 1), s.constBool(write))
+			}
+			switch {
+			case name == "chansend1", name == "chanrecv1", name == "chanrecv2", name == "closechan":
+				check(0, true)
+			case name == "chanlen", name == "chancap":
+				check(0, false)
+			case strings.HasPrefix(name, "mapaccess"), name == "mapIterStart":
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapMap"), true, nil, callArgs[1], s.constBool(false))
+			case strings.HasPrefix(name, "mapassign"), strings.HasPrefix(name, "mapdelete"), name == "mapclear":
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapMap"), true, nil, callArgs[1], s.constBool(true))
+			case name == "selectgo":
+				count := s.newValue2(s.ssaOp(ir.OADD, types.Types[types.TINT]), types.Types[types.TINT], callArgs[3], callArgs[4])
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapSelect"), true, nil, callArgs[0], count)
+			}
+		}
 
 		// In -race mode, we need to call racefuncexit before a tail call.
 		// A tail call reuses our frame and returns directly to our caller,
@@ -6127,6 +6166,9 @@ func (s *state) referenceTypeBuiltin(n *ir.UnaryExpr, x *ssa.Value) *ssa.Value {
 	}
 	if n.X.Type().IsMap() && n.Op() == ir.OCAP {
 		s.Fatalf("cannot inline cap(map)") // cap(map) does not exist
+	}
+	if n.X.Type().IsMap() && base.Debug.IsolateHeap != 0 && !base.Flag.CompilingRuntime {
+		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapMap"), true, nil, x, s.constBool(false))
 	}
 	if n.X.Type().IsMap() && base.Debug.IsolatePackages != "" {
 		return s.rtcall(typecheck.LookupRuntimeFunc("isolateMapLen"), true, []*types.Type{n.Type()}, x)[0]

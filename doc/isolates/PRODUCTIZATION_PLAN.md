@@ -86,6 +86,8 @@ history fixture, sample fixes, and CI are checked in and pushed in all three
 repositories. See the native validation checkpoint in
 [Native isolate determinism](./NATIVE_DETERMINISM_PLAN.md). Feature 2 is in progress. Per-instance allocator caches, homogeneous heap
 spans, trusted metadata scopes, and cache/eviction stress coverage are implemented.
+An opt-in compiler diagnostic covers ordinary heap and collection accesses;
+normal builds do not yet enable these checks.
 General cross-owner access/publication enforcement and broad package-state audits
 remain outstanding; see [Memory ownership](./MEMORY_OWNERSHIP_PLAN.md). The validated determinism contract still excludes the unsupported
 operations listed there.

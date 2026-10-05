@@ -74,15 +74,15 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/cpu-disabled.log"
             exit 1
           fi
-          if ! ./bin/go test -race runtime isolate -run 'TestIsolateAlloc|TestIsolateMetadata|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/race.log" 2>&1; then
+          if ! ./bin/go test -race runtime isolate -run 'TestIsolateAlloc|TestIsolateMetadata|TestIsolateHeapAccess|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/race.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/race.log"
             exit 1
           fi
-          if ! GOEXPERIMENT=staticlockranking ./bin/go test -short runtime isolate -run 'TestIsolateAlloc|TestIsolateMetadata|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/lockranking.log" 2>&1; then
+          if ! GOEXPERIMENT=staticlockranking ./bin/go test -short runtime isolate -run 'TestIsolateAlloc|TestIsolateMetadata|TestIsolateHeapAccess|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/lockranking.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/lockranking.log"
             exit 1
           fi
-          if ! ./bin/go test cmd/go -run 'TestScript/build_isolate_(functions|programs|metadata)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
+          if ! ./bin/go test cmd/go -run 'TestScript/build_isolate_(functions|programs|metadata|heap)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/compiler.log"
             exit 1
           fi
@@ -112,6 +112,16 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/driver-race.log"
             exit 1
           fi
+          if ! ../golang-go/bin/go build '-gcflags=github.com/mfateev/sdk-go-poc/...=-d=isolateheap=1' -o "$RUNNER_TEMP/isolate-driver-heap" ./example/driver > "$POC_LOG_DIR/driver-heap-build.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/driver-heap-build.log"
+            exit 1
+          fi
+          for procs in 1 2 8; do
+            if ! GOMAXPROCS="$procs" GOGC=1 "$RUNNER_TEMP/isolate-driver-heap" > "$POC_LOG_DIR/driver-heap-$procs.log" 2>&1; then
+              tail -n 100 "$POC_LOG_DIR/driver-heap-$procs.log"
+              exit 1
+            fi
+          done
           if ! ../golang-go/bin/go build -o "$RUNNER_TEMP/isolate-replay" ./example/determinism/check > "$POC_LOG_DIR/replay-build.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/replay-build.log"
             exit 1

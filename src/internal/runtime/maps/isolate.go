@@ -12,6 +12,11 @@ func isolateMapOwner() uintptr
 //go:linkname isolateDeterministic runtime.isolateDeterministic
 func isolateDeterministic() bool
 
+// IsolateOwner includes maps whose header or first group lives on the stack.
+// Compiler diagnostics must check this logical owner before invoking a lookup,
+// even when no heap object is read (for example, a missing key or len).
+func (m *Map) IsolateOwner() uintptr { return m.owner }
+
 func (m *Map) checkIsolateWrite() {
 	if m.owner != isolateMapOwner() {
 		panic("isolate: map write crosses owner boundary")

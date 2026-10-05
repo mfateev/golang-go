@@ -114,6 +114,38 @@ publication checks, immutable metadata provenance, and replacement of the broad
 POC converter/activity package exemptions still require implementation and audit.
 An owner-zero allocation alone is not proof of safe immutable sharing.
 
+### Heap access diagnostic
+
+The compiler's opt-in `-d=isolateheap=1` diagnostic now checks ordinary typed
+loads, stores, zeroing and bulk moves, plus map/channel operations and every
+select operand before the operation. Map checks include stack-backed headers,
+missing-key lookups, length, iteration, assignment, deletion and clearing.
+Channel checks precede send, receive and close, and cover length/capacity.
+Current-instance access is allowed; host/instance and instance/instance heap
+access is rejected. Metadata builders may read borrowed private arguments from
+their own instance, but cannot mutate them or access another instance's data.
+
+The diagnostic is **not enabled by normal isolate builds**. General stack/static
+ownership, pointer publication, raw compiler accesses, reflected operations,
+library intrinsics and assembly still require coverage. Immutable process heap
+metadata needs positive provenance before sharing; owner zero grants no blanket
+read exemption here. Collection checks emitted in application code do not audit
+the runtime and library operations it calls. The copied-byte bridge remains a
+trusted path. These checks are a way to test the next ownership layer, not a
+completed containment claim.
+
+Compiler regressions exercise actual language operations with deliberately
+exposed foreign pointers/maps/channels, verify rejection before mutation, and
+retain ordinary own-state and nil behavior. A multiple-result regression ensures
+inserted checks preserve call-result extraction and large returned structures.
+
+Local validation passed the full short runtime/isolate/map and compiler
+typecheck/SSA suites, five runtime ownership repetitions under both race and
+static lock ranking, and the language-operation compiler script. The SDK
+dispatcher driver compiled with the diagnostic on all `sdk-go-poc` packages and
+passed at `GOMAXPROCS=1/2/8` with `GOGC=1`. Native CI includes these gates and
+preserves their output alongside ordinary builds and saved-history replay.
+
 ## Initial audit
 
 - `malloc.go` and generated `malloc_generated.go` both fetch the processor's
