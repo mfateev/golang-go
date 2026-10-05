@@ -149,3 +149,34 @@ new descriptors in several isolates and checks that subsequent user maps
 still reject another isolate's writes. General heap containment, metadata
 reclamation, custom converters, and complete compile-time type enforcement
 remain productization work.
+
+
+### Activity function type inference
+
+The SDK now exposes `ExecuteActivity[I, R](func(I) (R, error), timeout, input)`
+and its async channel counterpart. Go infers both types from the activity
+function. `ExecuteActivityWithContext` and `ExecuteActivityAsyncWithContext`
+accept a leading host `context.Context`; only the input value is serialized.
+No activity code is invoked in the isolate. Function references produce the
+same Payloads operation as named calls with an optional function-reference flag.
+Host registration metadata resolves Temporal short-name aliases. This resolver
+and its locks/maps remain on the host. Replay accepts matching activity aliases
+as metadata; it never executes those functions.
+
+Name-based APIs are now `ExecuteActivityByName[R]` and
+`ExecuteActivityAsyncByName[R]`, retaining variadic inputs and error-only
+`struct{}` results. Existing ordinary workflows and activities still delegate
+to the unmodified Temporal SDK. Custom converters/protobuf arguments remain
+outside the POC subset. Prefixed activity struct methods use explicit names,
+matching standard SDK behavior. Helloworld and goroutines samples use inferred
+activity signatures, preserving their existing activity names and histories.
+
+
+Validation: SDK and sample tests passed. The actual marked-function driver
+covered inferred `int -> string` input/results, host alias resolution,
+activity errors and incorrectly encoded result types, plus inferred async
+`string -> int` calls. Live Temporal executions completed for sync/async and
+context-taking activity signatures and an ordinary SDK workflow on the same
+worker. Fresh sync/async histories and existing helloworld/goroutines histories
+replayed at GOMAXPROCS 1, 2, and 8. Existing workflow histories retain their
+activity names; this API migration does not change Payloads encoding.
