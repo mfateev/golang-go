@@ -63,6 +63,7 @@ type isolateReportPackage struct {
 // JSON because its type caches can retain values created by an isolate. Time
 // has lazy mutable zone state, but its clock and timer effects remain shared.
 var isolateOwnedStandardPackages = map[string]bool{
+	"context":                         true,
 	"encoding/base32":                 true,
 	"encoding/base64":                 true,
 	"encoding/json":                   true,

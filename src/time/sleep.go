@@ -83,6 +83,7 @@ type Timer struct {
 type isolateTimer struct {
 	mu         sync.Mutex
 	c          chan Time
+	f          func()
 	generation uint64
 	active     bool
 }
@@ -97,6 +98,10 @@ func (state *isolateTimer) wait(d Duration, generation uint64) {
 		return
 	}
 	state.active = false
+	if state.c == nil {
+		go state.f() // This waiter already runs under the isolate owner.
+		return
+	}
 	select {
 	case state.c <- Now():
 	default:
@@ -258,6 +263,13 @@ func After(d Duration) <-chan Time {
 // be used to cancel the call using its Stop method.
 // The returned Timer's C field is not used and will be nil.
 func AfterFunc(d Duration, f func()) *Timer {
+	if isolatebridge.ClockEnabled() {
+		state := &isolateTimer{f: f, generation: 1, active: true}
+		t := &Timer{iso: state}
+		t.self = t
+		go state.wait(d, 1)
+		return t
+	}
 	if runtime_isolateActive() {
 		// The timer fires on a runtime goroutine. Its go statement would
 		// start f without the isolate that registered it.

@@ -328,11 +328,6 @@ func Cause(c Context) error {
 // If ctx has a "AfterFunc(func()) func() bool" method,
 // AfterFunc will use it to schedule the call.
 func AfterFunc(ctx Context, f func()) (stop func() bool) {
-	if runtime_isolateActive() {
-		// A later cancellation may run on a process goroutine, which
-		// would create the callback goroutine without isolate ownership.
-		panic("context: AfterFunc is unavailable inside an isolate")
-	}
 	a := &afterFuncCtx{
 		f: f,
 	}
@@ -418,6 +413,22 @@ func removeChild(parent Context, child canceler) {
 	p.mu.Lock()
 	if p.children != nil {
 		delete(p.children, child)
+		if index, ok := p.isolateChildIndex[child]; ok {
+			p.isolateChildren[index] = nil
+			delete(p.isolateChildIndex, child)
+			// Compact sparse lists, preserving creation order and bounding space.
+			if len(p.isolateChildren) > 2*len(p.isolateChildIndex)+32 {
+				live := p.isolateChildren[:0]
+				for _, entry := range p.isolateChildren {
+					if entry != nil {
+						p.isolateChildIndex[entry] = len(live)
+						live = append(live, entry)
+					}
+				}
+				clear(p.isolateChildren[len(live):])
+				p.isolateChildren = live
+			}
+		}
 	}
 	p.mu.Unlock()
 }
@@ -444,8 +455,12 @@ type cancelCtx struct {
 	mu       sync.Mutex            // protects following fields
 	done     atomic.Value          // of chan struct{}, created lazily, closed by first cancel call
 	children map[canceler]struct{} // set to nil by the first cancel call
-	err      atomic.Value          // set to non-nil by the first cancel call
-	cause    error                 // set to non-nil by the first cancel call
+	// Isolates cancel children in creation order instead of iterating interface keys.
+	// The index permits removal without retaining canceled child contexts.
+	isolateChildren   []canceler
+	isolateChildIndex map[canceler]int
+	err               atomic.Value // set to non-nil by the first cancel call
+	cause             error        // set to non-nil by the first cancel call
 }
 
 func (c *cancelCtx) Value(key any) any {
@@ -513,6 +528,13 @@ func (c *cancelCtx) propagateCancel(parent Context, child canceler) {
 				p.children = make(map[canceler]struct{})
 			}
 			p.children[child] = struct{}{}
+			if runtime_isolateActive() {
+				if p.isolateChildIndex == nil {
+					p.isolateChildIndex = make(map[canceler]int)
+				}
+				p.isolateChildIndex[child] = len(p.isolateChildren)
+				p.isolateChildren = append(p.isolateChildren, child)
+			}
 		}
 		p.mu.Unlock()
 		return
@@ -585,10 +607,20 @@ func (c *cancelCtx) cancel(removeFromParent bool, err, cause error) {
 	} else {
 		close(d)
 	}
-	for child := range c.children {
-		// NOTE: acquiring the child's lock while holding parent's lock.
-		child.cancel(false, err, cause)
+	if runtime_isolateActive() {
+		for _, child := range c.isolateChildren {
+			if child != nil {
+				child.cancel(false, err, cause)
+			}
+		}
+	} else {
+		for child := range c.children {
+			// NOTE: acquiring the child's lock while holding parent's lock.
+			child.cancel(false, err, cause)
+		}
 	}
+	c.isolateChildren = nil
+	c.isolateChildIndex = nil
 	c.children = nil
 	c.mu.Unlock()
 
@@ -656,9 +688,8 @@ func WithDeadlineCause(parent Context, d time.Time, cause error) (Context, Cance
 		// The current deadline is already sooner than the new one.
 		return WithCancel(parent)
 	}
-	if runtime_isolateActive() && time.Until(d) > 0 {
-		// Reject before registering a child on parent. The timer callback
-		// cannot yet be dispatched with the registering isolate's owner.
+	if runtime_isolateActive() && !runtime_isolateClockEnabled() && time.Until(d) > 0 {
+		// An isolate deadline requires the host-controlled clock and timer bridge.
 		panic("context: future deadlines are unavailable inside an isolate")
 	}
 	c := &timerCtx{
@@ -828,3 +859,6 @@ func value(c Context, key any) any {
 		}
 	}
 }
+
+//go:linkname runtime_isolateClockEnabled runtime.isolateClockEnabled
+func runtime_isolateClockEnabled() bool

@@ -1468,9 +1468,7 @@ func TestContextCallbacksRejectUnownedRegistration(t *testing.T) {
 		want string
 		call func()
 	}{
-		{"AfterFunc", "context: AfterFunc is unavailable inside an isolate", func() {
-			context.AfterFunc(context.Background(), func() {})
-		}},
+
 		{"WithTimeout", "context: future deadlines are unavailable inside an isolate", func() {
 			_, cancel := context.WithTimeout(context.Background(), time.Hour)
 			cancel()

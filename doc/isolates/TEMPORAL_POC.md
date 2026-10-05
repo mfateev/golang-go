@@ -180,3 +180,50 @@ context-taking activity signatures and an ordinary SDK workflow on the same
 worker. Fresh sync/async histories and existing helloworld/goroutines histories
 replayed at GOMAXPROCS 1, 2, and 8. Existing workflow histories retain their
 activity names; this API migration does not change Payloads encoding.
+
+
+### Mandatory standard contexts and workflow cancellation
+
+Every POC activity and marked workflow now takes `context.Context` first.
+`ExecuteActivity(ctx, func(context.Context, I) (R, error), timeout, input)` and
+its async counterpart infer input/result types; the optional `WithContext`
+variants are removed. Named calls, durable sleep and signal waits also take ctx.
+The SDK injects an isolate-owned root context and decodes only remaining input
+slots. A queued Temporal cancellation event cancels exactly that workflow's
+root context at the dispatch fence. No Go context crosses the byte boundary.
+
+Operation 10 waits for workflow cancellation, 11 wraps a cancellable operation
+with an isolate-local request ID, and 12 cancels an outstanding request. The host
+requests cancellation from the SDK activity/timer client and resolves the wait
+once, ignoring late callbacks. Standard error identity is restored locally from
+ctx.Err(); returning context.Canceled emits a Temporal canceled completion.
+Child cancellation and deadlines leave the parent active; WithoutCancel allows
+cleanup. Running activities need normal Temporal heartbeats/cooperative context
+handling to observe server cancellation. Cancellation callbacks run under isolate
+ownership, never from host callbacks. The root cancellation wait is a real host
+operation, so a workflow that only waits on ctx.Done() can suspend indefinitely.
+
+Context's closed channel and error globals are initialized per isolate. Standard
+context cancellation stores child creation order in an isolate-only list (with
+indexed removal and compaction), avoiding interface-key map iteration. Host
+contexts retain normal map traversal. AfterFunc callbacks are allowed for standard
+isolate-owned contexts; custom AfterFunc parents remain rejected. WithDeadline and
+WithTimeout use the history clock plus the owner-preserving time.AfterFunc path.
+Stopped native timers still retain their previous host timer wait until it fires
+or the isolate closes (existing timer cancellation productization TODO).
+Ordinary Temporal SDK workflows continue using their existing workflow.Context.
+
+
+Validation of the mandatory-context slice: context/time/isolate standard tests,
+SDK tests, and all sample drivers passed. The marked-function driver verifies
+root cancellation (including before startup), local cancellation with cause,
+history-clock deadlines, canceled activity requests, suppressed late callbacks,
+and 64 ordered context callbacks repeated at GOMAXPROCS 1/2/8. Real Temporal
+runs canceled both an idle workflow and an activity-waiting workflow; the activity
+observed cancellation of its own host context through heartbeats. Local cancel
+and deadline workflows completed normally with their expected results; all four
+histories replayed at GOMAXPROCS 1/2/8. Existing histories for all four samples
+also replayed after context injection without changing payloads or activity names.
+Choice-exclusive now uses typed method references for GetOrder and every order
+branch through ExecuteActivityNoInput/ExecuteActivityError; branch/error drivers,
+a real execution, and old/fresh history replay at GOMAXPROCS 1/2/8 passed.
