@@ -1632,7 +1632,28 @@ func (s *state) move(t *types.Type, dst, src *ssa.Value) {
 	s.moveWhichMayOverlap(t, dst, src, false)
 }
 func (s *state) moveWhichMayOverlap(t *types.Type, dst, src *ssa.Value, mayOverlap bool) {
+	if base.Debug.IsolateHeap != 0 && !base.Flag.CompilingRuntime {
+		origin := src
+		for origin.Op == ssaop.OpOffPtr || origin.Op == ssaop.OpCopy {
+			origin = origin.Args[0]
+		}
+		if origin.Op == ssaop.OpSelectNAddr {
+			// Incoming call results share the outgoing argument/spill area.
+			// A diagnostic call can overwrite that area even when prevCall
+			// is preserved. Snapshot the result before inserting any calls.
+			_, stable := s.temp(s.peekPos(), t)
+			copy := s.newValue3I(ssaop.OpMove, types.TypeMem, t.Size(), stable, src, s.mem())
+			copy.Aux = t
+			s.vars[memVar] = copy
+			src = stable
+		}
+	}
 	s.instrumentMove(t, dst, src)
+	if base.Debug.IsolateHeap > 1 && !base.Flag.CompilingRuntime && t.HasPointers() {
+		previous := s.prevCall
+		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapMove"), true, nil, s.reflectType(t), dst, src)
+		s.prevCall = previous
+	}
 	if mayOverlap && t.IsArray() && t.NumElem() > 1 && !ssa.IsInlinableMemmove(dst, src, t.Size(), s.f.Config) {
 		// Normally, when moving Go values of type T from one location to another,
 		// we don't need to worry about partial overlaps. The two Ts must either be
@@ -5766,6 +5787,9 @@ func (s *state) rtcall(fn *obj.LSym, returns bool, results []*types.Type, args .
 // do *left = right for type t.
 func (s *state) storeType(t *types.Type, left, right *ssa.Value, skip skipMask, leftIsStmt bool) {
 	s.instrument(t, left, instrumentWrite)
+	if base.Debug.IsolateHeap > 1 && !base.Flag.CompilingRuntime && t.HasPointers() && skip&skipPtr == 0 {
+		s.isolateCheckStoredReferences(t, left, right)
+	}
 
 	if skip == 0 && (!t.HasPointers() || ssa.IsStackAddr(left)) {
 		// Known to not have write barrier. Store the whole type.
@@ -5781,6 +5805,38 @@ func (s *state) storeType(t *types.Type, left, right *ssa.Value, skip skipMask, 
 	s.storeTypeScalars(t, left, right, skip)
 	if skip&skipPtr == 0 && t.HasPointers() {
 		s.storeTypePtrs(t, left, right)
+	}
+}
+
+func (s *state) isolateCheckStoredReferences(t *types.Type, dst, value *ssa.Value) {
+	check := func(pointer *ssa.Value) {
+		previous := s.prevCall
+		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapReference"), true, nil, dst, pointer)
+		s.prevCall = previous
+	}
+	switch {
+	case t.IsPtrShaped():
+		check(value)
+	case t.IsString():
+		check(s.newValue1(ssaop.OpStringPtr, s.f.Config.Types.BytePtr, value))
+	case t.IsSlice():
+		check(s.newValue1(ssaop.OpSlicePtr, t.Elem().PtrTo(), value))
+	case t.IsInterface():
+		check(s.newValue1(ssaop.OpIData, s.f.Config.Types.BytePtr, value))
+	case isStructNotSIMD(t):
+		for i, field := range t.Fields() {
+			if field.Type.HasPointers() {
+				addr := s.newValue1I(ssaop.OpOffPtr, field.Type.PtrTo(), field.Offset, dst)
+				part := s.newValue1I(ssaop.OpStructSelect, field.Type, int64(i), value)
+				s.isolateCheckStoredReferences(field.Type, addr, part)
+			}
+		}
+	case t.IsArray() && t.NumElem() == 1:
+		s.isolateCheckStoredReferences(t.Elem(), dst, s.newValue1I(ssaop.OpArraySelect, t.Elem(), 0, value))
+	case t.Size() == 0:
+		return
+	default:
+		s.Fatalf("bad isolate reference type %v", t)
 	}
 }
 

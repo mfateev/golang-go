@@ -53,7 +53,7 @@ type DebugFlags struct {
 	IsolateE4             int    `help:"redirect the E4 toy package global through the current goroutine base"`
 	IsolateEntrySkip      string `help:"colon-separated imports whose startup initialization is omitted from a generated isolate entry"`
 	IsolateMetadata       int    `help:"enable the pinned protobuf metadata service manifest in an isolate build"`
-	IsolateHeap           int    `help:"diagnose heap access and collection operations crossing isolate owners (incomplete)"`
+	IsolateHeap           int    `help:"diagnose isolate heap/collection access (1) and typed reference stores/moves (2); incomplete"`
 	IsolateGlobals        int    `help:"redirect this package's globals through a generated isolate layout"`
 	IsolateImports        string `help:"comma-separated imported packages whose globals use isolate layouts"`
 	IsolateInit           int    `help:"keep package initialization assignments executable for isolate replay"`

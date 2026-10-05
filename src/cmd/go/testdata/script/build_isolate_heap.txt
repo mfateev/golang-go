@@ -46,6 +46,23 @@ stdout '^isolate: read from foreign heap$'
 exec ./heap.exe select
 stdout '^isolate: write to foreign heap$'
 
+# Level two also checks the references stored in an otherwise owned object.
+go build -gcflags=example.org/isolateheap=-d=isolateheap=2 -o publication.exe .
+exec ./publication.exe own
+stdout '^allowed$'
+exec ./publication.exe publish-pointer
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe publish-slice
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe publish-interface
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe publish-closure
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe publish-bulk
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe publish-static
+stdout '^isolate: foreign heap reference publication$'
+
 -- go.mod --
 module example.org/isolateheap
 go 1.26
@@ -56,6 +73,7 @@ import (
     "fmt"
     "os"
     "unsafe"
+    "example.org/isolateheap/bridge"
 )
 
 //go:linkname newGroup runtime.isolateNewGroup
@@ -66,6 +84,14 @@ func setGroup(unsafe.Pointer) unsafe.Pointer
 func setOwner(uintptr) uintptr
 
 type record struct { Data [64]int }
+type holder struct {
+    Pointer *record
+    Bytes []byte
+    Any any
+    Function func() int
+    Padding [64]int
+}
+var published *record
 //go:noinline
 func allocate() *record { return &record{Data: [64]int{11}} }
 //go:noinline
@@ -82,6 +108,12 @@ func sliceWrite(p []int) { p[7] = 19 }
 func tuple() (record, int, error) { return *allocate(), 27, nil }
 //go:noinline
 func tupleHeap(p *record, number *int, err *error) { *p, *number, *err = tuple() }
+//go:noinline
+func tupleReferences() (holder, int, error) {
+    return holder{Pointer: allocate(), Bytes: []byte{7, 8}, Any: allocate(), Function: capture(39)}, 41, nil
+}
+//go:noinline
+func tupleReferencesHeap(p *holder, number *int, err *error) { *p, *number, *err = tupleReferences() }
 //go:noinline
 func mapMissing(m map[string]int) int { return m["missing"] }
 //go:noinline
@@ -106,6 +138,12 @@ func chanLen(c chan int) int { return len(c) + cap(c) }
 func channelSelect(local, foreign chan int) {
     select { case <-local: case <-foreign: default: }
 }
+//go:noinline
+func capture(value int) func() int { return func() int { return value } }
+//go:noinline
+func moveHolder(dst, src *holder) { *dst = *src }
+//go:noinline
+func publishStatic(value *record) { published = value }
 
 func run(owner uintptr, fn func()) {
     group := newGroup()
@@ -121,6 +159,8 @@ func main() {
     hostMap := map[string]int{"key": 42}
     hostChan := make(chan int, 2)
     hostChan <- 11
+    hostBytes := make([]byte, 16)
+    hostFunction := capture(11)
     var owned *record
     run(101, func() { owned = allocate() })
     defer func() {
@@ -129,6 +169,7 @@ func main() {
             if host.Data[7] != 0 { panic("foreign write happened before checking") }
             if len(hostChan) != 1 { panic("foreign channel changed before checking") }
             if hostMap["key"] != 42 { panic("foreign map changed before checking") }
+            if published != nil { panic("foreign reference escaped before checking") }
             hostChan <- 12 // A rejected close must not have closed this channel.
             fmt.Println(got)
         }
@@ -152,6 +193,14 @@ func main() {
             channelSelect(c, nil)
             chanClose(c)
             if mapMissing(nil) != 0 || mapLen(nil) != 0 || chanLen(nil) != 0 { panic("nil semantics") }
+            source := &holder{Pointer: allocate(), Bytes: make([]byte, 16), Any: allocate(), Function: capture(31)}
+            target := new(holder)
+            moveHolder(target, source)
+            if target.Pointer != source.Pointer || target.Function() != 31 { panic("own references") }
+            tupleReferencesHeap(target, number, err)
+            if target.Pointer.Data[0] != 11 || target.Bytes[1] != 8 || target.Any.(*record).Data[0] != 11 || target.Function() != 39 || *number != 41 || *err != nil {
+                panic("pointer-bearing tuple result")
+            }
         })
     case "host-read": run(102, func() { read(host) })
     case "host-write": run(102, func() { write(host) })
@@ -177,7 +226,24 @@ func main() {
         ready <- 1
         channelSelect(ready, hostChan)
     })
+    case "publish-pointer": run(102, func() { p := new(holder); p.Pointer = owned })
+    case "publish-slice": run(102, func() { p := new(holder); p.Bytes = hostBytes })
+    case "publish-interface": run(102, func() { p := new(holder); p.Any = host })
+    case "publish-closure": run(102, func() { p := new(holder); p.Function = hostFunction })
+    case "publish-bulk": run(102, func() {
+        source, target := new(holder), new(holder)
+        // Deliberately bypass instrumented stores to manufacture the invalid
+        // graph being tested. Its outer object still belongs to this instance.
+        bridge.Set((*unsafe.Pointer)(unsafe.Pointer(&source.Pointer)), unsafe.Pointer(host))
+        moveHolder(target, source)
+    })
+    case "publish-static": run(101, func() { publishStatic(owned) })
     default: panic("unknown test")
     }
     fmt.Println("allowed")
 }
+-- bridge/bridge.go --
+// Package bridge is an uninstrumented test-only corruption helper.
+package bridge
+import "unsafe"
+func Set(dst *unsafe.Pointer, value unsafe.Pointer) { *dst = value }

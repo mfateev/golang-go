@@ -125,8 +125,16 @@ Current-instance access is allowed; host/instance and instance/instance heap
 access is rejected. Metadata builders may read borrowed private arguments from
 their own instance, but cannot mutate them or access another instance's data.
 
+Level two (`-d=isolateheap=2`) additionally validates references in typed stores
+and bulk moves, including pointers, slice/string backing data, interface data and
+closure objects. It scans the compiler type's GC bitmap for pointer-bearing bulk
+copies. Read-only borrowing by a metadata builder cannot retain private arguments
+in process caches. A reference to an instance object cannot be stored in a
+linker-allocated process global. Large returned structures are copied to a local
+temporary before diagnostic calls can overwrite their ABI result/spill area.
+
 The diagnostic is **not enabled by normal isolate builds**. General stack/static
-ownership, pointer publication, raw compiler accesses, reflected operations,
+ownership, complete publication coverage, raw compiler accesses, reflected operations,
 library intrinsics and assembly still require coverage. Immutable process heap
 metadata needs positive provenance before sharing; owner zero grants no blanket
 read exemption here. Collection checks emitted in application code do not audit
@@ -145,6 +153,20 @@ static lock ranking, and the language-operation compiler script. The SDK
 dispatcher driver compiled with the diagnostic on all `sdk-go-poc` packages and
 passed at `GOMAXPROCS=1/2/8` with `GOGC=1`. Native CI includes these gates and
 preserves their output alongside ordinary builds and saved-history replay.
+
+Level-two store/move regressions also passed, including a late foreign pointer
+in a 10,000-pointer object, instance/instance and host/instance reference checks,
+and preventing a metadata service from retaining borrowed data. These runtime
+checks passed five race and static-lock-ranking repetitions. Pointer-bearing
+multi-result structures exposed an ABI spill-area overwrite; a local snapshot
+before inserted calls fixed the regression.
+
+The stricter SDK audit currently rejects the metadata workflow when it stores a
+dynamic `reflect.Type` returned by `ArrayOf` in a `StructField` (metadata workflow
+line 48). That canonical immutable object is process-owned, but positive sharing
+provenance is not implemented yet. Do not use level two for SDK builds until that
+audit is complete; do not bypass the check by treating all owner-zero heap data
+as immutable. The level-one SDK driver retains its passing behavior.
 
 ## Initial audit
 
@@ -210,7 +232,8 @@ preserves their output alongside ordinary builds and saved-history replay.
 The native CI workflow now includes cached eviction, allocation/metadata race
 and lock-ranking gates, rejected metadata-source builds, and the SDK driver
 under the race detector. Its next run validates this ownership foundation on
-Linux/macOS arm64/amd64; these results do not close the remaining feature 2 gates.
+Linux/macOS arm64/amd64; the checkpoint below records those results, which do not
+close the remaining feature 2 gates.
 
 The first native foundation run (`37347075109`, Go `4891462c93`, SDK
 `27e2eb5`) passed both Linux jobs and exposed an existing Darwin preemption
@@ -219,11 +242,11 @@ read lock with `sched`/`allp` held, while the table placed the read lock earlier
 The audited thread-creation read section only calls OS/C thread-start code.
 The corrected DAG places `execR` after `allp`; a regression exercises this order
 on every platform. Full runtime/isolate short suites with static lock ranking
-passed locally after the correction. The native rerun must pass before this
-foundation's platform validation is complete.
+passed locally after the correction. The native checkpoint below includes this
+correction.
 
 The second native run (`37348765744`, Go `52aa269caa`, SDK `52210a4`)
-passed macOS arm64 and exposed a GC startup regression in both Linux SDK driver
+passed both macOS jobs and exposed a GC startup regression in both Linux SDK driver
 jobs. The service goroutine restriction also rejected runtime GC workers when
 the first collection was triggered by a reflection metadata allocation. The
 restriction now uses the same system-goroutine classification as creation;
@@ -240,3 +263,32 @@ Goroutine entry classification subsequently stopped constructing a temporary
 ordinary goroutine creation keeps its small frame even when no service is
 active. Cold GC/service rejection tests passed five race and lock-ranking
 repetitions, and finalizer/cleanup/goroutine/Goexit regressions passed.
+
+## Native foundation checkpoint (2026-10-05)
+
+[Native run 37350494589](https://github.com/mfateev/golang-go/actions/runs/37350494589)
+passed every job with Go `0859219659163634ca710c6772112a481e9a369e`, SDK
+`52210a45ba52fb5b47fb94fb642b87831653966a`, and samples
+`1e77ee7ed61514455a3382b0bbe0e9050468a214`.
+
+| Platform | Result |
+| --- | --- |
+| Linux AMD64 | Passed |
+| Linux ARM64 | Passed |
+| macOS AMD64 | Passed |
+| macOS ARM64 | Passed |
+
+All jobs passed runtime/compiler conformance, cached eviction, race and static
+lock ranking, SDK/sample tests, and ordinary/race SDK dispatcher drivers. Across
+24 fresh-process replays, each retained 195 observations and SHA-256
+`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
+Artifacts preserve complete logs and checked-out revisions. This validates the
+allocator/metadata/eviction foundation; the later compiler heap diagnostics have
+their own native gates, and feature 2 remains incomplete.
+
+The level-one heap/collection diagnostic subsequently passed all four jobs in
+[native run 37352477411](https://github.com/mfateev/golang-go/actions/runs/37352477411),
+Go `7ac505c77ed281f9e05503e1e0e0a44f63333dc6`, with the same SDK/sample revisions.
+This adds the negative language-operation script and SDK driver compiled with
+the diagnostic at `GOMAXPROCS=1/2/8`, `GOGC=1`. It does not validate later
+level-two publication work or close the outstanding ownership gates.

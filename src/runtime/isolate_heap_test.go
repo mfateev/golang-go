@@ -58,3 +58,63 @@ func TestIsolateHeapAccess(t *testing.T) {
 	}
 	runtime.KeepAlive(groups)
 }
+
+var isolatePublicationSink unsafe.Pointer
+
+func TestIsolateHeapPublication(t *testing.T) {
+	groups := []unsafe.Pointer{runtime.IsolateMetadataGroupForTest(), runtime.IsolateMetadataGroupForTest()}
+	owners := []uintptr{nextAllocTestOwner(), nextAllocTestOwner()}
+	values := [][]byte{runtime.IsolateMetadataBytesForTest(17), nil, nil}
+	for i, group := range groups {
+		runtime.IsolateMetadataRunForTest(group, owners[i], func() { values[i+1] = runtime.IsolateMetadataBytesForTest(17) })
+	}
+	check := func(allowed bool, fn func()) {
+		t.Helper()
+		defer func() {
+			got := recover()
+			if allowed && got != nil {
+				t.Errorf("allowed publication: %v", got)
+			}
+			if !allowed && got != "isolate: foreign heap reference publication" {
+				t.Errorf("foreign publication: %v", got)
+			}
+		}()
+		fn()
+	}
+	for target, slot := range values {
+		for source, value := range values {
+			check(target == source, func() { runtime.IsolateHeapReferenceForTest(unsafe.Pointer(&slot[8]), unsafe.Pointer(&value[1])) })
+		}
+	}
+	runtime.IsolateMetadataRunForTest(groups[0], owners[0], func() {
+		check(true, func() { runtime.IsolateHeapReferenceForTest(unsafe.Pointer(&values[1][8]), nil) })
+		check(false, func() {
+			runtime.IsolateHeapReferenceForTest(unsafe.Pointer(&isolatePublicationSink), unsafe.Pointer(&values[1][0]))
+		})
+		runtime.IsolateMetadataScopeForTest(func() {
+			runtime.IsolateHeapAccessForTest(unsafe.Pointer(&values[1][0]), 17, false)
+			check(false, func() {
+				runtime.IsolateHeapReferenceForTest(unsafe.Pointer(&values[0][8]), unsafe.Pointer(&values[1][0]))
+			})
+		})
+		// A late pointer beyond several GC bitmap bytes must be checked, even
+		// when the outer source and destination both belong to this instance.
+		source, target := new([10000]*byte), new([10000]*byte)
+		for _, p := range []unsafe.Pointer{unsafe.Pointer(source), unsafe.Pointer(target)} {
+			if owner, ok := runtime.IsolateAllocOriginForTest(p); !ok || owner != owners[0] {
+				t.Fatalf("bulk object owner=(%d,%v), want %d", owner, ok, owners[0])
+			}
+		}
+		source[9999] = &values[0][0] // Test-only construction of an invalid graph.
+		check(false, func() { runtime.IsolateHeapMoveForTest(target, source) })
+		source[9999] = &values[1][0]
+		check(true, func() { runtime.IsolateHeapMoveForTest(target, source) })
+		source[9999] = nil
+		check(true, func() { runtime.IsolateHeapMoveForTest(target, source) })
+		runtime.KeepAlive(source)
+		runtime.KeepAlive(target)
+	})
+	runtime.GC()
+	runtime.KeepAlive(values)
+	runtime.KeepAlive(groups)
+}

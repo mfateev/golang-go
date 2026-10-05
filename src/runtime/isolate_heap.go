@@ -5,6 +5,8 @@
 package runtime
 
 import (
+	"internal/abi"
+	"internal/goarch"
 	"internal/runtime/atomic"
 	"internal/runtime/maps"
 	"unsafe"
@@ -79,4 +81,39 @@ func isolateCheckHeapMap(p unsafe.Pointer, write bool) {
 		panic("isolate: map write crosses owner boundary")
 	}
 	panic("isolate: map read crosses owner boundary")
+}
+
+// The level-two diagnostic validates stored references as well as the memory
+// accessed by the store. A builder's read-only borrowing does not authorize
+// retaining the borrowed object in a process cache.
+func isolateCheckHeapReference(dst, value unsafe.Pointer) {
+	if value == nil {
+		return
+	}
+	source := spanOfHeap(uintptr(value))
+	if source == nil {
+		return // Static references still need the manifest's separate policy.
+	}
+	owner := getg().isolateOwner // Ordinary stack slots belong to their caller.
+	if target := spanOfHeap(uintptr(dst)); target != nil {
+		owner = target.isolateAllocOwner
+	} else if isGoPointerWithoutSpan(dst) {
+		owner = 0 // A linker-allocated global is process state.
+	}
+	if source.isolateAllocOwner != owner {
+		panic("isolate: foreign heap reference publication")
+	}
+}
+
+func isolateCheckHeapMove(typ *abi.Type, dst, src unsafe.Pointer) {
+	if typ.PtrBytes == 0 || dst == nil || src == nil {
+		return
+	}
+	mask := getGCMask(typ)
+	for word := uintptr(0); word < typ.PtrBytes/goarch.PtrSize; word++ {
+		if *addb(mask, word/8)&(1<<(word%8)) != 0 {
+			offset := word * goarch.PtrSize
+			isolateCheckHeapReference(add(dst, offset), *(*unsafe.Pointer)(add(src, offset)))
+		}
+	}
 }

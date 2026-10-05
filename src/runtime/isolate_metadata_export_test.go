@@ -5,6 +5,7 @@
 package runtime
 
 import (
+	"internal/abi"
 	"internal/runtime/atomic"
 	"unsafe"
 )
@@ -37,6 +38,18 @@ func IsolateAllocOriginForTest(p unsafe.Pointer) (uintptr, bool) {
 
 func IsolateHeapAccessForTest(p unsafe.Pointer, size uintptr, write bool) {
 	isolateCheckHeapAccess(p, size, write)
+}
+
+func IsolateHeapReferenceForTest(dst, value unsafe.Pointer) {
+	isolateCheckHeapReference(dst, value)
+}
+
+func IsolateHeapMoveForTest(dst, src any) {
+	d, s := efaceOf(&dst), efaceOf(&src)
+	if d._type != s._type || d._type.Kind() != abi.Pointer {
+		panic("invalid heap move test arguments")
+	}
+	isolateCheckHeapMove((*ptrtype)(unsafe.Pointer(d._type)).Elem, d.data, s.data)
 }
 
 //go:noinline
