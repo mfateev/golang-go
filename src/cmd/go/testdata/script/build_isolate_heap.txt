@@ -104,6 +104,26 @@ exec ./heap.exe convert-string-runes
 stdout '^isolate: read from foreign heap$'
 exec ./heap.exe convert-own
 stdout '^allowed$'
+exec ./heap.exe string-equal
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe string-unequal
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe string-order
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe string-concat2
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe string-concat3
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe string-concat4
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe string-concat5
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe string-concat6
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe string-byte-alias
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe string-own
+stdout '^allowed$'
 
 # Level two also checks the references stored in an otherwise owned object.
 go build -gcflags=example.org/isolateheap=-d=isolateheap=2 -o publication.exe .
@@ -169,6 +189,11 @@ stdout '^allowed$'
 [race] stdout '^isolate: write to foreign heap$'
 [race] exec ./atomic-race.exe atomic-pointer-publish
 [race] stdout '^isolate: foreign heap reference publication$'
+[race] exec ./atomic-race.exe string-equal
+[race] stdout '^isolate: read from foreign heap$'
+[race] exec ./atomic-race.exe string-concat6
+# Level two can reject construction of the temporary operand array first.
+[race] stdout '^isolate: (read from foreign heap|foreign heap reference publication)$'
 [race] exec ./atomic-race.exe atomic-own
 [race] stdout '^allowed$'
 
@@ -266,6 +291,26 @@ func runesString(src []rune) string { return string(src) }
 func stringBytes(src string) []byte { return []byte(src) }
 //go:noinline
 func stringRunes(src string) []rune { return []rune(src) }
+//go:noinline
+func stringEqual(a, b string) bool { return a == b }
+//go:noinline
+func stringUnequal(a, b string) bool { return a != b }
+//go:noinline
+func stringOrder(a, b string) bool { return a < b }
+//go:noinline
+func stringConcat(a, b string, count int) string {
+    switch count {
+    case 2: return a + b
+    case 3: return a + b + a
+    case 4: return a + b + a + b
+    case 5: return a + b + a + b + a
+    default: return a + b + a + b + a + b
+    }
+}
+//go:noinline
+func stringByteAlias(a string) int { sum := 0; for _, b := range []byte(a) { sum += int(b) }; return sum }
+//go:noinline
+func bytesStringAlias(a []byte, b string) bool { return string(a) == b }
 //go:noinline
 func mapMissing(m map[string]int) int { return m["missing"] }
 //go:noinline
@@ -402,6 +447,27 @@ func main() {
         }
     }()
     switch os.Args[1] {
+    case "string-equal": run(104, func() { stringEqual(hostKey, hostKey) })
+    case "string-unequal": run(104, func() { stringUnequal(hostKey, hostKey) })
+    case "string-order": run(104, func() { stringOrder(hostKey, "local") })
+    case "string-concat2": run(104, func() { stringConcat(hostKey, "local", 2) })
+    case "string-concat3": run(104, func() { stringConcat("local", hostKey, 3) })
+    case "string-concat4": run(104, func() { stringConcat(hostKey, "local", 4) })
+    case "string-concat5": run(104, func() { stringConcat("local", hostKey, 5) })
+    case "string-concat6": run(104, func() { stringConcat("local", hostKey, 6) })
+    case "string-byte-alias": run(104, func() { stringByteAlias(hostKey) })
+    case "string-own": run(104, func() {
+        a, b := strings.Repeat("Privateλ", 17), strings.Repeat("Privateλ", 17)
+        if !stringEqual(a, b) || stringUnequal(a, b) || stringOrder(a, b) || !stringOrder(a, b + "z") { panic("owned string comparisons changed") }
+        for count := 2; count <= 6; count++ {
+            want := ""; for i := 0; i < count; i++ { want += a }
+            if !stringEqual(stringConcat(a, b, count), want) { panic("owned concatenation changed") }
+            if stringConcat("", "", count) != "" { panic("empty concatenation changed") }
+        }
+        if stringByteAlias("abc") != 294 || !bytesStringAlias([]byte(a), b) { panic("owned aliases changed") }
+        // A length-only comparison does not read foreign backing memory.
+        if stringEqual(hostKey, "") || !stringUnequal(hostKey, "") { panic("length comparison changed") }
+    })
     case "convert-bytes": run(104, func() { bytesString(hostBytes) })
     case "convert-runes": run(104, func() { runesString(hostRunes) })
     case "convert-string-bytes": run(104, func() { stringBytes(hostKey) })

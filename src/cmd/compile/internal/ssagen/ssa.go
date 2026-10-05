@@ -3101,6 +3101,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 		slice := s.expr(n.X)
 		ptr := s.newValue1(ssaop.OpSlicePtr, s.f.Config.Types.BytePtr, slice)
 		len := s.newValue1(ssaop.OpSliceLen, types.Types[types.TINT], slice)
+		s.isolateCheckStringBytes(ptr, len)
 		return s.newValue2(ssaop.OpStringMake, n.Type(), ptr, len)
 	case ir.OSTR2BYTESTMP:
 		n := n.(*ir.ConvExpr)
@@ -3115,6 +3116,7 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 			ptr = s.ternary(cond, ptr, zerobase)
 		}
 		len := s.newValue1(ssaop.OpStringLen, types.Types[types.TINT], str)
+		s.isolateCheckStringBytes(ptr, len)
 		return s.newValue3(ssaop.OpSliceMake, n.Type(), ptr, len, len)
 	case ir.OCFUNC:
 		n := n.(*ir.UnaryExpr)
@@ -4836,6 +4838,7 @@ func (s *state) split(v *ssa.Value) (*ssa.Value, *ssa.Value) {
 func (s *state) intrinsicCall(n *ir.CallExpr) *ssa.Value {
 	args := s.intrinsicArgs(n)
 	s.isolateCheckAtomic(n.Fun.Sym(), args)
+	s.isolateCheckStringCall(n.Fun.Sym(), args)
 	v := findIntrinsic(n.Fun.Sym())(s, n, args)
 	if ssaconfig.IntrinsicsDebug > 0 {
 		x := v
@@ -5178,6 +5181,7 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 		}
 		if (k == callNormal || k == callTail) && n.Fun.Op() == ir.ONAME {
 			s.isolateCheckAtomic(n.Fun.Sym(), callArgs)
+			s.isolateCheckStringCall(n.Fun.Sym(), callArgs)
 		}
 		if base.Debug.IsolateHeap != 0 && !base.Flag.CompilingRuntime &&
 			(k == callNormal || k == callTail) && n.Fun.Op() == ir.ONAME && n.Fun.Sym().Pkg == ir.Pkgs.Runtime {

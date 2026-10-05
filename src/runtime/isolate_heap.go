@@ -67,6 +67,16 @@ func isolateCheckHeapSelect(cases unsafe.Pointer, count int) {
 	}
 }
 
+// Concatenation with more than five operands passes a slice of string headers.
+// Validate the headers before inspecting them and all backing bytes before the
+// concatenation helper can read, copy, or return an operand without copying it.
+func isolateCheckHeapStrings(values []string) {
+	isolateCheckHeapCopy(nil, len(values), unsafe.Pointer(unsafe.SliceData(values)), len(values), unsafe.Sizeof(string("")))
+	for _, value := range values {
+		isolateCheckHeapAccess(unsafe.Pointer(unsafe.StringData(value)), uintptr(len(value)), false)
+	}
+}
+
 func isolateCheckHeapMap(p unsafe.Pointer, write bool) {
 	if p == nil {
 		return

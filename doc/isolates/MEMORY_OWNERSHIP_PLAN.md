@@ -580,3 +580,36 @@ was not acquired by Runner of type hosted even after multiple attempts.” This
 is a hosted runner availability issue; the local container's ptrace/socket
 tests passed. Preserve the full four-platform matrix and let the user resolve
 the CI environment before claiming native validation or continuing implementation.
+
+After the user's container restart and instruction to resume, all four jobs in
+[native run 37368649258](https://github.com/mfateev/golang-go/actions/runs/37368649258)
+acquired runners. Both Linux jobs passed; the macOS jobs were still running at
+the following local checkpoint. No runner labels, matrix entries or test gates
+were changed to accommodate the earlier acquisition failure.
+
+## String operations and conversion aliases
+
+The diagnostic now checks backing bytes before comparison and concatenation
+helpers, including ARM64 equality intrinsic expansion. More than five
+concatenation operands also validate their header array before inspecting its
+strings. Optimized byte/string conversion aliases receive source checks too.
+Length-only equality branches that do not read backing bytes keep their normal
+behavior. Ordinary static strings, owned strings and empty inputs remain valid.
+
+A strict diagnostic reproducer previously compared and concatenated host strings
+successfully inside an instance; it now rejects the foreign backing bytes.
+Compiler regressions cover equality, inequality, ordering, two through six
+concatenation operands, conversion aliases, owned/empty inputs and race builds.
+Level two can reject a temporary operand array's reference publication before
+the concatenation helper; either rejection must precede the actual operation.
+
+Validation: full toolchain bootstrap, marked/legacy/metadata/heap compiler
+scripts and short runtime/isolate/bridge/reflection/maps/compiler SSA,
+generation and typecheck suites passed. Five race ownership/metadata/eviction
+runs passed, including 15,360 cached isolate evictions. The SDK full suite and
+strict driver passed; the driver passed at `GOMAXPROCS=1/2/8`, `GOGC=1`, and
+under race detection at `GOMAXPROCS=8`, `GOGC=1`. Six strict fresh-process
+replays retained 195 observations and SHA-256
+`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
+Interface boxing, indirect library/assembly paths, recursive value graphs,
+stack/static policy and whole dependency enforcement remain incomplete.

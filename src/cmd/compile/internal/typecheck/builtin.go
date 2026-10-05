@@ -265,16 +265,17 @@ var runtimeDecls = [...]struct {
 	{"isolateCheckMetadataCall", funcTag, 33},
 	{"isolateCheckHeapAccess", funcTag, 167},
 	{"isolateCheckHeapSelect", funcTag, 168},
-	{"isolateCheckHeapMap", funcTag, 169},
-	{"isolateCheckHeapMapKey", funcTag, 170},
-	{"isolateCheckHeapReference", funcTag, 171},
+	{"isolateCheckHeapStrings", funcTag, 169},
+	{"isolateCheckHeapMap", funcTag, 170},
+	{"isolateCheckHeapMapKey", funcTag, 171},
+	{"isolateCheckHeapReference", funcTag, 172},
 	{"isolateCheckHeapMove", funcTag, 75},
-	{"isolateCheckHeapCopy", funcTag, 172},
-	{"isolateCheckHeapSliceCopy", funcTag, 173},
+	{"isolateCheckHeapCopy", funcTag, 173},
+	{"isolateCheckHeapSliceCopy", funcTag, 174},
 }
 
 func runtimeTypes() []*types.Type {
-	var typs [174]*types.Type
+	var typs [175]*types.Type
 	typs[0] = types.ByteType
 	typs[1] = types.NewPtr(typs[0])
 	typs[2] = types.Types[types.TANY]
@@ -444,11 +445,12 @@ func runtimeTypes() []*types.Type {
 	typs[166] = newSig(params(typs[7]), nil)
 	typs[167] = newSig(params(typs[1], typs[5], typs[6]), nil)
 	typs[168] = newSig(params(typs[1], typs[13]), nil)
-	typs[169] = newSig(params(typs[1], typs[6]), nil)
-	typs[170] = newSig(params(typs[1], typs[1], typs[1], typs[6]), nil)
-	typs[171] = newSig(params(typs[1], typs[1]), nil)
-	typs[172] = newSig(params(typs[1], typs[13], typs[1], typs[13], typs[5]), nil)
-	typs[173] = newSig(params(typs[1], typs[1], typs[13], typs[1], typs[13], typs[6]), nil)
+	typs[169] = newSig(params(typs[40]), nil)
+	typs[170] = newSig(params(typs[1], typs[6]), nil)
+	typs[171] = newSig(params(typs[1], typs[1], typs[1], typs[6]), nil)
+	typs[172] = newSig(params(typs[1], typs[1]), nil)
+	typs[173] = newSig(params(typs[1], typs[13], typs[1], typs[13], typs[5]), nil)
+	typs[174] = newSig(params(typs[1], typs[1], typs[13], typs[1], typs[13], typs[6]), nil)
 	return typs[:]
 }
 
