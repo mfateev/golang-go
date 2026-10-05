@@ -5219,6 +5219,26 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapAccess"), true, nil, callArgs[0], callArgs[2], s.constBool(true))
 			case name == "memclrNoHeapPointers", name == "memclrHasPointers":
 				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapAccess"), true, nil, callArgs[0], callArgs[1], s.constBool(true))
+			case name == "slicebytetostring", name == "slicebytetostringtmp":
+				first := 1
+				if name == "slicebytetostringtmp" {
+					first = 0
+				}
+				ptr, length := callArgs[first], callArgs[first+1]
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapCopy"), true, nil,
+					s.constNil(types.Types[types.TUNSAFEPTR]), length, ptr, length, s.constInt(types.Types[types.TUINTPTR], 1))
+			case name == "stringtoslicebyte", name == "stringtoslicerune":
+				text := callArgs[1]
+				ptr := s.newValue1(ssaop.OpStringPtr, s.f.Config.Types.BytePtr, text)
+				length := s.newValue1(ssaop.OpStringLen, types.Types[types.TINT], text)
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapCopy"), true, nil,
+					s.constNil(types.Types[types.TUNSAFEPTR]), length, ptr, length, s.constInt(types.Types[types.TUINTPTR], 1))
+			case name == "slicerunetostring":
+				slice := callArgs[1]
+				ptr := s.newValue1(ssaop.OpSlicePtr, types.Types[types.TINT32].PtrTo(), slice)
+				length := s.newValue1(ssaop.OpSliceLen, types.Types[types.TINT], slice)
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapCopy"), true, nil,
+					s.constNil(types.Types[types.TUNSAFEPTR]), length, ptr, length, s.constInt(types.Types[types.TUINTPTR], 4))
 			case name == "selectgo":
 				count := s.newValue2(s.ssaOp(ir.OADD, types.Types[types.TINT]), types.Types[types.TINT], callArgs[3], callArgs[4])
 				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapSelect"), true, nil, callArgs[0], count)

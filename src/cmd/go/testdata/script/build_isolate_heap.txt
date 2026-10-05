@@ -94,6 +94,16 @@ exec ./heap.exe map-key-string-read
 stdout '^isolate: read from foreign heap$'
 exec ./heap.exe map-key-string-delete
 stdout '^isolate: read from foreign heap$'
+exec ./heap.exe convert-bytes
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe convert-runes
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe convert-string-bytes
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe convert-string-runes
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe convert-own
+stdout '^allowed$'
 
 # Level two also checks the references stored in an otherwise owned object.
 go build -gcflags=example.org/isolateheap=-d=isolateheap=2 -o publication.exe .
@@ -249,6 +259,14 @@ func appendPointers(src []*record) []*record { return append(src, nil) }
 //go:noinline
 func clearBytes(dst []byte) { clear(dst) }
 //go:noinline
+func bytesString(src []byte) string { return string(src) }
+//go:noinline
+func runesString(src []rune) string { return string(src) }
+//go:noinline
+func stringBytes(src string) []byte { return []byte(src) }
+//go:noinline
+func stringRunes(src string) []rune { return []rune(src) }
+//go:noinline
 func mapMissing(m map[string]int) int { return m["missing"] }
 //go:noinline
 func mapLen(m map[string]int) int { return len(m) }
@@ -354,6 +372,7 @@ func main() {
     hostPointers := allocatePointers(host, 2)
     hostFunction := capture(11)
     hostKey := strings.Repeat("ForeignKey", 17)
+    hostRunes := []rune(hostKey)
     hostAtomic := allocateAtomic()
     hostPointer := allocatePointer()
     atomic.StorePointer(hostPointer, unsafe.Pointer(host))
@@ -383,6 +402,22 @@ func main() {
         }
     }()
     switch os.Args[1] {
+    case "convert-bytes": run(104, func() { bytesString(hostBytes) })
+    case "convert-runes": run(104, func() { runesString(hostRunes) })
+    case "convert-string-bytes": run(104, func() { stringBytes(hostKey) })
+    case "convert-string-runes": run(104, func() { stringRunes(hostKey) })
+    case "convert-own": run(104, func() {
+        text := strings.Repeat("PrivateλKey", 17)
+        if bytesString(stringBytes(text)) != text || runesString(stringRunes(text)) != text {
+            panic("owned conversions changed")
+        }
+        if bytesString(nil) != "" || runesString(nil) != "" || len(stringBytes("")) != 0 || len(stringRunes("")) != 0 {
+            panic("empty conversions changed")
+        }
+        if runesString([]rune{-1, 0x110000}) != "��" || len(stringRunes(bytesString([]byte{0xff}))) != 1 {
+            panic("invalid UTF-8 conversion changed")
+        }
+    })
     case "map-key-string-insert": run(104, func() {
         m := make(map[string]int)
         defer func() { if len(m) != 0 { panic("foreign string key inserted") } }()

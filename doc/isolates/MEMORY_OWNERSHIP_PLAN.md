@@ -550,3 +550,33 @@ Its macOS Intel job never acquired a hosted runner and was cancelled by GitHub;
 no matrix entry was removed. It therefore does not establish the four-platform
 gate. The later atomic revision has a separate native run; map-key changes need
 their own complete matrix results.
+
+## String and rune conversion helpers
+
+The diagnostic validates source ranges before compiler-lowered byte/rune to
+string and string to byte/rune conversions. Rune slices use their full four-byte
+element width. Copying into a new private allocation does not authorize reading
+another owner's input. Empty conversions retain their normal behavior.
+
+The compiler regression covers foreign inputs for all four conversions, owned
+UTF-8 round trips, nil/empty inputs and invalid UTF-8/runes. A separate reproducer
+previously copied host bytes into an instance string and read them successfully;
+it now rejects the source before copying. Optimizations that replace conversions
+with aliases, other raw string operations and interface boxing still require
+their separate access/publication coverage.
+
+Conversion validation: marked-function, metadata and heap compiler scripts,
+short runtime/isolate/bridge/reflection and compiler SSA/generation/typecheck
+suites passed. The SDK full suite passed; its level-two driver passed at
+`GOMAXPROCS=1/2/8`, `GOGC=1`. These results are local; the native matrix remains
+subject to the hosted runner issue below.
+
+## Native runner availability checkpoint
+
+The atomic revision's Linux arm64 job in
+[native run 37366597840](https://github.com/mfateev/golang-go/actions/runs/37366597840)
+was cancelled without executing a step. GitHub's annotation states: “The job
+was not acquired by Runner of type hosted even after multiple attempts.” This
+is a hosted runner availability issue; the local container's ptrace/socket
+tests passed. Preserve the full four-platform matrix and let the user resolve
+the CI environment before claiming native validation or continuing implementation.
