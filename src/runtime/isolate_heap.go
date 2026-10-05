@@ -13,8 +13,8 @@ import (
 )
 
 // isolateCheckHeapAccess is the initial compiler diagnostic for ordinary heap
-// loads, stores and typed moves. It deliberately grants no immutable-heap
-// exemption to owner zero. Static/stack memory, pointer publication, runtime
+// loads, stores and typed moves. It grants read-only sharing only to explicitly
+// registered canonical reflection descriptor roots. Static/stack memory, pointer publication, runtime
 // collection operations and trusted transport need their separate policies;
 // this diagnostic is not yet enabled by normal isolate builds.
 func isolateCheckHeapAccess(p unsafe.Pointer, size uintptr, write bool) {
@@ -39,6 +39,9 @@ func isolateCheckHeapAccess(p unsafe.Pointer, size uintptr, write bool) {
 			return // Static and stack checks are a separate compiler gate.
 		}
 		if s.isolateAllocOwner != owner && (borrowed == 0 || s.isolateAllocOwner != borrowed) {
+			if !write && s.isolateAllocOwner == 0 && isolateReadOnlyTypeRange(p, size) {
+				return
+			}
 			if write {
 				panic("isolate: write to foreign heap")
 			}
@@ -101,6 +104,9 @@ func isolateCheckHeapReference(dst, value unsafe.Pointer) {
 		owner = 0 // A linker-allocated global is process state.
 	}
 	if source.isolateAllocOwner != owner {
+		if source.isolateAllocOwner == 0 && isolateReadOnlyTypeRoot(value) {
+			return
+		}
 		panic("isolate: foreign heap reference publication")
 	}
 }
@@ -116,4 +122,85 @@ func isolateCheckHeapMove(typ *abi.Type, dst, src unsafe.Pointer) {
 			isolateCheckHeapReference(add(dst, offset), *(*unsafe.Pointer)(add(src, offset)))
 		}
 	}
+}
+
+// Only reflect's canonical type constructors call this trusted operation.
+// Registering an arbitrary owner-zero object is not an application API. Type
+// descriptors already have process lifetime in reflect's canonical caches;
+// this registry neither retains an instance nor freezes its reachable graph.
+// In particular, names, fields, closures and lazy GC masks need their separate
+// provenance/accessor policies before application code can retain them.
+//
+//go:linkname isolatePublishType
+func isolatePublishType(typ *abi.Type) {
+	if typ == nil {
+		return
+	}
+	p := unsafe.Pointer(typ)
+	span := spanOfHeap(uintptr(p))
+	if span == nil {
+		return
+	} // Linker metadata already has its static policy.
+	if getg().isolateOwner != 0 || span.isolateAllocOwner != 0 {
+		panic("isolate: canonical type must be process-owned")
+	}
+	base := isolateTypeObjectBase(p)
+	if base != uintptr(p) {
+		throw("isolate: canonical type is not an allocation root")
+	}
+	var size uintptr
+	switch typ.Kind() {
+	case abi.Pointer:
+		size = unsafe.Sizeof(abi.PtrType{})
+	case abi.Array:
+		size = unsafe.Sizeof(abi.ArrayType{})
+	case abi.Chan:
+		size = unsafe.Sizeof(abi.ChanType{})
+	case abi.Func:
+		size = unsafe.Sizeof(abi.FuncType{})
+	case abi.Slice:
+		size = unsafe.Sizeof(abi.SliceType{})
+	case abi.Struct:
+		size = unsafe.Sizeof(abi.StructType{})
+	case abi.Map:
+		size = unsafe.Sizeof(abi.MapType{})
+	default:
+		throw("isolate: unexpected constructed type")
+	}
+	reflectOffsLock()
+	if reflectOffs.isolateTypes == nil {
+		reflectOffs.isolateTypes = make(map[unsafe.Pointer]uintptr)
+	}
+	reflectOffs.isolateTypes[p] = size
+	reflectOffsUnlock()
+}
+
+func isolateReadOnlyTypeRoot(p unsafe.Pointer) bool {
+	reflectOffsLock()
+	_, ok := reflectOffs.isolateTypes[p]
+	reflectOffsUnlock()
+	return ok
+}
+
+func isolateReadOnlyTypeRange(p unsafe.Pointer, size uintptr) bool {
+	base := isolateTypeObjectBase(p)
+	if base == 0 {
+		return false
+	}
+	reflectOffsLock()
+	extent := reflectOffs.isolateTypes[unsafe.Pointer(base)]
+	reflectOffsUnlock()
+	offset := uintptr(p) - base
+	return offset < extent && size <= extent-offset
+}
+
+// findObject returns the size-class slot, including a malloc header when the
+// allocation has one. Provenance is keyed by the Go data pointer, never that
+// runtime header or the padding at the end of the slot.
+func isolateTypeObjectBase(p unsafe.Pointer) uintptr {
+	base, span, _ := findObject(uintptr(p), 0, 0)
+	if span != nil && span.spanclass.sizeclass() != 0 && !span.spanclass.noscan() && !heapBitsInSpan(span.elemsize) {
+		base += mallocHeaderSize
+	}
+	return base
 }

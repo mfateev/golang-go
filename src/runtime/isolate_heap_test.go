@@ -5,8 +5,12 @@
 package runtime_test
 
 import (
+	"internal/abi"
+	"reflect"
 	"runtime"
+	"sync"
 	"testing"
+	"time"
 	"unsafe"
 )
 
@@ -118,3 +122,76 @@ func TestIsolateHeapPublication(t *testing.T) {
 	runtime.KeepAlive(values)
 	runtime.KeepAlive(groups)
 }
+
+func TestIsolateHeapCanonicalTypes(t *testing.T) {
+	makeTypes := func() []reflect.Type {
+		array := reflect.ArrayOf(1001, reflect.TypeFor[int]())
+		record := reflect.StructOf([]reflect.StructField{{Name: "Value", Type: array}})
+		return []reflect.Type{array, record, reflect.PointerTo(record), reflect.SliceOf(record),
+			reflect.ChanOf(reflect.BothDir, record), reflect.MapOf(reflect.TypeFor[string](), record),
+			reflect.FuncOf([]reflect.Type{record}, []reflect.Type{array}, false),
+			reflect.StructOf([]reflect.StructField{{Name: "Time", Type: reflect.TypeFor[time.Time](), Anonymous: true}})}
+	}
+	// Concurrent cold and cached construction must publish only canonical roots.
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			for range 8 {
+				makeTypes()
+			}
+		})
+	}
+	wg.Wait()
+	types := makeTypes()
+	sizes := []uintptr{unsafe.Sizeof(abi.ArrayType{}), unsafe.Sizeof(abi.StructType{}),
+		unsafe.Sizeof(abi.PtrType{}), unsafe.Sizeof(abi.SliceType{}), unsafe.Sizeof(abi.ChanType{}),
+		unsafe.Sizeof(abi.MapType{}), unsafe.Sizeof(abi.FuncType{}), unsafe.Sizeof(abi.StructType{})}
+	group := runtime.IsolateMetadataGroupForTest()
+	owner := nextAllocTestOwner()
+	check := func(want string, fn func()) {
+		t.Helper()
+		defer func() {
+			got := recover()
+			if want == "" && got != nil || want != "" && got != want {
+				t.Errorf("got %v, want %q", got, want)
+			}
+		}()
+		fn()
+	}
+	// A process object with exactly the metadata layout is still untrusted.
+	fake := isolateUnregisteredType()
+	if got, ok := runtime.IsolateAllocOriginForTest(unsafe.Pointer(fake)); !ok || got != 0 {
+		t.Fatalf("fake owner=(%d,%v), want process heap", got, ok)
+	}
+	runtime.IsolateMetadataRunForTest(group, owner, func() {
+		slot := runtime.IsolateMetadataBytesForTest(32)
+		for i, typ := range types {
+			root := reflect.ValueOf(typ).UnsafePointer()
+			if got, ok := runtime.IsolateAllocOriginForTest(root); !ok || got != 0 {
+				t.Fatalf("type %v owner=(%d,%v), want process heap", typ, got, ok)
+			}
+			if makeTypes()[i] != typ {
+				t.Error("canonical identity changed")
+			}
+			check("", func() { runtime.IsolateHeapReferenceForTest(unsafe.Pointer(&slot[0]), root) })
+			check("", func() { runtime.IsolateHeapAccessForTest(root, sizes[i], false) })
+			check("", func() { runtime.IsolateHeapAccessForTest(unsafe.Add(root, sizes[i]-1), 1, false) })
+			check("isolate: write to foreign heap", func() { runtime.IsolateHeapAccessForTest(root, 1, true) })
+			check("isolate: read from foreign heap", func() { runtime.IsolateHeapAccessForTest(root, sizes[i]+1, false) })
+			check("isolate: foreign heap reference publication", func() {
+				runtime.IsolateHeapReferenceForTest(unsafe.Pointer(&slot[0]), unsafe.Add(root, 1))
+			})
+		}
+		check("isolate: read from foreign heap", func() { runtime.IsolateHeapAccessForTest(unsafe.Pointer(fake), 1, false) })
+		check("isolate: foreign heap reference publication", func() {
+			runtime.IsolateHeapReferenceForTest(unsafe.Pointer(&slot[0]), unsafe.Pointer(fake))
+		})
+	})
+	runtime.GC()
+	runtime.KeepAlive(fake)
+	runtime.KeepAlive(types)
+	runtime.KeepAlive(group)
+}
+
+//go:noinline
+func isolateUnregisteredType() *abi.ArrayType { return new(abi.ArrayType) }

@@ -48,6 +48,12 @@ stdout '^isolate: write to foreign heap$'
 
 # Level two also checks the references stored in an otherwise owned object.
 go build -gcflags=example.org/isolateheap=-d=isolateheap=2 -o publication.exe .
+exec ./publication.exe metadata
+stdout '^allowed$'
+exec ./publication.exe metadata-write
+stdout '^isolate: write to foreign heap$'
+exec ./publication.exe metadata-interior
+stdout '^isolate: foreign heap reference publication$'
 exec ./publication.exe own
 stdout '^allowed$'
 exec ./publication.exe publish-pointer
@@ -72,6 +78,7 @@ package main
 import (
     "fmt"
     "os"
+    "reflect"
     "unsafe"
     "example.org/isolateheap/bridge"
 )
@@ -94,6 +101,8 @@ type holder struct {
 var published *record
 //go:noinline
 func allocate() *record { return &record{Data: [64]int{11}} }
+//go:noinline
+func allocateTypes() *[7]reflect.Type { return new([7]reflect.Type) }
 //go:noinline
 func read(p *record) int { return p.Data[7] }
 //go:noinline
@@ -175,6 +184,32 @@ func main() {
         }
     }()
     switch os.Args[1] {
+    case "metadata":
+        run(104, func() {
+            array := reflect.ArrayOf(1001, reflect.TypeFor[int]())
+            record := reflect.StructOf([]reflect.StructField{{Name: "Value", Type: array}})
+            types := []reflect.Type{array, record, reflect.PointerTo(record), reflect.SliceOf(record),
+                reflect.ChanOf(reflect.BothDir, record), reflect.MapOf(reflect.TypeFor[string](), record),
+                reflect.FuncOf([]reflect.Type{record}, []reflect.Type{array}, false)}
+            target := allocateTypes()
+            for i, typ := range types { target[i] = typ }
+            for i, typ := range target {
+                if typ != types[i] || typ.String() == "" { panic("metadata identity") }
+            }
+        })
+    case "metadata-write":
+        run(104, func() {
+            typ := reflect.ArrayOf(1001, reflect.TypeFor[int]())
+            root := reflect.ValueOf(typ).UnsafePointer()
+            *(*byte)(root) = 0
+        })
+    case "metadata-interior":
+        run(104, func() {
+            typ := reflect.ArrayOf(1001, reflect.TypeFor[int]())
+            root := reflect.ValueOf(typ).UnsafePointer()
+            target := new(unsafe.Pointer)
+            *target = unsafe.Add(root, 1)
+        })
     case "own":
         run(102, func() { p := allocate(); write(p); if read(p) != 19 { panic("own state") } })
         run(103, func() {

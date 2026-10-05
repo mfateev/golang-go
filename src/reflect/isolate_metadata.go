@@ -4,7 +4,10 @@
 
 package reflect
 
-import _ "unsafe" // for go:linkname
+import (
+	"internal/abi"
+	_ "unsafe" // for go:linkname
+)
 
 // Only type construction uses the process metadata scope. Value allocation,
 // reflective calls, frame pools, and caller-provided predicates stay under the
@@ -16,3 +19,9 @@ func isolateEnterMetadata() uintptr
 
 //go:linkname isolateLeaveMetadata runtime.isolateLeaveMetadata
 func isolateLeaveMetadata(uintptr)
+
+// Record only the canonical result, after cache insertion and shared-lock
+// cleanup. Borrowed input descriptions are never registered.
+//
+//go:linkname isolatePublishType runtime.isolatePublishType
+func isolatePublishType(*abi.Type)

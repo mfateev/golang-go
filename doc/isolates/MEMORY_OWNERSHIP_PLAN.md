@@ -135,8 +135,8 @@ temporary before diagnostic calls can overwrite their ABI result/spill area.
 
 The diagnostic is **not enabled by normal isolate builds**. General stack/static
 ownership, complete publication coverage, raw compiler accesses, reflected operations,
-library intrinsics and assembly still require coverage. Immutable process heap
-metadata needs positive provenance before sharing; owner zero grants no blanket
+library intrinsics and assembly still require coverage. Process metadata beyond the canonical reflection roots below
+still needs positive provenance before sharing; owner zero grants no blanket
 read exemption here. Collection checks emitted in application code do not audit
 the runtime and library operations it calls. The copied-byte bridge remains a
 trusted path. These checks are a way to test the next ownership layer, not a
@@ -301,3 +301,49 @@ host's string backing allocation. `internal/isolatebridge.TestBoundaryResponseOw
 checks the payload, error object and message allocation owners in concurrent
 and deterministic instances. Native CI includes this regression in ordinary,
 race and static-lock-ranking runs.
+
+## Canonical reflection descriptor provenance
+
+The seven supported reflection constructors now register their canonical result
+with the runtime after cache insertion and shared-lock cleanup, before restoring
+the caller's owner. Registration accepts only process-owned allocation roots and
+records the ABI descriptor header's exact extent. The registry shares the
+existing reflection-offset lock. It holds GC-visible roots with the same process
+lifetime as reflection's canonical caches, preventing an unrelated object from reusing an address with previously
+granted provenance.
+
+The heap diagnostics allow references to these exact roots to enter instance
+objects and allow reads within their registered header ranges. Instance writes,
+interior-pointer publication, reads beyond the header, and unregistered objects
+remain rejected. Allocation-slot lookup accounts for malloc headers on larger
+pointer-bearing allocations; it never grants access to the runtime header or
+size-class padding.
+
+This policy does not freeze or approve the entire reachable metadata graph.
+Names, struct-field arrays, equality closures, lazy GC masks and protobuf handles
+still need separate accessor/provenance policies. The level-two SDK audit still
+fails and is not a supported SDK gate yet. Default builds continue to leave these
+partial diagnostics disabled.
+
+`runtime.TestIsolateHeapCanonicalTypes` covers concurrent cold/cache construction,
+canonical identity, every constructor, method-bearing struct types with malloc
+headers, bounded reads, rejected writes/publication and an unregistered metadata
+lookalike. The compiler language-operation script also exercises retaining the
+canonical interfaces in owned storage and rejects mutation/interior publication.
+
+The later publication diagnostic checkpoint
+[native run 37355982299](https://github.com/mfateev/golang-go/actions/runs/37355982299)
+passed all four platforms at Go `8c69f7224a8b00c5f5c2cd55a8a8f3cf0d8b047e`.
+The receiving-owner `Call` error fix also passed all four platforms in
+[native run 37357047704](https://github.com/mfateev/golang-go/actions/runs/37357047704),
+Go `54d7cf934a4f91b79e1a7f63b1d0e2237aad6eaa`. Both used SDK `52210a4`
+and samples `1e77ee7`. Their SDK gate uses diagnostic level one; level-two
+language/runtime tests do not imply that the full SDK passes level two.
+
+Canonical descriptor roots passed local publication/access tests, five race and
+static-lock-ranking repetitions, the compiler heap/metadata scripts, and full
+short suites for runtime, isolates, reflection, maps and SSA generation. These
+results include the malloc-header correction exposed by the reflection suite.
+The SDK full suite and level-one driver passed at `GOMAXPROCS=1/2/8`, `GOGC=1`.
+Six freshly built saved-history replays retained the same 195 observations and
+SHA-256 `12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
