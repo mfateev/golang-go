@@ -322,7 +322,7 @@ func (b *Boundary) Call(op uint32, payload []byte) ([]byte, error) {
 	}
 	b.stopIfRevoked()
 	if r.hasErr {
-		return bytes.Clone(r.payload), errors.New(r.errText)
+		return bytes.Clone(r.payload), errors.New(strings.Clone(r.errText))
 	}
 	return bytes.Clone(r.payload), nil
 }

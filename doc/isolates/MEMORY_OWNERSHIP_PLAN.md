@@ -292,3 +292,12 @@ Go `7ac505c77ed281f9e05503e1e0e0a44f63333dc6`, with the same SDK/sample revision
 This adds the negative language-operation script and SDK driver compiled with
 the diagnostic at `GOMAXPROCS=1/2/8`, `GOGC=1`. It does not validate later
 level-two publication work or close the outstanding ownership gates.
+
+## Boundary response ownership
+
+`Call` clones both response bytes and nonempty error text under the receiving
+instance's restored owner. Constructing `errors.New` alone would retain the
+host's string backing allocation. `internal/isolatebridge.TestBoundaryResponseOwnership`
+checks the payload, error object and message allocation owners in concurrent
+and deterministic instances. Native CI includes this regression in ordinary,
+race and static-lock-ranking runs.
