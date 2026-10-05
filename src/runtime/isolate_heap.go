@@ -102,7 +102,9 @@ func isolateCheckHeapMap(p unsafe.Pointer, write bool) {
 // different span from the header, so use the map's owner for every reference;
 // never pretend that its slots start at dst + the key field's offset.
 func isolateCheckHeapMapKey(typ *abi.MapType, dst, key unsafe.Pointer, publish bool) {
-	isolateCheckHeapAccess(key, typ.Key.Size_, false)
+	// Hashing/equality can follow strings and nested interface boxes through
+	// uninstrumented type algorithms, just like ordinary interface equality.
+	isolateCheckHeapComparable(typ.Key, key)
 	if !publish || typ.Key.PtrBytes == 0 || key == nil {
 		return
 	}

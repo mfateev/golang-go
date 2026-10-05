@@ -273,6 +273,7 @@ var runtimeDecls = [...]struct {
 	{"isolateCheckHeapMove", funcTag, 75},
 	{"isolateCheckHeapCopy", funcTag, 173},
 	{"isolateCheckHeapSliceCopy", funcTag, 174},
+	{"isolateCheckHeapInterfaceEqual", funcTag, 171},
 }
 
 func runtimeTypes() []*types.Type {

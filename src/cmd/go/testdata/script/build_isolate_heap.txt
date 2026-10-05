@@ -217,6 +217,59 @@ stdout '^allowed$'
 [race] exec ./atomic-race.exe box-own
 [race] stdout '^allowed$'
 
+# Interface equality can invoke uninstrumented runtime/type algorithms.
+go build -gcflags=example.org/isolateheap/equality=-d=isolateheap=1 -o equality.exe ./equality
+exec ./equality.exe host-box
+stdout '^isolate: read from foreign heap$'
+exec ./equality.exe peer-box
+stdout '^isolate: read from foreign heap$'
+exec ./equality.exe string
+stdout '^isolate: read from foreign heap$'
+exec ./equality.exe error
+stdout '^isolate: read from foreign heap$'
+exec ./equality.exe struct
+stdout '^isolate: read from foreign heap$'
+exec ./equality.exe array
+stdout '^isolate: read from foreign heap$'
+exec ./equality.exe nested
+stdout '^isolate: read from foreign heap$'
+exec ./equality.exe nested-error
+stdout '^isolate: read from foreign heap$'
+exec ./equality.exe map-interface
+stdout '^isolate: read from foreign heap$'
+exec ./equality.exe map-nested
+stdout '^isolate: read from foreign heap$'
+exec ./equality.exe own
+stdout '^allowed$'
+exec ./equality.exe blank
+stdout '^allowed$'
+go build -gcflags=example.org/isolateheap/equality=-d=isolateheap=2 -o equality2.exe ./equality
+exec ./equality2.exe string
+stdout '^isolate: read from foreign heap$'
+exec ./equality2.exe nested
+stdout '^isolate: read from foreign heap$'
+exec ./equality2.exe nested-error
+stdout '^isolate: read from foreign heap$'
+exec ./equality2.exe map-interface
+stdout '^isolate: read from foreign heap$'
+exec ./equality2.exe map-nested
+stdout '^isolate: read from foreign heap$'
+exec ./equality2.exe own
+stdout '^allowed$'
+[race] go build -race -gcflags=example.org/isolateheap/equality=-d=isolateheap=2 -o equality-race.exe ./equality
+[race] exec ./equality-race.exe string
+[race] stdout '^isolate: read from foreign heap$'
+[race] exec ./equality-race.exe error
+[race] stdout '^isolate: read from foreign heap$'
+[race] exec ./equality-race.exe nested
+[race] stdout '^isolate: read from foreign heap$'
+[race] exec ./equality-race.exe nested-error
+[race] stdout '^isolate: read from foreign heap$'
+[race] exec ./equality-race.exe map-interface
+[race] stdout '^isolate: read from foreign heap$'
+[race] exec ./equality-race.exe own
+[race] stdout '^allowed$'
+
 -- go.mod --
 module example.org/isolateheap
 go 1.26
@@ -790,3 +843,129 @@ func main() {
 package bridge
 import "unsafe"
 func Set(dst *unsafe.Pointer, value unsafe.Pointer) { *dst = value }
+
+//go:noinline
+func CorruptBoxString(value *any, text string, offset uintptr) {
+    data := (*[2]unsafe.Pointer)(unsafe.Pointer(value))[1]
+    *(*string)(unsafe.Add(data, offset)) = text
+}
+
+-- equality/main.go --
+package main
+
+import (
+    "fmt"
+    "os"
+    "strings"
+    "unsafe"
+    "example.org/isolateheap/bridge"
+)
+
+//go:linkname newGroup runtime.isolateNewGroup
+func newGroup() unsafe.Pointer
+//go:linkname setGroup runtime.isolateSetGroup
+func setGroup(unsafe.Pointer) unsafe.Pointer
+//go:linkname setOwner runtime.isolateSetOwner
+func setOwner(uintptr) uintptr
+
+type textError string
+func (e textError) Error() string { return string(e) }
+type record struct { Text string; N int }
+type nested struct { Value any; N int }
+type nestedError struct { Value error; N int }
+type blank struct { _ string; N int }
+
+//go:noinline
+func box[T any](value T) any { return value }
+//go:noinline
+func equal(left, right any) bool { return left == right }
+//go:noinline
+func equalError(left, right error) bool { return left == right }
+
+func run(owner uintptr, fn func()) {
+    group := setGroup(newGroup())
+    previous := setOwner(owner)
+    defer setGroup(group)
+    defer setOwner(previous)
+    fn()
+}
+
+func main() {
+    mode := -1
+    for i, name := range []string{"host-box", "peer-box", "string", "error", "struct", "array", "nested", "blank", "own", "map-interface", "map-nested", "nested-error"} {
+        if os.Args[1] == name { mode = i }
+    }
+    foreign := strings.Repeat("Foreign", 20)
+    host := box(foreign)
+    var peer any
+    run(602, func() { peer = box(strings.Repeat("Foreign", 20)) })
+    defer func() { if p := recover(); p != nil { fmt.Println(p) } }()
+    run(601, func() {
+        owned := strings.Repeat("Foreign", 20)
+        left, right := box(owned), box(owned)
+        switch mode {
+        case 0: equal(host, right)
+        case 1: equal(peer, right)
+        case 2:
+            bridge.CorruptBoxString(&left, foreign, 0)
+            equal(left, right)
+        case 3:
+            left, right = box(textError(owned)), box(textError(owned))
+            bridge.CorruptBoxString(&left, foreign, 0)
+            equalError(left.(error), right.(error))
+        case 4:
+            left, right = box(record{owned, 3}), box(record{owned, 3})
+            bridge.CorruptBoxString(&left, foreign, 0)
+            equal(left, right)
+        case 5:
+            left, right = box([3]string{owned, owned, owned}), box([3]string{owned, owned, owned})
+            bridge.CorruptBoxString(&left, foreign, 2*unsafe.Sizeof(owned))
+            equal(left, right)
+        case 6:
+            bridge.CorruptBoxString(&left, foreign, 0)
+            // The outer box retains an owned inner box, whose backing bytes
+            // were corrupted only by this deliberately privileged fixture.
+            equal(box(nested{left, 3}), box(nested{right, 3}))
+        case 7:
+            left, right = box(blank{N: 3}), box(blank{N: 3})
+            bridge.CorruptBoxString(&left, foreign, 0)
+            if !equal(left, right) { panic("blank field affected equality") }
+        case 9:
+            bridge.CorruptBoxString(&left, foreign, 0)
+            m := make(map[any]int)
+            m[left] = 1
+        case 10:
+            bridge.CorruptBoxString(&left, foreign, 0)
+            m := make(map[nested]int)
+            _ = m[nested{left, 3}]
+        case 11:
+            left, right = box(textError(owned)), box(textError(owned))
+            bridge.CorruptBoxString(&left, foreign, 0)
+            equal(box(nestedError{left.(error), 3}), box(nestedError{right.(error), 3}))
+        case 8:
+            if !equal(left, right) || !equalError(textError(owned), textError(owned)) ||
+                !equal(box(record{owned, 3}), box(record{owned, 3})) ||
+                !equal(box([3]string{owned, owned, owned}), box([3]string{owned, owned, owned})) ||
+                !equal(box(nestedError{textError(owned), 3}), box(nestedError{textError(owned), 3})) ||
+                !equal(box(nestedError{nil, 3}), box(nestedError{nil, 3})) ||
+                !equal(box(nested{left, 3}), box(nested{right, 3})) || !equal(nil, nil) || equal(left, nil) || equal(left, 31) {
+                panic("owned interface equality changed")
+            }
+            m := map[any]int{left: 3}
+            if m[right] != 3 { panic("owned interface map key changed") }
+            n := map[nested]int{nested{left, 3}: 5}
+            if n[nested{right, 3}] != 5 { panic("owned nested map key changed") }
+            p := new(int)
+            if !equal(p, p) { panic("direct interface equality changed") }
+            func() {
+                defer func() {
+                    if fmt.Sprint(recover()) != "runtime error: comparing uncomparable type []int" {
+                        panic("uncomparable-type panic changed")
+                    }
+                }()
+                equal(box([]int{1}), box([]int{1}))
+            }()
+        }
+    })
+    fmt.Println("allowed")
+}

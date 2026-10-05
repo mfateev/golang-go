@@ -756,3 +756,52 @@ race detection at `GOMAXPROCS=8`, `GOGC=1`. Six strict replays retained 195
 observations and the existing trace hash. Map cloning and publication of
 borrowed reference graphs still need their separate policies; feature 2 remains
 in progress.
+
+## Interface equality and comparable map-key values
+
+The compiler diagnostic now validates both operands before calling `efaceeq`
+or `ifaceeq`. These helpers can invoke type algorithms in runtime or library
+code that was compiled without diagnostics. The trusted validator checks
+indirect value bytes and follows comparable value layouts: strings and their
+backing bytes, arrays, nonblank struct fields, and nested empty or nonempty
+interfaces. Pointer/channel equality compares addresses without reading their
+targets. Nil comparisons, ignored blank fields and ordinary uncomparable-type
+panics retain their Go behavior.
+
+Generic map-key validation uses the same inspection before hashing/equality
+and before key publication. An owned interface box does not authorize reading
+foreign string backing retained inside it, including through another struct or
+interface. Reference publication retains its separate level-two check.
+
+Two deliberately privileged reproducers exposed these gaps: one compared
+owned string boxes after corrupting a backing pointer to process memory; the
+other inserted that corrupted box as an interface map key. Both previously
+completed successfully and now reject the foreign read. Compiler regressions
+cover host/peer boxes, corrupted scalar/named strings, arrays/structs, nested
+empty/nonempty interfaces, map lookup/assignment keys, owned values, nil/direct
+comparisons and uncomparable types at both diagnostic levels and under race
+detection. The corruption fixture is explicitly uninstrumented and cannot be
+inlined. Argument selection happens before attaching the test instance; the
+initial fixture incorrectly read process `os.Args` after attachment and rejected
+that read before reaching the intended operation.
+
+Validation: final full bootstrap, four compiler scripts, short runtime/isolate/
+bridge/reflection/maps/compiler suites, full SDK and tracked sample suites
+passed. Five race and static-lock-ranking ownership runs passed, including
+15,360 cached instance evictions. The broader strict SDK driver passed at
+`GOMAXPROCS=1/2/8`, `GOGC=1`, and under race detection at
+`GOMAXPROCS=8`, `GOGC=1`. Six strict fresh-process replays retained 195
+observations and SHA-256
+`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
+This validates instrumented equality/key entry points. General pointer graphs,
+stack/static ownership, indirect/library/assembly paths, metadata graphs and
+whole-dependency enforcement remain open.
+
+Before promoting diagnostics to mandatory enforcement, decide the behavior of
+an ownership violation inside an instance. The current diagnostic is a
+recoverable panic. The proposed enforcement policy permanently revokes the
+instance, discards application goroutines/defers and reports an ownership error
+to the host. Active metadata services must release their process locks before
+discarding the caller. This failure-policy decision is pending human feedback;
+feature 2 remains incomplete and normal builds still do not enable the heap
+diagnostic.

@@ -5191,6 +5191,9 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 					callArgs[arg], s.constInt(types.Types[types.TUINTPTR], 1), s.constBool(write))
 			}
 			switch {
+			case name == "ifaceeq", name == "efaceeq":
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapInterfaceEqual"), true, nil,
+					callArgs[0], callArgs[1], callArgs[2], s.constBool(name == "ifaceeq"))
 			case name == "chansend1", name == "chanrecv1", name == "chanrecv2", name == "closechan":
 				check(0, true)
 			case name == "chanlen", name == "chancap":
