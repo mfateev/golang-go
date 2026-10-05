@@ -4834,7 +4834,9 @@ func (s *state) split(v *ssa.Value) (*ssa.Value, *ssa.Value) {
 
 // intrinsicCall converts a call to a recognized intrinsic function into the intrinsic SSA operation.
 func (s *state) intrinsicCall(n *ir.CallExpr) *ssa.Value {
-	v := findIntrinsic(n.Fun.Sym())(s, n, s.intrinsicArgs(n))
+	args := s.intrinsicArgs(n)
+	s.isolateCheckAtomic(n.Fun.Sym(), args)
+	v := findIntrinsic(n.Fun.Sym())(s, n, args)
 	if ssaconfig.IntrinsicsDebug > 0 {
 		x := v
 		if x == nil {
@@ -5173,6 +5175,9 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 
 		for i, n := range args {
 			callArgs = append(callArgs, s.putArg(n, t.Param(i).Type))
+		}
+		if (k == callNormal || k == callTail) && n.Fun.Op() == ir.ONAME {
+			s.isolateCheckAtomic(n.Fun.Sym(), callArgs)
 		}
 		if base.Debug.IsolateHeap != 0 && !base.Flag.CompilingRuntime &&
 			(k == callNormal || k == callTail) && n.Fun.Op() == ir.ONAME && n.Fun.Sym().Pkg == ir.Pkgs.Runtime {

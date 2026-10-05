@@ -64,6 +64,31 @@ stdout '^isolate: write to foreign heap$'
 exec ./heap.exe clear-host
 stdout '^isolate: write to foreign heap$'
 
+exec ./heap.exe atomic-load
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe atomic-store
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe atomic-add
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe atomic-swap
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe atomic-cas
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe atomic-and
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe atomic-or
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe atomic-typed
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe atomic-peer-store
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe atomic-instance-load
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe atomic-pointer-load
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe atomic-pointer-store
+stdout '^isolate: write to foreign heap$'
+
 # Level two also checks the references stored in an otherwise owned object.
 go build -gcflags=example.org/isolateheap=-d=isolateheap=2 -o publication.exe .
 env GOGC=1
@@ -102,6 +127,29 @@ stdout '^isolate: foreign heap reference publication$'
 exec ./publication.exe append-publish
 stdout '^isolate: foreign heap reference publication$'
 
+# Pointer atomics validate the new reference before touching the destination.
+exec ./publication.exe atomic-pointer-publish
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe atomic-pointer-swap-publish
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe atomic-pointer-cas-publish
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe atomic-typed-publish
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe atomic-instance-publish
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe atomic-own
+stdout '^allowed$'
+
+# Race builds use ordinary calls rather than atomic intrinsics.
+[race] go build -race -gcflags=example.org/isolateheap=-d=isolateheap=2 -o atomic-race.exe .
+[race] exec ./atomic-race.exe atomic-store
+[race] stdout '^isolate: write to foreign heap$'
+[race] exec ./atomic-race.exe atomic-pointer-publish
+[race] stdout '^isolate: foreign heap reference publication$'
+[race] exec ./atomic-race.exe atomic-own
+[race] stdout '^allowed$'
+
 -- go.mod --
 module example.org/isolateheap
 go 1.26
@@ -113,6 +161,7 @@ import (
     "os"
     "reflect"
     "runtime"
+    "sync/atomic"
     "unsafe"
     "example.org/isolateheap/bridge"
 )
@@ -211,6 +260,35 @@ func capture(value int) func() int { return func() int { return value } }
 func moveHolder(dst, src *holder) { *dst = *src }
 //go:noinline
 func publishStatic(value *record) { published = value }
+//go:noinline
+func atomicAddress(p *record) *int64 { return (*int64)(unsafe.Pointer(&p.Data[7])) }
+//go:noinline
+func allocateAtomic() *atomic.Int64 { return new(atomic.Int64) }
+//go:noinline
+func allocateAtomicPointer() *atomic.Pointer[record] { return new(atomic.Pointer[record]) }
+//go:noinline
+func allocatePointer() *unsafe.Pointer { return new(unsafe.Pointer) }
+//go:noinline
+func atomicNil() {
+    defer func() { if recover() == nil { panic("nil atomic destination did not panic") } }()
+    atomic.StorePointer(nil, nil)
+}
+//go:noinline
+func atomicPublish(source *record, operation int) {
+    target := allocatePointer()
+    defer func() {
+        if atomic.LoadPointer(target) != nil { panic("foreign pointer atomically published") }
+    }()
+    switch operation {
+    case 0: atomic.StorePointer(target, unsafe.Pointer(source))
+    case 1: atomic.SwapPointer(target, unsafe.Pointer(source))
+    case 2: atomic.CompareAndSwapPointer(target, nil, unsafe.Pointer(source))
+    case 3:
+        typed := allocateAtomicPointer()
+        defer func() { if typed.Load() != nil { panic("foreign typed pointer atomically published") } }()
+        typed.Store(source)
+    }
+}
 
 // Result slots in a function with a defer are live to GC from function entry.
 // Nested frames and pointer-free stack contents exercise stack growth/reuse;
@@ -257,6 +335,9 @@ func main() {
     hostBytes[0] = 7
     hostPointers := allocatePointers(host, 2)
     hostFunction := capture(11)
+    hostAtomic := allocateAtomic()
+    hostPointer := allocatePointer()
+    atomic.StorePointer(hostPointer, unsafe.Pointer(host))
     var owned *record
     run(101, func() { owned = allocate() })
     defer func() {
@@ -272,11 +353,56 @@ func main() {
             }
             if hostPointers[0] != host || hostPointers[1] != host { panic("foreign pointer copy changed destination") }
             if published != nil { panic("foreign reference escaped before checking") }
+            if hostAtomic.Load() != 0 || atomic.LoadPointer(hostPointer) != unsafe.Pointer(host) {
+                panic("foreign atomic destination changed")
+            }
+            run(101, func() {
+                if owned.Data[7] != 0 { panic("foreign atomic peer changed") }
+            })
             hostChan <- 12 // A rejected close must not have closed this channel.
             fmt.Println(got)
         }
     }()
     switch os.Args[1] {
+    case "atomic-load": run(104, func() { atomic.LoadInt64(atomicAddress(host)) })
+    case "atomic-store": run(104, func() { atomic.StoreInt64(atomicAddress(host), 19) })
+    case "atomic-add": run(104, func() { atomic.AddInt64(atomicAddress(host), 19) })
+    case "atomic-swap": run(104, func() { atomic.SwapInt64(atomicAddress(host), 19) })
+    case "atomic-cas": run(104, func() { atomic.CompareAndSwapInt64(atomicAddress(host), 0, 19) })
+    case "atomic-and": run(104, func() { atomic.AndInt64(atomicAddress(host), 0) })
+    case "atomic-or": run(104, func() { atomic.OrInt64(atomicAddress(host), 19) })
+    case "atomic-typed": run(104, func() { hostAtomic.Store(19) })
+    case "atomic-peer-store": run(104, func() { atomic.StoreInt64(atomicAddress(owned), 19) })
+    case "atomic-instance-load": atomic.LoadInt64(atomicAddress(owned))
+    case "atomic-pointer-load": run(104, func() { atomic.LoadPointer(hostPointer) })
+    case "atomic-pointer-store": run(104, func() { atomic.StorePointer(hostPointer, nil) })
+    case "atomic-pointer-publish": run(104, func() { atomicPublish(host, 0) })
+    case "atomic-pointer-swap-publish": run(104, func() { atomicPublish(host, 1) })
+    case "atomic-pointer-cas-publish": run(104, func() { atomicPublish(host, 2) })
+    case "atomic-typed-publish": run(104, func() { atomicPublish(host, 3) })
+    case "atomic-instance-publish": atomicPublish(owned, 0)
+    case "atomic-own": run(104, func() {
+        atomicNil()
+        scalar := allocateAtomic()
+        scalar.Store(11)
+        if scalar.Load() != 11 || scalar.Add(8) != 19 || scalar.Swap(27) != 19 || !scalar.CompareAndSwap(27, 31) || scalar.And(15) != 31 || scalar.Or(16) != 15 || scalar.Load() != 31 {
+            panic("owned atomic values changed")
+        }
+        small := new(atomic.Int32)
+        small.Store(11)
+        if small.Load() != 11 || small.Add(8) != 19 || small.Swap(27) != 19 || !small.CompareAndSwap(27, 31) || small.And(15) != 31 || small.Or(16) != 15 { panic("owned 32-bit atomics changed") }
+        boolean := new(atomic.Bool)
+        if boolean.Load() || !boolean.CompareAndSwap(false, true) || !boolean.Swap(false) { panic("owned boolean atomics changed") }
+        word := new(atomic.Uintptr)
+        word.Store(11)
+        if word.Load() != 11 || word.Add(8) != 19 || word.Swap(27) != 19 || !word.CompareAndSwap(27, 31) { panic("owned uintptr atomics changed") }
+        typed := allocateAtomicPointer()
+        value := allocate()
+        typed.Store(value)
+        if typed.Load() != value || typed.Swap(nil) != value || !typed.CompareAndSwap(nil, value) { panic("owned atomic pointers changed") }
+        canonical := allocatePointer()
+        atomic.StorePointer(canonical, reflect.ValueOf(reflect.ArrayOf(23, reflect.TypeFor[int]())).UnsafePointer())
+    })
     case "entry-results":
         done := make(chan struct{})
         gcStopped := make(chan struct{})

@@ -482,3 +482,32 @@ observations and SHA-256
 `12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
 The prior native failures require a new run of the corrected source; local
 results do not establish the four-platform gate.
+
+## Direct atomic operations
+
+The heap diagnostic checks direct `sync/atomic` primitive calls at both compiler
+boundaries: intrinsic expansion and ordinary calls (including race-intercepted
+calls and pointer operations with write barriers). Checks cover the full scalar
+width and precede loads, stores, add, swap, compare-and-swap, AND and OR. Inlined
+typed atomic methods receive the same checks. Level two checks the new reference
+before pointer store/swap/compare-and-swap, including an unsuccessful comparison;
+it never permits retaining another owner's pointer based on the comparison.
+
+This closes an observed host mutation through `atomic.Int64.Store`. The compiler
+script exercises host/instance and instance/instance scalar access, host access
+to instance storage, pointer publication, unchanged rejected destinations and
+owned 32/64-bit, boolean, uintptr and pointer operations. Canonical reflection
+descriptor pointers retain their explicit immutable-sharing policy. Race builds
+exercise the non-intrinsic path.
+
+Indirect calls through function values, typed methods that remain in
+uninstrumented dependency code, `atomic.Value` and runtime/internal assembly still
+need their separate audit. This diagnostic remains opt-in and does not replace
+the outstanding static/stack and whole-program policies.
+
+Atomic validation: the heap/marked-function compiler scripts and compiler
+SSA/generation suites passed; `sync/atomic` passed normally and under race
+detection. The SDK level-two driver passed at `GOMAXPROCS=1/2/8`, `GOGC=1`,
+and under race detection at `GOMAXPROCS=8`, `GOGC=1`. The full SDK suite and
+all tracked sample packages passed. These local checks do not establish the
+complete memory-ownership or native platform gates.
