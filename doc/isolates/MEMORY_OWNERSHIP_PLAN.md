@@ -74,6 +74,13 @@ disabled. GC sweep preparation, scan/allocation accounting, profiling and
 `ReadMemStats` include these caches. An acyclic finalizable handle retires an
 unreachable cache without freeing still-live heap objects.
 
+The Temporal adapter also constructs the pinned default converter separately
+in each instance's workflow package state. Its mutable converter map, ordered
+list and options no longer reuse the host worker's singleton. The worker keeps
+its standard default object. Wire compatibility tests and the retained history
+cover the independently constructed converter; its external dependency graph
+still needs the broader package audit below.
+
 Metadata scopes preserve the instance's group, clock and process restrictions,
 while switching allocation and cache access to the process owner. They keep the
 dispatch token while waiting on shared service locks. Kill remains pending until
@@ -170,3 +177,13 @@ The native CI workflow now includes cached eviction, allocation/metadata race
 and lock-ranking gates, rejected metadata-source builds, and the SDK driver
 under the race detector. Its next run validates this ownership foundation on
 Linux/macOS arm64/amd64; these results do not close the remaining feature 2 gates.
+
+The first native foundation run (`37347075109`, Go `4891462c93`, SDK
+`27e2eb5`) passed both Linux jobs and exposed an existing Darwin preemption
+lock-ranking mismatch on both macOS architectures: `preemptM` acquires the exec
+read lock with `sched`/`allp` held, while the table placed the read lock earlier.
+The audited thread-creation read section only calls OS/C thread-start code.
+The corrected DAG places `execR` after `allp`; a regression exercises this order
+on every platform. Full runtime/isolate short suites with static lock ranking
+passed locally after the correction. The native rerun must pass before this
+foundation's platform validation is complete.

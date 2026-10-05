@@ -181,3 +181,7 @@ func testIsolateMetadataRevocation(t *testing.T, deterministic bool) {
 		})
 	}
 }
+
+func TestExecPreemptionLockOrder(t *testing.T) {
+	runtime.ExecPreemptionLockOrderForTest()
+}

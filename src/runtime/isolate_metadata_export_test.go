@@ -77,3 +77,15 @@ func IsolateMetadataSuspendWaitingForTest(p unsafe.Pointer) bool {
 	})
 	return waiting
 }
+
+// Model both Darwin preemption callers even on non-Darwin test machines.
+func ExecPreemptionLockOrderForTest() {
+	systemstack(func() {
+		lock(&sched.lock)
+		lock(&allpLock)
+		execLock.rlock()
+		execLock.runlock()
+		unlock(&allpLock)
+		unlock(&sched.lock)
+	})
+}

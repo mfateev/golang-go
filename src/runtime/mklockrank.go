@@ -83,10 +83,13 @@ assistQueue,
 # Above SCHED are things that can call into the scheduler.
 < SCHED
 # Below SCHED is the scheduler implementation.
-< allocmR,
-  execR;
-allocmR, execR, hchan < sched;
+< allocmR;
+allocmR, hchan < sched;
 sched < allg, allp;
+# Darwin preemption takes execR while forEachP holds sched or retake holds
+# allp. Thread creation holds execR only around the OS/C thread-start call;
+# it does not acquire scheduler locks under that read lock.
+allp < execR;
 
 # Channels
 isolatePark < notifyList;
