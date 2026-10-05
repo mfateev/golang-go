@@ -5183,6 +5183,24 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapMap"), true, nil, callArgs[1], s.constBool(false))
 			case strings.HasPrefix(name, "mapassign"), strings.HasPrefix(name, "mapdelete"), name == "mapclear":
 				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapMap"), true, nil, callArgs[1], s.constBool(true))
+			case name == "typedslicecopy":
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapSliceCopy"), true, nil,
+					callArgs[0], callArgs[1], callArgs[2], callArgs[3], callArgs[4], s.constBool(base.Debug.IsolateHeap > 1))
+			case name == "slicecopy":
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapCopy"), true, nil,
+					callArgs[0], callArgs[1], callArgs[2], callArgs[3], callArgs[4])
+			case name == "makeslicecopy":
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapSliceCopy"), true, nil,
+					callArgs[0], s.constNil(types.Types[types.TUNSAFEPTR]), callArgs[1], callArgs[3], callArgs[2], s.constBool(base.Debug.IsolateHeap > 1))
+			case name == "growslice", name == "growsliceNoAlias", name == "growsliceBuf", name == "growsliceBufNoAlias":
+				oldLen := s.newValue2(s.ssaOp(ir.OSUB, types.Types[types.TINT]), types.Types[types.TINT], callArgs[1], callArgs[3])
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapSliceCopy"), true, nil,
+					callArgs[4], s.constNil(types.Types[types.TUNSAFEPTR]), oldLen, callArgs[0], oldLen, s.constBool(base.Debug.IsolateHeap > 1))
+			case name == "memmove":
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapAccess"), true, nil, callArgs[1], callArgs[2], s.constBool(false))
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapAccess"), true, nil, callArgs[0], callArgs[2], s.constBool(true))
+			case name == "memclrNoHeapPointers", name == "memclrHasPointers":
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapAccess"), true, nil, callArgs[0], callArgs[1], s.constBool(true))
 			case name == "selectgo":
 				count := s.newValue2(s.ssaOp(ir.OADD, types.Types[types.TINT]), types.Types[types.TINT], callArgs[3], callArgs[4])
 				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapSelect"), true, nil, callArgs[0], count)
@@ -5733,6 +5751,14 @@ func (s *state) intDivide(n ir.Node, a, b *ssa.Value) *ssa.Value {
 // The call is added to the end of the current block.
 // If returns is false, the block is marked as an exit block.
 func (s *state) rtcall(fn *obj.LSym, returns bool, results []*types.Type, args ...*ssa.Value) []*ssa.Value {
+	// append growth is also emitted directly by SSA, bypassing the lowered IR
+	// call path. Validate the old elements before a growth helper copies them.
+	if base.Debug.IsolateHeap != 0 && !base.Flag.CompilingRuntime &&
+		(fn == ir.Syms.Growslice || fn == ir.Syms.GrowsliceNoAlias || fn == ir.Syms.GrowsliceBuf || fn == ir.Syms.GrowsliceBufNoAlias) {
+		oldLen := s.newValue2(s.ssaOp(ir.OSUB, types.Types[types.TINT]), types.Types[types.TINT], args[1], args[3])
+		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapSliceCopy"), true, nil,
+			args[4], s.constNil(types.Types[types.TUNSAFEPTR]), oldLen, args[0], oldLen, s.constBool(base.Debug.IsolateHeap > 1))
+	}
 	s.prevCall = nil
 	// Write args to the stack
 	off := base.Ctxt.Arch.FixedFrameSize

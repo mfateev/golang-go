@@ -46,6 +46,24 @@ stdout '^isolate: read from foreign heap$'
 exec ./heap.exe select
 stdout '^isolate: write to foreign heap$'
 
+
+exec ./heap.exe copy-host-read
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe copy-host-write
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe copy-pointer-host-read
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe copy-pointer-host-write
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe make-copy-host
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe append-host-growth
+stdout '^isolate: read from foreign heap$'
+exec ./heap.exe append-host-inplace
+stdout '^isolate: write to foreign heap$'
+exec ./heap.exe clear-host
+stdout '^isolate: write to foreign heap$'
+
 # Level two also checks the references stored in an otherwise owned object.
 go build -gcflags=example.org/isolateheap=-d=isolateheap=2 -o publication.exe .
 exec ./publication.exe metadata
@@ -67,6 +85,13 @@ stdout '^isolate: foreign heap reference publication$'
 exec ./publication.exe publish-bulk
 stdout '^isolate: foreign heap reference publication$'
 exec ./publication.exe publish-static
+stdout '^isolate: foreign heap reference publication$'
+
+exec ./publication.exe copy-publish
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe make-copy-publish
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe append-publish
 stdout '^isolate: foreign heap reference publication$'
 
 -- go.mod --
@@ -104,6 +129,12 @@ func allocate() *record { return &record{Data: [64]int{11}} }
 //go:noinline
 func allocateTypes() *[7]reflect.Type { return new([7]reflect.Type) }
 //go:noinline
+func allocatePointers(p *record, length int) []*record {
+    result := make([]*record, length)
+    for i := range result { result[i] = p }
+    return result
+}
+//go:noinline
 func read(p *record) int { return p.Data[7] }
 //go:noinline
 func write(p *record) { p.Data[7] = 19 }
@@ -123,6 +154,20 @@ func tupleReferences() (holder, int, error) {
 }
 //go:noinline
 func tupleReferencesHeap(p *holder, number *int, err *error) { *p, *number, *err = tupleReferences() }
+//go:noinline
+func copyBytes(dst, src []byte) int { return copy(dst, src) }
+//go:noinline
+func copyPointers(dst, src []*record) int { return copy(dst, src) }
+//go:noinline
+func clonePointers(src []*record) []*record { dst := make([]*record, len(src)); copy(dst, src); return dst }
+//go:noinline
+func cloneBytes(src []byte) []byte { dst := make([]byte, len(src)); copy(dst, src); return dst }
+//go:noinline
+func appendBytes(src []byte) []byte { return append(src, 19) }
+//go:noinline
+func appendPointers(src []*record) []*record { return append(src, nil) }
+//go:noinline
+func clearBytes(dst []byte) { clear(dst) }
 //go:noinline
 func mapMissing(m map[string]int) int { return m["missing"] }
 //go:noinline
@@ -169,6 +214,8 @@ func main() {
     hostChan := make(chan int, 2)
     hostChan <- 11
     hostBytes := make([]byte, 16)
+    hostBytes[0] = 7
+    hostPointers := allocatePointers(host, 2)
     hostFunction := capture(11)
     var owned *record
     run(101, func() { owned = allocate() })
@@ -178,6 +225,12 @@ func main() {
             if host.Data[7] != 0 { panic("foreign write happened before checking") }
             if len(hostChan) != 1 { panic("foreign channel changed before checking") }
             if hostMap["key"] != 42 { panic("foreign map changed before checking") }
+            for i, b := range hostBytes {
+                want := byte(0)
+                if i == 0 { want = 7 }
+                if b != want { panic("foreign byte copy changed destination") }
+            }
+            if hostPointers[0] != host || hostPointers[1] != host { panic("foreign pointer copy changed destination") }
             if published != nil { panic("foreign reference escaped before checking") }
             hostChan <- 12 // A rejected close must not have closed this channel.
             fmt.Println(got)
@@ -193,6 +246,7 @@ func main() {
                 reflect.FuncOf([]reflect.Type{record}, []reflect.Type{array}, false)}
             target := allocateTypes()
             for i, typ := range types { target[i] = typ }
+            if copy(target[:], types) != len(types) { panic("metadata copy") }
             for i, typ := range target {
                 if typ != types[i] || typ.String() == "" { panic("metadata identity") }
             }
@@ -213,6 +267,15 @@ func main() {
     case "own":
         run(102, func() { p := allocate(); write(p); if read(p) != 19 { panic("own state") } })
         run(103, func() {
+            data := []byte{1,2,3,4}
+            if copyBytes(data[1:], data) != 3 || data[3] != 3 { panic("overlapping copy") }
+            if copyBytes(nil, data) != 0 || copyBytes(data, nil) != 0 { panic("empty copy") }
+            data = appendBytes(data)
+            if data[4] != 19 || cloneBytes(data)[4] != 19 { panic("own byte append") }
+            clearBytes(data)
+            if data[4] != 0 { panic("own clear") }
+            refs := []*record{allocate(), allocate()}
+            if clonePointers(refs)[1] != refs[1] || appendPointers(refs)[1] != refs[1] { panic("own pointer copy") }
             p, number, err := new(record), new(int), new(error)
             tupleHeap(p, number, err)
             if p.Data[0] != 11 || *number != 27 || *err != nil { panic("tuple result") }
@@ -237,6 +300,26 @@ func main() {
                 panic("pointer-bearing tuple result")
             }
         })
+    case "copy-host-read": run(102, func() { copyBytes(make([]byte, 16), hostBytes) })
+    case "copy-host-write": run(102, func() { copyBytes(hostBytes, []byte{8, 9}) })
+    case "copy-pointer-host-read": run(102, func() { copyPointers(make([]*record, 2), hostPointers) })
+    case "copy-pointer-host-write": run(102, func() { copyPointers(hostPointers, []*record{allocate()}) })
+    case "make-copy-host": run(102, func() { _ = cloneBytes(hostBytes) })
+    case "append-host-growth": run(102, func() { _ = appendBytes(hostBytes) })
+    case "append-host-inplace": run(102, func() { _ = appendBytes(hostBytes[:8]) })
+    case "clear-host": run(102, func() { clearBytes(hostBytes) })
+    case "copy-publish", "make-copy-publish", "append-publish": run(102, func() {
+        source := make([]*record, 10000)
+        source[0] = allocate()
+        bridge.Set((*unsafe.Pointer)(unsafe.Pointer(&source[9999])), unsafe.Pointer(host))
+        target := make([]*record, len(source))
+        defer func() { for _, p := range target { if p != nil { panic("partial copy before rejection") } } }()
+        switch os.Args[1] {
+        case "copy-publish": copyPointers(target, source)
+        case "make-copy-publish": _ = clonePointers(source)
+        case "append-publish": _ = appendPointers(source)
+        }
+    })
     case "host-read": run(102, func() { read(host) })
     case "host-write": run(102, func() { write(host) })
     case "instance-read": read(owned)

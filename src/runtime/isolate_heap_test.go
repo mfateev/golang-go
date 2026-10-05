@@ -195,3 +195,61 @@ func TestIsolateHeapCanonicalTypes(t *testing.T) {
 
 //go:noinline
 func isolateUnregisteredType() *abi.ArrayType { return new(abi.ArrayType) }
+
+func TestIsolateHeapSliceCopies(t *testing.T) {
+	groups := []unsafe.Pointer{runtime.IsolateMetadataGroupForTest(), runtime.IsolateMetadataGroupForTest()}
+	owners := []uintptr{nextAllocTestOwner(), nextAllocTestOwner()}
+	values := []([]*int){runtime.IsolatePointerSliceForTest(10000), nil, nil}
+	for i, group := range groups {
+		runtime.IsolateMetadataRunForTest(group, owners[i], func() { values[i+1] = runtime.IsolatePointerSliceForTest(10000) })
+	}
+	check := func(want string, fn func()) {
+		t.Helper()
+		defer func() {
+			got := recover()
+			if want == "" && got != nil || want != "" && got != want {
+				t.Errorf("got %v, want %q", got, want)
+			}
+		}()
+		fn()
+	}
+	for current := 0; current < len(values); current++ {
+		run := func() {
+			for target, dst := range values {
+				for source, src := range values {
+					want := ""
+					if source != current {
+						want = "isolate: read from foreign heap"
+					} else if target != current {
+						want = "isolate: write to foreign heap"
+					}
+					check(want, func() { runtime.IsolateHeapSliceCopyForTest(dst, src, true) })
+					check("", func() { runtime.IsolateHeapSliceCopyForTest(dst[:0], src, true) })
+					check("", func() { runtime.IsolateHeapSliceCopyForTest(dst, src[:0], true) })
+				}
+			}
+		}
+		if current == 0 {
+			run()
+		} else {
+			runtime.IsolateMetadataRunForTest(groups[current-1], owners[current-1], run)
+		}
+	}
+	hostValue := new(int)
+	// Force the pointee to escape independently of its slice header.
+	values[0][9999] = hostValue
+	runtime.IsolateMetadataRunForTest(groups[0], owners[0], func() {
+		src, dst := values[1], values[1][:9999]
+		src[9999] = hostValue // Test-only corruption of an owned source graph.
+		check("", func() { runtime.IsolateHeapSliceCopyForTest(dst, src, true) })
+		check("isolate: foreign heap reference publication", func() { runtime.IsolateHeapSliceCopyForTest(src, src, true) })
+		check("", func() { runtime.IsolateHeapNewSliceCopyForTest(src, 9999, true) })
+		check("isolate: foreign heap reference publication", func() { runtime.IsolateHeapNewSliceCopyForTest(src, 10000, true) })
+		check("", func() { runtime.IsolateHeapNewSliceCopyForTest(src, 10000, false) })
+		check("", func() { runtime.IsolateHeapNewSliceCopyForTest(values[0], 0, true) })
+		src[9999] = nil
+	})
+	runtime.KeepAlive(hostValue)
+	runtime.KeepAlive(values)
+	runtime.KeepAlive(groups)
+}

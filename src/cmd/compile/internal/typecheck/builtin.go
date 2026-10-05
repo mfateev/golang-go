@@ -268,10 +268,12 @@ var runtimeDecls = [...]struct {
 	{"isolateCheckHeapMap", funcTag, 169},
 	{"isolateCheckHeapReference", funcTag, 170},
 	{"isolateCheckHeapMove", funcTag, 75},
+	{"isolateCheckHeapCopy", funcTag, 171},
+	{"isolateCheckHeapSliceCopy", funcTag, 172},
 }
 
 func runtimeTypes() []*types.Type {
-	var typs [171]*types.Type
+	var typs [173]*types.Type
 	typs[0] = types.ByteType
 	typs[1] = types.NewPtr(typs[0])
 	typs[2] = types.Types[types.TANY]
@@ -443,6 +445,8 @@ func runtimeTypes() []*types.Type {
 	typs[168] = newSig(params(typs[1], typs[13]), nil)
 	typs[169] = newSig(params(typs[1], typs[6]), nil)
 	typs[170] = newSig(params(typs[1], typs[1]), nil)
+	typs[171] = newSig(params(typs[1], typs[13], typs[1], typs[13], typs[5]), nil)
+	typs[172] = newSig(params(typs[1], typs[1], typs[13], typs[1], typs[13], typs[6]), nil)
 	return typs[:]
 }
 

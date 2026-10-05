@@ -107,3 +107,21 @@ func ExecPreemptionLockOrderForTest() {
 		unlock(&sched.lock)
 	})
 }
+
+func IsolateHeapSliceCopyForTest(dst, src any, publish bool) {
+	d, s := efaceOf(&dst), efaceOf(&src)
+	if d._type != s._type || d._type.Kind() != abi.Slice {
+		panic("invalid heap slice copy test arguments")
+	}
+	target, source := (*slice)(d.data), (*slice)(s.data)
+	isolateCheckHeapSliceCopy((*slicetype)(unsafe.Pointer(d._type)).Elem, target.array, target.len, source.array, source.len, publish)
+}
+
+func IsolateHeapNewSliceCopyForTest(src any, length int, publish bool) {
+	s := efaceOf(&src)
+	if s._type.Kind() != abi.Slice {
+		panic("invalid heap new slice copy test argument")
+	}
+	source := (*slice)(s.data)
+	isolateCheckHeapSliceCopy((*slicetype)(unsafe.Pointer(s._type)).Elem, nil, length, source.array, source.len, publish)
+}

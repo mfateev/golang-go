@@ -204,3 +204,49 @@ func isolateTypeObjectBase(p unsafe.Pointer) uintptr {
 	}
 	return base
 }
+
+// These checks run before compiler-lowered copy/append helpers. Validate the
+// complete accessed ranges and every copied reference before any destination
+// bytes change. A nil destination represents a new allocation under the caller.
+func isolateCheckHeapCopy(dst unsafe.Pointer, dstLen int, src unsafe.Pointer, srcLen int, width uintptr) {
+	n := dstLen
+	if srcLen < n {
+		n = srcLen
+	}
+	if n <= 0 || width == 0 {
+		return
+	}
+	if uintptr(n) > ^uintptr(0)/width {
+		panic("isolate: heap copy range overflow")
+	}
+	size := uintptr(n) * width
+	isolateCheckHeapAccess(src, size, false)
+	if dst != nil {
+		isolateCheckHeapAccess(dst, size, true)
+	}
+}
+
+func isolateCheckHeapSliceCopy(typ *abi.Type, dst unsafe.Pointer, dstLen int, src unsafe.Pointer, srcLen int, publish bool) {
+	isolateCheckHeapCopy(dst, dstLen, src, srcLen, typ.Size_)
+	n := dstLen
+	if srcLen < n {
+		n = srcLen
+	}
+	if !publish || n <= 0 || typ.PtrBytes == 0 {
+		return
+	}
+	mask := getGCMask(typ)
+	for i := 0; i < n; i++ {
+		for word := uintptr(0); word < typ.PtrBytes/goarch.PtrSize; word++ {
+			if *addb(mask, word/8)&(1<<(word%8)) == 0 {
+				continue
+			}
+			offset := uintptr(i)*typ.Size_ + word*goarch.PtrSize
+			target := dst
+			if target != nil {
+				target = add(target, offset)
+			}
+			isolateCheckHeapReference(target, *(*unsafe.Pointer)(add(src, offset)))
+		}
+	}
+}

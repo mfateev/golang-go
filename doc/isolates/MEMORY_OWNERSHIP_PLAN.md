@@ -347,3 +347,37 @@ results include the malloc-header correction exposed by the reflection suite.
 The SDK full suite and level-one driver passed at `GOMAXPROCS=1/2/8`, `GOGC=1`.
 Six freshly built saved-history replays retained the same 195 observations and
 SHA-256 `12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
+
+## Compiler-lowered slice copies
+
+The heap diagnostic now validates compiler-lowered slice copies, make-and-copy,
+append growth and clearing. Pointerless `memmove` and `slicecopy` paths validate
+both accessed ranges; clearing validates the destination. Typed copying and
+allocation/growth helpers additionally scan every copied pointer at level two.
+The count is the smaller source/destination length, so zero-length operations
+retain their usual semantics and untouched tail elements are excluded. Range
+multiplication checks overflow before inspecting memory.
+
+A not-yet-allocated destination uses the caller's owner for publication checks.
+Every reference in the copied elements is validated before the actual copying
+helper runs,
+so a late foreign pointer cannot cause a partially updated destination. Direct
+SSA append-growth calls and lowered IR calls both receive the check. This remains
+an opt-in diagnostic; raw/reflected operations and the broader package audit are
+still outstanding.
+
+`runtime.TestIsolateHeapSliceCopies` checks the process/two-instance access matrix,
+empty copies, truncated tails and a foreign last reference in 10,000 elements.
+The compiler script covers overlap, empty copies, owned copy/append/clear,
+foreign byte/pointer copies, make-and-copy, append with and without growth,
+clearing, canonical type interface copying, and late-reference rejection before
+any destination element changes. Test-only allocation helpers force heap-backed
+fixtures so separate stack-policy exclusions cannot hide a missing heap check.
+
+Slice-copy validation: the compiler language-operation script and five normal,
+race and static-lock-ranking ownership repetitions passed. After restoring the
+execution environment, full short runtime/isolate/bridge/reflection/map/compiler
+suites passed, including ptrace and local-socket tests. The SDK level-one driver
+passed at `GOMAXPROCS=1/2/8`, `GOGC=1`. The first broad run under the restricted
+execution profile failed because ptrace and socket creation were denied;
+no tests were skipped or changed to accommodate that profile.
