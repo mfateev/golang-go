@@ -66,6 +66,8 @@ stdout '^isolate: write to foreign heap$'
 
 # Level two also checks the references stored in an otherwise owned object.
 go build -gcflags=example.org/isolateheap=-d=isolateheap=2 -o publication.exe .
+exec ./publication.exe metadata-panic
+stdout '^allowed$'
 exec ./publication.exe metadata
 stdout '^allowed$'
 exec ./publication.exe metadata-write
@@ -128,6 +130,8 @@ var published *record
 func allocate() *record { return &record{Data: [64]int{11}} }
 //go:noinline
 func allocateTypes() *[7]reflect.Type { return new([7]reflect.Type) }
+//go:noinline
+func allocatePanic() *any { return new(any) }
 //go:noinline
 func allocatePointers(p *record, length int) []*record {
     result := make([]*record, length)
@@ -237,6 +241,15 @@ func main() {
         }
     }()
     switch os.Args[1] {
+    case "metadata-panic":
+        run(104, func() {
+            payload := allocatePanic()
+            func() {
+                defer func() { *payload = recover() }()
+                reflect.StructOf([]reflect.StructField{{Name: "123invalid", Type: reflect.TypeFor[int]()}})
+            }()
+            if *payload != "reflect.StructOf: field 0 has invalid name" { panic("metadata panic payload") }
+        })
     case "metadata":
         run(104, func() {
             array := reflect.ArrayOf(1001, reflect.TypeFor[int]())

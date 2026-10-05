@@ -13,6 +13,15 @@ go build -o cached.exe ./host
 exec ./cached.exe
 stdout 'marked second:y:42'
 
+# The trusted entry wrapper must not be inlined into an instrumented caller.
+# Race builds force the handle-bearing environment onto the host heap, making
+# an accidental application-side read observable by the ownership diagnostic.
+go build -race -gcflags=example.org/isolatefunctiontest/host=-d=isolateheap=2 -o owned-entry.exe ./host
+exec ./owned-entry.exe
+stdout 'marked first:x:42'
+stdout 'marked second:y:42'
+stdout 'signature preserved'
+
 # Invalid directives fail during discovery, rather than silently running on host.
 ! go build ./badgeneric
 stderr '//go:isolate requires a concrete, top-level function'
@@ -70,7 +79,10 @@ func run(name, suffix string) {
     if !ok { panic("missing marked function") }
     if handle.Name() != "example.org/isolatefunctiontest/jobs.Work" { panic("wrong function name") }
     if handle.Signature() != reflect.TypeOf(jobs.Work) { panic("wrong signature") }
-    program := handle.Program(func() {
+    if instance, err := isolate.New(isolate.Config{Program: handle.ProgramWithHandle(nil)}); err == nil || instance != nil {
+        panic("nil dispatcher accepted")
+    }
+    program := handle.ProgramWithHandle(func(handle isolate.Handle) {
         input, err := isolate.Call(1, nil)
         if err != nil { panic(err) }
         var args []json.RawMessage

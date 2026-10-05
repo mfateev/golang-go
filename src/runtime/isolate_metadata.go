@@ -50,6 +50,7 @@ func isolateLeaveMetadata(owner uintptr) {
 	gp.isolateMetadataDepth--
 	if gp.isolateMetadataDepth == 0 {
 		isolateDiscardIfRevoked()
+		isolateCopyMetadataPanic(gp, owner)
 	}
 }
 
@@ -116,4 +117,35 @@ func isolateCheckMetadataCall(pc uintptr) {
 		}
 	}
 	panic("isolate: unaudited metadata callback " + name)
+}
+
+// A string panic created under the service owner must not publish either its
+// interface box or backing bytes to the recovering application. Clone at the
+// outermost exit, after lock cleanup and restoring the caller's allocator.
+// Named strings retain their exact dynamic type. Other payload types still
+// need their own transfer policy; arbitrary process objects are not immutable.
+func isolateCopyMetadataPanic(gp *g, owner uintptr) {
+	if owner == 0 || gp._panic == nil || gp._panic.recovered {
+		return
+	}
+	arg := efaceOf(&gp._panic.arg)
+	if arg._type == nil || arg._type.Kind() != abi.String {
+		return
+	}
+	message := *(*string)(arg.data)
+	boxOwner, boxHeap := isolateAllocOrigin(arg.data)
+	textOwner, textHeap := isolateAllocOrigin(unsafe.Pointer(unsafe.StringData(message)))
+	if boxHeap && boxOwner != 0 && boxOwner != owner || textHeap && textOwner != 0 && textOwner != owner {
+		return // Never absorb another instance's allocation into the caller.
+	}
+	if (!boxHeap || boxOwner == owner) && (!textHeap || textOwner == owner) {
+		return
+	}
+	// This trusted transfer copies directly in runtime code. It must not
+	// grant a library-wide exemption for reading arbitrary process objects.
+	clone, data := rawstring(len(message))
+	copy(data, message)
+	box := newobject(arg._type)
+	*(*string)(box) = clone
+	arg.data = box
 }

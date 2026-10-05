@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -240,4 +241,69 @@ func testIsolateMetadataRevocation(t *testing.T, deterministic bool) {
 
 func TestExecPreemptionLockOrder(t *testing.T) {
 	runtime.ExecPreemptionLockOrderForTest()
+}
+
+func TestIsolateMetadataPanicOwnership(t *testing.T) {
+	type panicText string
+	for _, named := range []bool{false, true} {
+		for _, nested := range []bool{false, true} {
+			group := runtime.IsolateMetadataGroupForTest()
+			owner := nextAllocTestOwner()
+			var unlocked bool
+			var mu sync.Mutex
+			runtime.IsolateMetadataRunForTest(group, owner, func() {
+				defer func() {
+					got := recover()
+					if got == nil {
+						t.Fatal("lost service panic")
+					}
+					if !unlocked {
+						t.Error("panic copied before service lock cleanup")
+					}
+					if runtime.IsolateMetadataOwnerForTest() != owner || runtime.IsolateMetadataDepthForTest() != 0 {
+						t.Error("panic retained service privileges")
+					}
+					if (reflect.TypeOf(got) == reflect.TypeFor[panicText]()) != named {
+						t.Errorf("panic type %T, named=%v", got, named)
+					}
+					text := reflect.ValueOf(got).String()
+					if text != strings.Repeat("metadata panic text ", 32) {
+						t.Error("panic text changed")
+					}
+					box := (*[2]unsafe.Pointer)(unsafe.Pointer(&got))[1]
+					for _, p := range []unsafe.Pointer{box, unsafe.Pointer(unsafe.StringData(text))} {
+						if gotOwner, ok := runtime.IsolateAllocOriginForTest(p); !ok || gotOwner != owner {
+							t.Errorf("panic allocation owner=(%d,%v), want %d", gotOwner, ok, owner)
+						}
+					}
+				}()
+				runtime.IsolateMetadataScopeForTest(func() {
+					mu.Lock()
+					defer func() {
+						if runtime.IsolateMetadataOwnerForTest() != 0 {
+							t.Error("lock cleanup ran outside service owner")
+						}
+						mu.Unlock()
+						unlocked = true
+					}()
+					raise := func() {
+						message := strings.Repeat("metadata panic text ", 32)
+						if gotOwner, ok := runtime.IsolateAllocOriginForTest(unsafe.Pointer(unsafe.StringData(message))); !ok || gotOwner != 0 {
+							t.Fatal("service panic was not process-owned")
+						}
+						if named {
+							panic(panicText(message))
+						}
+						panic(message)
+					}
+					if nested {
+						runtime.IsolateMetadataScopeForTest(raise)
+					} else {
+						raise()
+					}
+				})
+			})
+			runtime.KeepAlive(group)
+		}
+	}
 }

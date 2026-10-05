@@ -321,8 +321,9 @@ size-class padding.
 
 This policy does not freeze or approve the entire reachable metadata graph.
 Names, struct-field arrays, equality closures, lazy GC masks and protobuf handles
-still need separate accessor/provenance policies. The level-two SDK audit still
-fails and is not a supported SDK gate yet. Default builds continue to leave these
+still need separate accessor/provenance policies. The subsequent string-panic transfer fix below makes the SDK application
+diagnostic pass at level two. That gate does not instrument its entire external
+dependency graph or close the broader package audit. Default builds continue to leave these
 partial diagnostics disabled.
 
 `runtime.TestIsolateHeapCanonicalTypes` covers concurrent cold/cache construction,
@@ -381,3 +382,55 @@ suites passed, including ptrace and local-socket tests. The SDK level-one driver
 passed at `GOMAXPROCS=1/2/8`, `GOGC=1`. The first broad run under the restricted
 execution profile failed because ptrace and socket creation were denied;
 no tests were skipped or changed to accommodate that profile.
+
+## Metadata string panic transfer
+
+A service may build its diagnostic panic string under owner zero. At outermost
+service exit, after shared-lock cleanup and restoring the caller's allocator,
+the runtime copies a propagating string panic's interface box and backing bytes
+into the caller's heap. Named strings retain their exact dynamic type and text.
+Nested scopes defer transfer until the outermost exit; ordinary host execution
+and already-private/static payloads retain their behavior. Another instance's
+allocations are never absorbed by this transfer.
+
+This is a narrow string-payload policy. Non-string service panics still need a
+separate safe transfer policy; it does not authorize arbitrary process-owned
+error objects or panic values. Runtime regressions check dynamic/named strings,
+nested scopes, allocation owners and lock cleanup. The compiler script recovers
+a real `reflect.StructOf` panic into heap-backed application storage, where
+level-two publication checks reject an untransferred process-owned box.
+
+The SDK application's stricter audit exposed this boundary in a rejected custom
+descriptor callback. Native CI now compiles the SDK application packages with
+`-d=isolateheap=2` (previously level one). Its external dependencies retain their
+separate service/ownership audits; successful application checks are not proof
+that feature 2 is complete.
+
+## Function entry metadata transfer
+
+`Handle.ProgramWithHandle` creates a trusted entry wrapper that passes a copy of
+the compiler-created handle to a dispatcher. The SDK factory now uses a
+noncapturing dispatcher, avoiding an application read from a host-owned closure
+containing the handle. The wrapper is not inlined into instrumented callers.
+Its handle contains sealed compiler-created function metadata; other captured
+application state continues to require the ordinary ownership rules.
+
+The marked-function compiler script exercises the wrapper under race detection
+and level-two host-package instrumentation, checks the original workflow
+signature and state isolation, and rejects a nil dispatcher. Native SDK driver
+race builds now also use level-two application instrumentation. Existing
+`Handle.Program` and ordinary Temporal worker registration remain available.
+
+Panic/entry validation: five race and static-lock-ranking ownership runs passed,
+including cached eviction (15,360 real instances in the race gate). The marked
+function, heap and metadata compiler scripts passed. Full short runtime,
+isolate, bridge, reflection and map suites passed. The full SDK suite passed;
+its level-two driver passed normally and under race detection at
+`GOMAXPROCS=1/2/8`, `GOGC=1`. Six level-two fresh-process history replays retained
+195 observations and SHA-256
+`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
+
+The preceding canonical-root checkpoint also passed all four native jobs in
+[native run 37360385290](https://github.com/mfateev/golang-go/actions/runs/37360385290),
+Go `76997944b0a4a94a3b327ad685f70fdd58b3570b`, SDK `52210a4`, samples `1e77ee7`.
+That checkpoint predates the slice-copy and panic/entry changes above.

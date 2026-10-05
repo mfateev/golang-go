@@ -40,6 +40,21 @@ func (h Handle) Program(dispatch func()) Program {
 	return Program{name: h.Name(), entry: isolatebridge.ProgramEntry{Main: dispatch, NewState: h.entry.NewState}}
 }
 
+// ProgramWithHandle supplies a dispatcher with a copy of the compiler-created
+// function metadata. The entry wrapper performs this trusted metadata transfer
+// before calling application code. Dispatchers can use a noncapturing function
+// instead of retaining a host-owned closure containing the handle. Other state
+// captured by dispatch still requires the ordinary ownership checks.
+// Keep the trusted entry wrapper in this package when callers are instrumented.
+//
+//go:noinline
+func (h Handle) ProgramWithHandle(dispatch func(Handle)) Program {
+	if dispatch == nil {
+		return h.Program(nil)
+	}
+	return h.Program(func() { dispatch(h) })
+}
+
 // Invoke calls the marked function directly in the current isolate. Decode
 // receives argument slots; encode receives zero or one result slot. A function
 // error is returned instead of calling encode. SDK callbacks perform all
