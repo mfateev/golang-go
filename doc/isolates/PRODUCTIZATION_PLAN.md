@@ -109,6 +109,7 @@ promise that arbitrary Go code can replay.
 | Environment and file configuration | Reject workflow reads; pass configuration as workflow input so history records it. |
 | Unsafe and native escape paths | Reject application escape paths; permit explicitly audited implementations in the runtime and supported libraries. |
 | Enforcement | Compile-time diagnostics for identifiable forbidden operations, plus runtime enforcement for indirect and reflected calls. Ordinary host code and activities retain their existing behavior. |
+| Violation handling | Terminate the isolate and report a Workflow Task failure with the offending operation and stack trace. Workflow code cannot recover the violation. |
 
 The logging call carries copied bytes and metadata across the isolate boundary;
 worker loggers, writers and callbacks remain host-owned. Replay information must
@@ -116,9 +117,9 @@ come from the host so worker configuration can control duplicate output. The
 implementation must define deterministic return behavior for printing APIs that
 return a byte count or error, including host sink failures.
 
-Violation handling is still awaiting a policy decision. The proposal is to
-terminate the isolate and report a Workflow Task failure with the offending
-operation and stack trace, preventing workflow recovery of the violation.
+All five policy decisions are agreed. A forbidden operation must be rejected
+before its effect occurs; revocation and trusted cleanup must preserve the
+memory-ownership and lifecycle guarantees established by feature 2.
 
 Dependency auditing and runtime hooks, including finalizers and cleanup
 callbacks, need investigation to ensure they cannot perform effects outside
