@@ -57,6 +57,11 @@ const (
 
 	// FuncFlagAsm indicates that a function was implemented in assembly.
 	FuncFlagAsm
+
+	// FuncFlagIsolateMetadataTrusted records compiler-verified source provenance
+	// for callbacks invoked by an audited process metadata service. A package
+	// name alone cannot grant this privilege.
+	FuncFlagIsolateMetadataTrusted
 )
 
 // A FuncID identifies particular functions that need to be treated

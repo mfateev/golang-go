@@ -6,6 +6,8 @@
 // metadata operations. It grants no package-wide allocation or access privilege.
 package isolatepolicy
 
+import "strings"
+
 const ProtobufModule = "google.golang.org/protobuf"
 const ProtobufVersion = "v1.36.11"
 
@@ -19,7 +21,7 @@ const TemporalAPIVersion = "v1.63.6"
 func MetadataScope(pkg, function string) bool {
 	switch pkg {
 	case ProtobufModule + "/internal/impl":
-		return function == "(*MessageInfo).initOnce" || function == "(*MessageInfo).Descriptor" || function == "needsInitCheck" || function == "(*ExtensionInfo).lazyInitSlow"
+		return function == "(*MessageInfo).init" || function == "(*MessageInfo).initOnce" || function == "(*MessageInfo).Descriptor" || function == "needsInitCheck" || function == "(*ExtensionInfo).lazyInitSlow"
 	case ProtobufModule + "/internal/filedesc":
 		switch function {
 		case "(*File).lazyInitOnce", "(*stringName).lazyInit",
@@ -67,6 +69,83 @@ func RejectedMetadata(pkg, function string) bool {
 			"(*Oneof).Options", "(*Extension).Options", "(*Service).Options", "(*Method).Options", "(*File).OptionImports":
 			return true
 		}
+	}
+	return false
+}
+
+// These cells hold opaque metadata handles from the pinned process builder.
+// Only reads of the cell itself are allowed. This grants no read of arbitrary
+// receiver fields, mutation, array resizing, or private-reference publication.
+func MetadataGlobal(symbol string) bool {
+	// SHA backend flags select equivalent implementations. These scalar reads
+	// and the fixed round table expose no application object or write privilege.
+	switch symbol {
+	case "crypto/internal/fips140/sha256.useSHA2", "crypto/internal/fips140/sha256.useAVX2",
+		"crypto/internal/fips140/sha256.useSHANI", "crypto/internal/fips140/sha256.useSHA256",
+		"crypto/internal/fips140/sha256.ppc64sha2", "crypto/internal/fips140/sha256._K":
+		return true
+	}
+	if symbol == ProtobufModule+"/reflect/protoregistry.GlobalTypes" || symbol == ProtobufModule+"/reflect/protoregistry.GlobalFiles" {
+		return true
+	}
+	if !strings.HasPrefix(symbol, TemporalAPIModule+"/") {
+		return false
+	}
+	i := strings.LastIndexByte(symbol, '.')
+	return i != -1 && strings.HasPrefix(symbol[i+1:], "file_") && strings.HasSuffix(symbol, "_msgTypes")
+}
+
+// The collector calls this implementation with the world stopped. It must not
+// allocate, grow a stack, or consult application ownership while retiring the
+// process pool lists. Private Put/Get never join those lists.
+func RuntimeHook(pkg, function string) bool {
+	// Metrics descriptions are explicitly copied into the caller's owner.
+	if pkg == "runtime/metrics" && function == "All" {
+		return true
+	}
+	if pkg == "sync" && function == "poolCleanup" {
+		return true
+	}
+	// Value validates its receiver and interface contents explicitly before
+	// procPin. Compiler checks inside the pinned first-store sequence could
+	// allocate or discard a pinned G while handling its internal sentinel.
+	if pkg == "sync/atomic" {
+		switch function {
+		case "(*Value).Load", "(*Value).Store", "(*Value).Swap", "(*Value).CompareAndSwap":
+			return true
+		}
+	}
+	return false
+}
+
+// MetadataCallbackPackage lists library implementations whose dynamic calls
+// may run inside an audited service. The compiler must also verify GOROOT
+// provenance or the pinned module source; matching this name is insufficient.
+func MetadataCallbackPackage(pkg string) bool {
+	switch pkg {
+	case "runtime", "reflect", "sync", "sync/atomic", "bytes", "strings",
+		"strconv", "fmt", "errors", "sort", "cmp", "slices", "maps", "iter", "unicode":
+		return true
+	}
+	for _, prefix := range []string{"runtime/", "internal/", "encoding/", "unicode/", ProtobufModule + "/", TemporalAPIModule + "/"} {
+		if strings.HasPrefix(pkg, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// Lifecycle callbacks belong to the trusted public isolate implementation.
+// None invoke application code or the application's state factory.
+func MetadataLifecycleCallback(pkg, function string) bool {
+	if pkg != "isolate" {
+		return false
+	}
+	switch function {
+	case "(*Isolate).complete.func1", "(*Isolate).completeExit.func1",
+		"(*Isolate).complete.deferwrap1", "(*Isolate).completeExit.deferwrap1",
+		"New.func2", "New.func1.1":
+		return true
 	}
 	return false
 }

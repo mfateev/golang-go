@@ -5,7 +5,6 @@
 package ssagen
 
 import (
-	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/ssa/ssaop"
@@ -14,7 +13,7 @@ import (
 )
 
 func (s *state) isolateCheckString(value *ssa.Value) {
-	if base.Debug.IsolateHeap == 0 || base.Flag.CompilingRuntime {
+	if !s.isolateHeapEnabled() {
 		return
 	}
 	ptr := s.newValue1(ssaop.OpStringPtr, s.f.Config.Types.BytePtr, value)
@@ -23,7 +22,7 @@ func (s *state) isolateCheckString(value *ssa.Value) {
 }
 
 func (s *state) isolateCheckStringBytes(ptr, length *ssa.Value) {
-	if base.Debug.IsolateHeap == 0 || base.Flag.CompilingRuntime {
+	if !s.isolateHeapEnabled() {
 		return
 	}
 	width := s.newValue1(ssaop.OpCopy, types.Types[types.TUINTPTR], length)
@@ -33,7 +32,7 @@ func (s *state) isolateCheckStringBytes(ptr, length *ssa.Value) {
 // String helpers and equality assembly read backing memory without passing
 // through a typed load. Check both ordinary calls and intrinsic expansion.
 func (s *state) isolateCheckStringCall(sym *types.Sym, args []*ssa.Value) {
-	if base.Debug.IsolateHeap == 0 || base.Flag.CompilingRuntime || sym == nil || sym.Pkg != ir.Pkgs.Runtime {
+	if !s.isolateHeapEnabled() || sym == nil || sym.Pkg != ir.Pkgs.Runtime {
 		return
 	}
 	switch sym.Name {

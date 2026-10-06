@@ -145,7 +145,10 @@ func TestIsolateHeapCanonicalTypes(t *testing.T) {
 	types := makeTypes()
 	sizes := []uintptr{unsafe.Sizeof(abi.ArrayType{}), unsafe.Sizeof(abi.StructType{}),
 		unsafe.Sizeof(abi.PtrType{}), unsafe.Sizeof(abi.SliceType{}), unsafe.Sizeof(abi.ChanType{}),
-		unsafe.Sizeof(abi.MapType{}), unsafe.Sizeof(abi.FuncType{}), unsafe.Sizeof(abi.StructType{})}
+		unsafe.Sizeof(abi.MapType{}), unsafe.Sizeof(abi.FuncType{}) + 2*unsafe.Sizeof(uintptr(0)), unsafe.Sizeof(abi.StructType{})}
+	methodRoot := reflect.ValueOf(types[7]).UnsafePointer()
+	ut := (*abi.Type)(methodRoot).Uncommon()
+	sizes[7] = uintptr(unsafe.Pointer(ut)) - uintptr(methodRoot) + uintptr(ut.Moff) + uintptr(ut.Mcount)*unsafe.Sizeof(abi.Method{})
 	group := runtime.IsolateMetadataGroupForTest()
 	owner := nextAllocTestOwner()
 	check := func(want string, fn func()) {
@@ -491,4 +494,47 @@ func TestIsolateHeapMapKeys(t *testing.T) {
 	runtime.KeepAlive(pointees)
 	runtime.KeepAlive(maps)
 	runtime.KeepAlive(groups)
+}
+
+var isolateStaticCounter int
+
+func TestIsolateHeapStaticAndStack(t *testing.T) {
+	// Keep a foreign goroutine's stack alive without escaping one of its locals.
+	ready, release := make(chan unsafe.Pointer), make(chan struct{})
+	go func() { ready <- runtime.IsolateCurrentGForTest(); <-release }()
+	foreign := <-ready
+	defer close(release)
+	group, owner := runtime.IsolateMetadataGroupForTest(), nextAllocTestOwner()
+	check := func(want string, fn func()) {
+		t.Helper()
+		defer func() {
+			got := recover()
+			if want == "" && got != nil || want != "" && got != want {
+				t.Errorf("got %v, want %q", got, want)
+			}
+		}()
+		fn()
+	}
+	global := unsafe.Pointer(&isolateStaticCounter)
+	check("", func() { runtime.IsolateHeapAccessForTest(global, unsafe.Sizeof(isolateStaticCounter), true) })
+	runtime.IsolateMetadataRunForTest(group, owner, func() {
+		for _, write := range []bool{false, true} {
+			check("isolate: access to process global", func() { runtime.IsolateHeapAccessForTest(global, unsafe.Sizeof(isolateStaticCounter), write) })
+		}
+		text := "immutable string"
+		p := unsafe.Pointer(unsafe.StringData(text))
+		check("", func() { runtime.IsolateHeapAccessForTest(p, uintptr(len(text)), false) })
+		check("", func() { runtime.IsolateHeapReferenceForTest(nil, p) })
+		check("isolate: write to read-only memory", func() { runtime.IsolateHeapAccessForTest(p, 1, true) })
+		check("isolate: process global reference publication", func() { runtime.IsolateHeapReferenceForTest(nil, global) })
+		check("", func() { runtime.IsolateStackAccessForTest(nil, false) })
+		check("isolate: access to foreign stack or runtime memory", func() { runtime.IsolateStackAccessForTest(foreign, false) })
+		check("isolate: access to foreign stack or runtime memory", func() { runtime.IsolateStackAccessForTest(nil, true) })
+		check("isolate: stack reference publication", func() { runtime.IsolateStackPublicationForTest(nil) })
+		runtime.IsolateMetadataScopeForTest(func() {
+			check("", func() { runtime.IsolateHeapAccessForTest(global, unsafe.Sizeof(isolateStaticCounter), true) })
+			check("isolate: access to foreign stack or runtime memory", func() { runtime.IsolateStackAccessForTest(foreign, false) })
+		})
+	})
+	runtime.KeepAlive(group)
 }

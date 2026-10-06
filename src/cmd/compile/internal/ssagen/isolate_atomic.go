@@ -17,7 +17,7 @@ import (
 // instrumentation. Check direct calls at their common compiler boundaries;
 // this also covers inlined typed atomic methods and race-intercepted calls.
 func (s *state) isolateCheckAtomic(sym *types.Sym, args []*ssa.Value) {
-	if base.Debug.IsolateHeap == 0 || base.Flag.CompilingRuntime || sym == nil || sym.Pkg == nil || sym.Pkg.Path != "sync/atomic" {
+	if !s.isolateHeapEnabled() || sym == nil || sym.Pkg == nil || sym.Pkg.Path != "sync/atomic" {
 		return
 	}
 	name := sym.Name

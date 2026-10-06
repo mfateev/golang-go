@@ -100,20 +100,20 @@ func main() {
 	packages := make(map[string]packageInfo)
 	for _, p := range report.Packages { packages[p.Path] = p }
 	base64 := packages["encoding/base64"]
-	if !base64.Standard || !base64.InstanceState || !base64.HostReachable || base64.Classification != "selected-standard-probe" { panic("bad base64 classification") }
+	if !base64.Standard || !base64.InstanceState || !base64.HostReachable || base64.Classification != "instance-state" { panic("bad base64 classification") }
 	base32 := packages["encoding/base32"]
-	if !base32.Standard || !base32.InstanceState || !base32.HostReachable || base32.Classification != "selected-standard-probe" { panic("bad base32 classification") }
+	if !base32.Standard || !base32.InstanceState || !base32.HostReachable || base32.Classification != "instance-state" { panic("bad base32 classification") }
 	shared := packages["example.org/isolatebuildtest/shared"]
-	if shared.Standard || !shared.InstanceState || shared.HostReachable || shared.Classification != "reachable-application" { panic("bad shared classification") }
+	if shared.Standard || !shared.InstanceState || shared.HostReachable || shared.Classification != "instance-state" { panic("bad shared classification") }
 	strconv := packages["strconv"]
-	if !strconv.Standard || strconv.InstanceState || strconv.Classification != "unclassified-standard" { panic("bad strconv classification") }
+	if !strconv.Standard || !strconv.InstanceState || strconv.Classification != "instance-state" { panic("bad strconv classification") }
 	json := packages["encoding/json"]
-	if !json.Standard || !json.InstanceState || json.Classification != "selected-standard-probe" { panic("bad json classification") }
+	if !json.Standard || !json.InstanceState || json.Classification != "instance-state" { panic("bad json classification") }
 	timePackage := packages["time"]
-	if !timePackage.Standard || !timePackage.InstanceState || !timePackage.HostReachable || timePackage.Classification != "selected-standard-probe" { panic("bad time classification") }
+	if !timePackage.Standard || !timePackage.InstanceState || !timePackage.HostReachable || timePackage.Classification != "instance-state" { panic("bad time classification") }
 	for _, path := range []string{"encoding/json/internal", "encoding/json/internal/jsonopts", "encoding/json/jsontext", "encoding/json/v2", "reflect"} {
 		p := packages[path]
-		if !p.Standard || !p.InstanceState || p.Classification != "selected-standard-probe" { panic("bad selected JSON dependency: " + path) }
+		if !p.Standard || !p.InstanceState || p.Classification != "instance-state" { panic("bad selected JSON dependency: " + path) }
 	}
 }
 -- host/main.go --

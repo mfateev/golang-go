@@ -26,6 +26,7 @@ type efaceWords struct {
 // Load returns the value set by the most recent Store.
 // It returns nil if there has been no call to Store for this Value.
 func (v *Value) Load() (val any) {
+	isolateCheckAtomicValue(unsafe.Pointer(v), nil, false)
 	vp := (*efaceWords)(unsafe.Pointer(v))
 	typ := LoadPointer(&vp.typ)
 	if typ == nil || typ == unsafe.Pointer(&firstStoreInProgress) {
@@ -36,6 +37,7 @@ func (v *Value) Load() (val any) {
 	vlp := (*efaceWords)(unsafe.Pointer(&val))
 	vlp.typ = typ
 	vlp.data = data
+	isolateCheckAtomicValue(unsafe.Pointer(v), val, false)
 	return
 }
 
@@ -45,6 +47,7 @@ var firstStoreInProgress byte
 // All calls to Store for a given Value must use values of the same concrete type.
 // Store of an inconsistent type panics, as does Store(nil).
 func (v *Value) Store(val any) {
+	isolateCheckAtomicValue(unsafe.Pointer(v), val, true)
 	if val == nil {
 		panic("sync/atomic: store of nil value into Value")
 	}
@@ -88,6 +91,7 @@ func (v *Value) Store(val any) {
 // All calls to Swap for a given Value must use values of the same concrete
 // type. Swap of an inconsistent type panics, as does Swap(nil).
 func (v *Value) Swap(new any) (old any) {
+	isolateCheckAtomicValue(unsafe.Pointer(v), new, true)
 	if new == nil {
 		panic("sync/atomic: swap of nil value into Value")
 	}
@@ -122,6 +126,7 @@ func (v *Value) Swap(new any) (old any) {
 		}
 		op := (*efaceWords)(unsafe.Pointer(&old))
 		op.typ, op.data = np.typ, SwapPointer(&vp.data, np.data)
+		isolateCheckAtomicValue(unsafe.Pointer(v), old, false)
 		return old
 	}
 }
@@ -132,6 +137,8 @@ func (v *Value) Swap(new any) (old any) {
 // concrete type. CompareAndSwap of an inconsistent type panics, as does
 // CompareAndSwap(old, nil).
 func (v *Value) CompareAndSwap(old, new any) (swapped bool) {
+	isolateCheckAtomicCompare(old)
+	isolateCheckAtomicValue(unsafe.Pointer(v), new, true)
 	if new == nil {
 		panic("sync/atomic: compare and swap of nil value into Value")
 	}
@@ -180,6 +187,7 @@ func (v *Value) CompareAndSwap(old, new any) (swapped bool) {
 		var i any
 		(*efaceWords)(unsafe.Pointer(&i)).typ = typ
 		(*efaceWords)(unsafe.Pointer(&i)).data = data
+		isolateCheckAtomicCompare(i)
 		if i != old {
 			return false
 		}

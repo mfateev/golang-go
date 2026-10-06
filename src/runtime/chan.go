@@ -909,11 +909,20 @@ func selectnbrecv(elem unsafe.Pointer, c *hchan) (selected, received bool) {
 
 //go:linkname reflect_chansend reflect.chansend0
 func reflect_chansend(c *hchan, elem unsafe.Pointer, nb bool) (selected bool) {
+	isolateCheckHeapAccess(unsafe.Pointer(c), 1, true)
+	if c != nil {
+		isolateCheckHeapAccess(elem, uintptr(c.elemsize), false)
+		isolateCheckHeapMove(c.elemtype, unsafe.Pointer(c), elem)
+	}
 	return chansend(c, elem, !nb, sys.GetCallerPC())
 }
 
 //go:linkname reflect_chanrecv reflect.chanrecv
 func reflect_chanrecv(c *hchan, nb bool, elem unsafe.Pointer) (selected bool, received bool) {
+	isolateCheckHeapAccess(unsafe.Pointer(c), 1, true)
+	if c != nil {
+		isolateCheckHeapAccess(elem, uintptr(c.elemsize), true)
+	}
 	return chanrecv(c, elem, !nb)
 }
 
@@ -939,6 +948,7 @@ func chancap(c *hchan) int {
 
 //go:linkname reflect_chanlen reflect.chanlen
 func reflect_chanlen(c *hchan) int {
+	isolateCheckHeapAccess(unsafe.Pointer(c), 1, false)
 	return chanlen(c)
 }
 
@@ -949,11 +959,13 @@ func reflectlite_chanlen(c *hchan) int {
 
 //go:linkname reflect_chancap reflect.chancap
 func reflect_chancap(c *hchan) int {
+	isolateCheckHeapAccess(unsafe.Pointer(c), 1, false)
 	return chancap(c)
 }
 
 //go:linkname reflect_chanclose reflect.chanclose
 func reflect_chanclose(c *hchan) {
+	isolateCheckHeapAccess(unsafe.Pointer(c), 1, true)
 	closechan(c)
 }
 

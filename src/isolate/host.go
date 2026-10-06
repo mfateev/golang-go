@@ -248,6 +248,8 @@ func (i *Isolate) Start() error {
 }
 
 func (i *Isolate) complete(err error) {
+	owner := isolatebridge.EnterProcess()
+	defer isolatebridge.LeaveProcess(owner)
 	i.completeOnce.Do(func() {
 		if !i.recordOwnershipFault() {
 			i.err = err
@@ -257,6 +259,8 @@ func (i *Isolate) complete(err error) {
 }
 
 func (i *Isolate) completeExit(code int) {
+	owner := isolatebridge.EnterProcess()
+	defer isolatebridge.LeaveProcess(owner)
 	i.exitRequested.Store(true)
 	i.completeOnce.Do(func() {
 		i.exitErr.Code = code

@@ -299,6 +299,16 @@ func (p *noder) pragma(pos syntax.Pos, blankLine bool, text string, old syntax.P
 		} else {
 			panic("missing pkgpath")
 		}
+		if base.Debug.IsolatePackages != "" && !base.Flag.Std &&
+			(strings.HasPrefix(target, "runtime.isolate") || strings.HasPrefix(target, "reflect.isolate") ||
+				strings.HasPrefix(target, "internal/isolatebridge.") || strings.HasPrefix(target, "internal/isolateproto.") || target == "sync.poolCleanup") {
+			// Generated entry files reference state descriptors, not runtime
+			// privilege hooks. Descriptors have no allocation/service authority.
+			if !strings.HasSuffix(target, ".isolatePackageDescriptor") {
+				p.error(syntax.Error{Pos: pos, Msg: "isolate: source cannot link to privileged operation " + target})
+				break
+			}
+		}
 		p.linknames = append(p.linknames, linkname{pos, f[0] == "go:linknamestd", f[1], target})
 
 	case text == "go:embed", strings.HasPrefix(text, "go:embed "):

@@ -579,6 +579,8 @@ func (v Value) call(op string, in []Value) []Value {
 		runtime.GC()
 	}
 
+	// Validate before the assembly trampoline can dereference a raw target.
+	isolateCheckReflectCall(fn, in)
 	// Call.
 	call(frametype, fn, stackArgs, uint32(frametype.Size()), uint32(abid.retOffset), uint32(frameSize), &regArgs)
 
@@ -951,6 +953,7 @@ func align(x, n uintptr) uintptr {
 func callMethod(ctxt *methodValue, frame unsafe.Pointer, retValid *bool, regs *abi.RegArgs) {
 	rcvr := ctxt.rcvr
 	rcvrType, valueFuncType, methodFn := methodReceiver("call", rcvr, ctxt.method)
+	isolateCheckMetadataCall(*(*uintptr)(methodFn))
 
 	// There are two ABIs at play here.
 	//

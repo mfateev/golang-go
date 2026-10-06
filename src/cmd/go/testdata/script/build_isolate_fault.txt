@@ -1,22 +1,32 @@
 # Managed instances must terminate on real compiler-generated ownership checks.
-# Only the uninstrumented dispatcher injects foreign pointers into typed slots;
+# Only the small assembly fixture injects foreign pointers into typed slots;
 # normal SDK dispatch transfers bytes instead.
 [short] skip
 [compiler:gccgo] skip
+[!GOARCH:amd64] [!GOARCH:arm64] skip
 
-go build -gcflags=example.org/isolatefault/jobs=-d=isolateheap=2 -o fault.exe ./host
+go build -o fault.exe ./host
 exec ./fault.exe
 stdout -count=2 '^managed read terminated$'
 stdout -count=2 '^managed write terminated$'
 stdout -count=2 '^managed publication terminated$'
 stdout '^host alive$'
 
-[race] go build -race -gcflags=example.org/isolatefault/jobs=-d=isolateheap=2 -o fault-race.exe ./host
+[race] go build -race -o fault-race.exe ./host
 [race] exec ./fault-race.exe
 [race] stdout -count=2 '^managed read terminated$'
 [race] stdout -count=2 '^managed write terminated$'
 [race] stdout -count=2 '^managed publication terminated$'
 [race] stdout '^host alive$'
+
+# External modules cannot inherit the GOROOT runtime namespace exemption.
+go run ./rename
+go mod edit -module=runtime/rogue
+go build -o namespaced$GOEXE ./host
+exec ./namespaced$GOEXE
+stdout -count=2 '^managed read terminated$'
+stdout -count=2 '^managed write terminated$'
+stdout -count=2 '^managed publication terminated$'
 
 -- go.mod --
 module example.org/isolatefault
@@ -45,10 +55,14 @@ func Probe(p *int, mode int) {
 -- dispatch/dispatch.go --
 package dispatch
 
-import "isolate"
+import (
+    "isolate"
+    "encoding/binary"
+ )
+func inject(dst **int, src uintptr)
 
-// These deliberately uninstrumented test-only helpers force values to escape
-// and inject a foreign argument without hiding the operation inside Probe.
+// Instrumented helpers force values to escape without hiding the operation
+// inside Probe. Only inject bypasses checks, as an explicit assembly fixture.
 var sink **int
 
 //go:noinline
@@ -57,10 +71,17 @@ func Keep(p **int) { sink = p }
 //go:noinline
 func Use(n int) {}
 
-func Program(h isolate.Handle, foreign *int, mode int) isolate.Program {
+func Program(h isolate.Handle) isolate.Program {
+    // The small assembly fixture injects the deliberately invalid reference.
+    // Compulsory Go checks would correctly reject a host-captured closure or
+    // ordinary publication before reaching the operation being tested.
     return h.ProgramWithHandle(func(h isolate.Handle) {
-        err := h.Invoke(func(v ...isolate.Value) error {
-            *v[0].Pointer.(**int) = foreign
+        request, err := isolate.Call(1, nil)
+        if err != nil { panic(err) }
+        address := uintptr(binary.LittleEndian.Uint64(request))
+        mode := int(request[8])
+        err = h.Invoke(func(v ...isolate.Value) error {
+            inject(v[0].Pointer.(**int), address)
             *v[1].Pointer.(*int) = mode
             return nil
         }, func(...isolate.Value) error { return nil })
@@ -72,6 +93,8 @@ package main
 
 import (
     "context"
+    "encoding/binary"
+    "unsafe"
     "errors"
     "fmt"
     "isolate"
@@ -81,19 +104,29 @@ import (
     "example.org/isolatefault/jobs"
 )
 
+//go:noinline
+func allocate() *int { return new(int) }
+
 func main() {
     handle, ok := isolate.LookupFunction(jobs.Probe)
     if !ok { panic("missing marked function") }
     now := time.Date(2025, time.January, 2, 0, 0, 0, 0, time.UTC)
-    foreign := new(int)
+    foreign := allocate()
     *foreign = 7
     names := []string{"read", "write", "publication"}
     reasons := []string{"isolate: read from foreign heap", "isolate: write to foreign heap", "isolate: foreign heap reference publication"}
     for _, deterministic := range []bool{false, true} {
         for mode, name := range names {
-            i, err := isolate.New(isolate.Config{Program: dispatch.Program(handle, foreign, mode), Deterministic: deterministic, InitialTime: &now, TimerOp: 1})
+            i, err := isolate.New(isolate.Config{Program: dispatch.Program(handle), Deterministic: deterministic, InitialTime: &now, TimerOp: 1})
             if err != nil { panic(err) }
             if err := i.Start(); err != nil { panic(err) }
+            request := make([]byte, 9)
+            binary.LittleEndian.PutUint64(request, uint64(uintptr(unsafe.Pointer(foreign))))
+            request[8] = byte(mode)
+            select {
+            case command := <-i.Commands(): command.Reply(request, nil)
+            case <-i.Done(): panic(i.Wait())
+            }
             var fault *isolate.OwnershipError
             if err := i.Wait(); !errors.As(err, &fault) || fault.Reason != reasons[mode] { panic(fmt.Sprintf("wrong fault: %v", err)) }
             ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -106,4 +139,30 @@ func main() {
         }
     }
     fmt.Println("host alive")
+}
+
+-- dispatch/inject_amd64.s --
+#include "textflag.h"
+TEXT ·inject(SB),NOSPLIT,$0-16
+    MOVQ dst+0(FP), AX
+    MOVQ src+8(FP), BX
+    MOVQ BX, (AX)
+    RET
+-- dispatch/inject_arm64.s --
+#include "textflag.h"
+TEXT ·inject(SB),NOSPLIT,$0-16
+    MOVD dst+0(FP), R0
+    MOVD src+8(FP), R1
+    MOVD R1, (R0)
+    RET
+
+-- rename/main.go --
+package main
+import ("os"; "strings")
+func main() {
+ for _, path := range []string{"jobs/jobs.go","host/main.go"} {
+  data,err := os.ReadFile(path); if err != nil { panic(err) }
+  data = []byte(strings.ReplaceAll(string(data),"example.org/isolatefault","runtime/rogue"))
+  if err := os.WriteFile(path,data,0600); err != nil { panic(err) }
+ }
 }

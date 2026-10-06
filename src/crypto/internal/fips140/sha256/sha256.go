@@ -170,6 +170,9 @@ func (d *Digest) Size() int {
 func (d *Digest) BlockSize() int { return blockSize }
 
 func (d *Digest) Write(p []byte) (nn int, err error) {
+	// Backend assembly does not execute compiler checks. Validate both ranges
+	// before mutating the digest or reading input through any implementation.
+	isolateCheckInput(d, p)
 	nn = len(p)
 	d.len += uint64(nn)
 	if d.nx > 0 {

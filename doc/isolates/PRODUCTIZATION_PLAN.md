@@ -26,8 +26,8 @@ Dispatcher stress and race tests passed. See
 [NATIVE_DETERMINISM_PLAN.md](./NATIVE_DETERMINISM_PLAN.md) for the contract and
 evidence. Native Linux/macOS arm64/amd64 conformance and saved-history replay
 passed on 2026-10-05. The runtime still uses
-the ordinary shared Go heap; child failures, unreviewed runtime waits,
-process-owned state, and effects remain uncontained.
+one shared Go collector with owner-specific heap spans. Remaining child-failure,
+unreviewed runtime-wait and effect restrictions retain separate release gates.
 
 The first release keeps static linking and one selected dependency version per
 module/import path. Independently loaded `.so` programs, two versions behind
@@ -84,15 +84,13 @@ list above, not to the milestone numbers below.
 Feature 1's local and native gates passed on 2026-10-05; its implementation,
 history fixture, sample fixes, and CI are checked in and pushed in all three
 repositories. See the native validation checkpoint in
-[Native isolate determinism](./NATIVE_DETERMINISM_PLAN.md). Feature 2 is in progress. Per-instance allocator caches, homogeneous heap
-spans, trusted metadata scopes, and cache/eviction stress coverage are implemented.
-An opt-in compiler diagnostic covers ordinary heap and collection accesses;
-Detected ownership violations now permanently terminate managed instances and
-report a typed host error; trusted metadata cleanup runs before discard.
-Normal builds do not yet enable the heap checks.
-General cross-owner access/publication enforcement and broad package-state audits
-remain outstanding; see [Memory ownership](./MEMORY_OWNERSHIP_PLAN.md). The validated determinism contract still excludes the unsupported
-operations listed there.
+[Native isolate determinism](./NATIVE_DETERMINISM_PLAN.md). Feature 2's implementation now enables compulsory dependency-wide memory
+checks, instance allocator caches and package state, precise immutable metadata
+sharing, audited process services, and fatal cross-owner error reporting. Its
+final acceptance gates are running; see [Memory ownership](./MEMORY_OWNERSHIP_PLAN.md).
+Frozen-heap GC remains feature 3; effect/unsafe containment and custom converter
+support retain their separate feature 4 and 8 gates. The validated determinism
+contract still excludes its documented unsupported operations.
 
 See [Native isolate determinism](./NATIVE_DETERMINISM_PLAN.md) for the supported
 operations and reproducibility contract. Unsupported map key kinds and
@@ -213,9 +211,9 @@ platforms, including the new deterministic sync.Map.Range and iter.Pull paths.
   path. The POC moves
   protobuf-serialized `Payloads` across the byte boundary and uses Temporal's
   default converter inside the isolate for nil, byte, and ordinary JSON
-  values. Audit the provisional process-owned converter and host activity SDK graphs,
-  including protobuf's lazy descriptor caches, before supporting protobuf
-  message values. TODO: support the worker's configured custom converter, its
+  values. The default converter has instance state; its dependency graph and the host
+  activity SDK graph are checked, with narrow audited metadata services. General
+  protobuf message values still require their value-path audit. TODO: support the worker's configured custom converter, its
   payload codecs and serialization context, and validate boundary types and
   conversion errors.
   Test real worker/server execution, exported history replay, worker restart,

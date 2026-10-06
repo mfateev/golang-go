@@ -4,7 +4,10 @@
 
 package maps
 
-import _ "unsafe" // for go:linkname
+import (
+	"internal/abi"
+	"unsafe"
+)
 
 //go:linkname isolateMapOwner runtime.isolateGetOwner
 func isolateMapOwner() uintptr
@@ -37,3 +40,6 @@ func (m *Map) checkIsolateRead() {
 		isolateOwnershipViolation("isolate: map read crosses owner boundary")
 	}
 }
+
+//go:linkname isolateCheckCloneGroup runtime.isolateCheckCloneGroup
+func isolateCheckCloneGroup(*abi.MapType, unsafe.Pointer, unsafe.Pointer)

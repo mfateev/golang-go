@@ -57,23 +57,42 @@ type isolateReportPackage struct {
 	Classification string `json:"classification"`
 }
 
-// These standard packages participate in the per-instance state probe. This
-// is not a complete ownership or effect audit of their dependency graph.
+// These standard packages replay initialization and route mutable globals
+// to each instance. Other standard packages are still instrumented: their
+// unlisted process state is denied to private execution.
 // The JSON v2 initializer writes callback globals in internal and jsonopts;
 // its readers need the same per-instance routing. Reflect is selected with
 // JSON because its type caches can retain values created by an isolate. Time
 // has lazy mutable zone state, but its clock and timer effects remain shared.
 var isolateOwnedStandardPackages = map[string]bool{
-	"context":                         true,
-	"encoding/base32":                 true,
-	"encoding/base64":                 true,
-	"encoding/json":                   true,
-	"encoding/json/internal":          true,
-	"encoding/json/internal/jsonopts": true,
-	"encoding/json/jsontext":          true,
-	"encoding/json/v2":                true,
-	"reflect":                         true,
-	"time":                            true,
+	"encoding/binary":                  true,
+	"math":                             true,
+	"math/rand":                        true,
+	"math/rand/v2":                     true,
+	"regexp":                           true,
+	"regexp/syntax":                    true,
+	"unicode":                          true,
+	"unicode/utf8":                     true,
+	"unicode/utf16":                    true,
+	"io":                               true,
+	"fmt":                              true,
+	"strconv":                          true,
+	"bytes":                            true,
+	"strings":                          true,
+	"errors":                           true,
+	"internal/reflectlite":             true,
+	"context":                          true,
+	"encoding/base32":                  true,
+	"encoding/base64":                  true,
+	"encoding/json":                    true,
+	"encoding/json/internal":           true,
+	"encoding/json/internal/jsonwire":  true,
+	"encoding/json/internal/jsonflags": true,
+	"encoding/json/internal/jsonopts":  true,
+	"encoding/json/jsontext":           true,
+	"encoding/json/v2":                 true,
+	"reflect":                          true,
+	"time":                             true,
 }
 
 // runBuildIsolates is the first cmd/go integration slice for static isolate
@@ -189,12 +208,11 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 	allReachable := make(map[string]*load.Package)
 	selected := make(map[string]bool)
 	processStd := make(map[string]*load.Package)
-	// The pinned Temporal default converter is a process service in the trusted
-	// POC. Its dependency graph includes protobuf registries, embedded data,
-	// gRPC configuration, and executable/environment reads during initialization.
-	// Keep that graph out of per-instance initializer replay. The workflow SDK
-	// package and application packages remain selected. This is a provisional
-	// classification, not a complete state/effect audit of these dependencies.
+	// Converter dependencies include host registries, gRPC configuration and
+	// environment reads during initialization. Keep their startup on the host;
+	// their process state remains denied by compulsory memory checks. Only the
+	// exact reviewed metadata methods may enter a process service. The converter
+	// package itself replays its error values and default objects per instance.
 	processConverter := make(map[string]bool)
 	// Activities may live beside marked workflow functions. Their SDK imports
 	// reach host logging and worker services that must initialize only in the
@@ -227,7 +245,7 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 			}
 			programReachable[i] = append(programReachable[i], p.ImportPath)
 			allReachable[p.ImportPath] = p
-			if processConverter[p.ImportPath] || processActivity[p.ImportPath] {
+			if (processConverter[p.ImportPath] || processActivity[p.ImportPath]) && p.ImportPath != "go.temporal.io/sdk/converter" {
 				continue
 			}
 			if p.Standard {
@@ -244,7 +262,9 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 	// reviewed module versions. Replacements and nested modules cannot inherit
 	// a trusted namespace without a source audit.
 	metadataServices := false
-	for _, p := range allReachable {
+	// Host-only implementations can be reached through process registries too.
+	// Validate every compiled source that could receive callback provenance.
+	for _, p := range load.PackageList(append([]*load.Package{host}, loaded...)) {
 		for _, trusted := range []struct{ path, version string }{
 			{isolatepolicy.ProtobufModule, isolatepolicy.ProtobufVersion},
 			{isolatepolicy.TemporalAPIModule, isolatepolicy.TemporalAPIVersion},
@@ -442,18 +462,12 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 		slices.Sort(paths)
 		for _, path := range paths {
 			p := allReachable[path]
-			classification := "reachable-application"
-			if processActivity[path] {
-				classification = "process-owned-activity-poc"
+			classification := "process-state-denied"
+			if selected[path] {
+				classification = "instance-state"
 			}
-			if processConverter[path] {
-				classification = "process-owned-converter-poc"
-			}
-			if p.Standard {
-				classification = "unclassified-standard"
-				if selected[path] {
-					classification = "selected-standard-probe"
-				}
+			if p.Standard && isolateTrustedRuntimePackage(path) {
+				classification = "trusted-runtime"
 			}
 			report.Packages = append(report.Packages, isolateReportPackage{
 				Path: path, Standard: p.Standard, InstanceState: selected[path],
@@ -468,4 +482,20 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 			base.Fatal(err)
 		}
 	}
+}
+
+// Match the compiler's GOROOT-only implementation boundary. All other packages
+// receive ownership checks, including dependencies with host-only startup.
+func isolateTrustedRuntimePackage(path string) bool {
+	if path == "runtime" || strings.HasPrefix(path, "internal/runtime/") {
+		return true
+	}
+	switch path {
+	case "runtime/cgo", "runtime/race", "runtime/asan", "runtime/msan",
+		"internal/abi", "internal/goarch", "internal/goos", "internal/cpu", "internal/bytealg",
+		"internal/race", "internal/asan", "internal/msan", "internal/coverage/rtcov",
+		"internal/isolatebridge", "internal/isolateproto", "isolate":
+		return true
+	}
+	return false
 }

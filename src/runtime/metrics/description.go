@@ -538,7 +538,16 @@ func init() {
 // All returns a slice of containing metric descriptions for all supported metrics.
 func All() []Description {
 	if isolateActive() {
-		return append([]Description(nil), allDesc...)
+		out := make([]Description, len(allDesc))
+		for i, description := range allDesc {
+			out[i] = Description{
+				Name:        isolateCopyBoundaryString(description.Name),
+				Description: isolateCopyBoundaryString(description.Description),
+				Kind:        description.Kind,
+				Cumulative:  description.Cumulative,
+			}
+		}
+		return out
 	}
 	return allDesc
 }

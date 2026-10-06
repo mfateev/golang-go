@@ -6,7 +6,7 @@ package reflect
 
 import (
 	"internal/abi"
-	_ "unsafe" // for go:linkname
+	"unsafe"
 )
 
 // Only type construction uses the process metadata scope. Value allocation,
@@ -28,3 +28,31 @@ func isolatePublishType(*abi.Type)
 
 //go:linkname isolateCopyMetadataString runtime.isolateCopyMetadataString
 func isolateCopyMetadataString(string) string
+
+// Reflective dispatch crosses an assembly trampoline, so its target needs the
+// same callback and raw-atomic checks as a compiler-generated indirect call.
+//
+//go:linkname isolateCheckMetadataCall runtime.isolateCheckMetadataCall
+func isolateCheckMetadataCall(uintptr)
+
+//go:linkname isolateCheckHeapAtomicCall runtime.isolateCheckHeapAtomicCall
+func isolateCheckHeapAtomicCall(uintptr, unsafe.Pointer, unsafe.Pointer, unsafe.Pointer)
+
+//go:linkname isolateCheckHeapAccess runtime.isolateCheckHeapAccess
+func isolateCheckHeapAccess(unsafe.Pointer, uintptr, bool)
+
+func isolateCheckReflectCall(fn unsafe.Pointer, in []Value) {
+	isolateCheckHeapAccess(fn, unsafe.Sizeof(uintptr(0)), false)
+	pc := *(*uintptr)(fn)
+	isolateCheckMetadataCall(pc)
+	if len(in) == 0 || in[0].Kind() != Pointer && in[0].Kind() != UnsafePointer {
+		return
+	}
+	var pointers [3]unsafe.Pointer
+	for i := 0; i < len(in) && i < len(pointers); i++ {
+		if in[i].Kind() == Pointer || in[i].Kind() == UnsafePointer {
+			pointers[i] = in[i].UnsafePointer()
+		}
+	}
+	isolateCheckHeapAtomicCall(pc, pointers[0], pointers[1], pointers[2])
+}

@@ -440,6 +440,10 @@ func (ctxt *Link) symtab(pcln *pclntab) []sym.SymKind {
 	// data.c:/^address will provide the actual values.
 	ctxt.xdefine("runtime.rodata", sym.SRODATA, 0)
 	ctxt.xdefine("runtime.erodata", sym.SRODATAEND, 0)
+	ctxt.xdefine("runtime.relrodata", sym.SRODATA, 0)
+	ctxt.xdefine("runtime.erelrodata", sym.SRODATAEND, 0)
+	ctxt.xdefine("runtime.funcdesc", sym.SRODATA, 0)
+	ctxt.xdefine("runtime.efuncdesc", sym.SRODATAEND, 0)
 	ctxt.xdefine("runtime.types", sym.SRODATA, 0)
 	ctxt.xdefine("runtime.etypes", sym.SRODATA, 0)
 	ctxt.xdefine("runtime.noptrdata", sym.SNOPTRDATA, 0)
@@ -649,6 +653,11 @@ func (ctxt *Link) symtab(pcln *pclntab) []sym.SymKind {
 	ctxt.moduledataItabSizeOffset = moduledata.Size()
 	moduledata.AddUint(ctxt.Arch, 0) // filled in by dodataSect
 	moduledata.AddAddr(ctxt.Arch, ldr.Lookup("runtime.rodata", 0))
+	moduledata.AddAddr(ctxt.Arch, ldr.Lookup("runtime.erodata", 0))
+	moduledata.AddAddr(ctxt.Arch, ldr.Lookup("runtime.relrodata", 0))
+	moduledata.AddAddr(ctxt.Arch, ldr.Lookup("runtime.erelrodata", 0))
+	moduledata.AddAddr(ctxt.Arch, ldr.Lookup("runtime.funcdesc", 0))
+	moduledata.AddAddr(ctxt.Arch, ldr.Lookup("runtime.efuncdesc", 0))
 	moduledata.AddAddr(ctxt.Arch, ldr.Lookup("go:func.*", 0))
 	moduledata.AddAddr(ctxt.Arch, ldr.Lookup("runtime.epclntab", 0))
 

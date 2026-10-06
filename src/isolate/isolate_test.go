@@ -131,6 +131,14 @@ func TestMapWritesStayWithOwner(t *testing.T) {
 		}()
 		call()
 	}
+	wantCloneReject := func(name string, call func()) {
+		defer func() {
+			if got := recover(); got != "isolate: map clone crosses owner boundary" {
+				t.Errorf("%s clone panic = %v", name, got)
+			}
+		}()
+		call()
+	}
 	b := isolatebridge.New()
 	var owned map[string]int
 	b.Run(func() {
@@ -139,10 +147,11 @@ func TestMapWritesStayWithOwner(t *testing.T) {
 		}
 		owned = map[string]int{"x": 1}
 		owned["x"] = 2
-		clone := maps.Clone(processString)
+		wantCloneReject("process", func() { _ = maps.Clone(processString) })
+		clone := maps.Clone(owned)
 		clone["x"] = 9
-		if processString["x"] != 1 || clone["x"] != 9 {
-			t.Error("cloning a process map did not create isolate-owned state")
+		if owned["x"] != 2 || clone["x"] != 9 {
+			t.Error("cloning an owned map changed the source or lost ownership")
 		}
 		wantReject("string", func() { processString["x"] = 8 })
 		wantReject("uint32", func() { process32[1] = 8 })
@@ -160,14 +169,6 @@ func TestMapWritesStayWithOwner(t *testing.T) {
 	second := isolatebridge.New()
 	second.Run(func() { wantReject("other isolate", func() { owned["x"] = 3 }) })
 	wantReject("host", func() { owned["x"] = 3 })
-	wantCloneReject := func(name string, call func()) {
-		defer func() {
-			if got := recover(); got != "isolate: map clone crosses owner boundary" {
-				t.Errorf("%s clone panic = %v", name, got)
-			}
-		}()
-		call()
-	}
 	second.Run(func() { wantCloneReject("other isolate", func() { _ = maps.Clone(owned) }) })
 	wantCloneReject("host", func() { _ = maps.Clone(owned) })
 	b.Run(func() {

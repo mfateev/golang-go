@@ -52,7 +52,7 @@ func getitab(inter *interfacetype, typ *_type, canfail bool) *itab {
 			return nil
 		}
 		name := toRType(&inter.Type).nameOff(inter.Methods[0].Name)
-		panic(&TypeAssertionError{nil, typ, &inter.Type, name.Name()})
+		panic(&TypeAssertionError{nil, typ, &inter.Type, isolateCopyMetadataString(name.Name())})
 	}
 
 	var m *itab
@@ -66,26 +66,10 @@ func getitab(inter *interfacetype, typ *_type, canfail bool) *itab {
 		goto finish
 	}
 
-	// Not found.  Grab the lock and try again.
-	lock(&itabLock)
-	if m = itabTable.find(inter, typ); m != nil {
-		unlock(&itabLock)
-		goto finish
-	}
+	// Cold creation and table growth are process metadata, even when the
+	// assertion is performed by a private goroutine.
+	m = isolateGetItab(inter, typ)
 
-	// Entry doesn't exist yet. Make a new entry & add it.
-	m = (*itab)(persistentalloc(unsafe.Sizeof(itab{})+uintptr(len(inter.Methods)-1)*goarch.PtrSize, 0, &memstats.other_sys))
-	m.Inter = inter
-	m.Type = typ
-	// The hash is used in type switches. However, compiler statically generates itab's
-	// for all interface/type pairs used in switches (which are added to itabTable
-	// in itabsinit). The dynamically-generated itab's never participate in type switches,
-	// and thus the hash is irrelevant.
-	// Note: m.Hash is _not_ the hash used for the runtime itabTable hash table.
-	m.Hash = 0
-	itabInit(m, true)
-	itabAdd(m)
-	unlock(&itabLock)
 finish:
 	if m.Fun[0] != 0 {
 		return m
@@ -99,7 +83,27 @@ finish:
 	// The cached result doesn't record which
 	// interface function was missing, so initialize
 	// the itab again to get the missing function name.
-	panic(&TypeAssertionError{concrete: typ, asserted: &inter.Type, missingMethod: itabInit(m, false)})
+	panic(&TypeAssertionError{concrete: typ, asserted: &inter.Type, missingMethod: isolateCopyMetadataString(itabInit(m, false))})
+}
+
+// isolateGetItab preserves the fast lookup above. A private assertion must
+// neither allocate the process table in its instance nor leave a process lock
+// held when it is revoked. No receiver/user-data pointer enters this service.
+func isolateGetItab(inter *interfacetype, typ *_type) *itab {
+	owner := isolateEnterMetadata()
+	defer isolateLeaveMetadata(owner)
+	lock(&itabLock)
+	defer unlock(&itabLock)
+	if m := itabTable.find(inter, typ); m != nil {
+		return m
+	}
+	m := (*itab)(persistentalloc(unsafe.Sizeof(itab{})+uintptr(len(inter.Methods)-1)*goarch.PtrSize, 0, &memstats.other_sys))
+	m.Inter, m.Type = inter, typ
+	m.Hash = 0
+	itabInit(m, true)
+	isolatePublishItab(m)
+	itabAdd(m)
+	return m
 }
 
 // find finds the given interface/type pair in t.
@@ -523,6 +527,8 @@ func typeAssert(s *abi.TypeAssert, t *_type) *itab {
 }
 
 func buildTypeAssertCache(oldC *abi.TypeAssertCache, typ *_type, tab *itab) *abi.TypeAssertCache {
+	owner := isolateEnterMetadata()
+	defer isolateLeaveMetadata(owner)
 	oldEntries := unsafe.Slice(&oldC.Entries[0], oldC.Mask+1)
 
 	// Count the number of entries we need.
@@ -629,6 +635,8 @@ func interfaceSwitch(s *abi.InterfaceSwitch, t *_type) (int, *itab) {
 // containing all the entries from oldC plus the new entry
 // (typ,case_,tab).
 func buildInterfaceSwitchCache(oldC *abi.InterfaceSwitchCache, typ *_type, case_ int, tab *itab) *abi.InterfaceSwitchCache {
+	owner := isolateEnterMetadata()
+	defer isolateLeaveMetadata(owner)
 	oldEntries := unsafe.Slice(&oldC.Entries[0], oldC.Mask+1)
 
 	// Count the number of entries we need.

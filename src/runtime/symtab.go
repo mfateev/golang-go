@@ -421,7 +421,9 @@ type moduledata struct {
 	end, gcdata, gcbss         uintptr
 	types, typedesclen, etypes uintptr
 	itaboffset, itabsize       uintptr
-	rodata                     uintptr
+	rodata, erodata            uintptr
+	relrodata, erelrodata      uintptr
+	funcdesc, efuncdesc        uintptr
 	gofunc                     uintptr // go.func.*
 	epclntab                   uintptr
 

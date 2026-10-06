@@ -82,7 +82,7 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/lockranking.log"
             exit 1
           fi
-          if ! ./bin/go test cmd/go -run 'TestScript/build_isolate_(functions|programs|metadata|heap|fault)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
+          if ! ./bin/go test cmd/go -run 'TestScript/build_isolate_(functions|programs|metadata|heap|fault|ownership)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/compiler.log"
             exit 1
           fi

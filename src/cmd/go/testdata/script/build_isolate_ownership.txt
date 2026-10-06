@@ -1,0 +1,210 @@
+# Ownership is compulsory for the entire marked-function dependency graph.
+[short] skip
+[compiler:gccgo] skip
+go build -gcflags=all=-d=isolateheap=0 -o owned$GOEXE ./host
+exec ./owned$GOEXE
+stdout '^default ownership enforced$'
+! stdout 'forbidden private output'
+[race] go build -race -o owned-race$GOEXE ./host
+[race] exec ./owned-race$GOEXE
+[race] stdout '^default ownership enforced$'
+! go build -o rejected-link$GOEXE ./badlink
+stderr 'isolate: source cannot link to privileged operation runtime.isolateEnterMetadata'
+
+# A module cannot impersonate a GOROOT metadata callback through its name.
+# Raw hooks here model the audited service; they are deliberately unavailable
+# to the marked workflow above.
+go build -gcflags=all=-d=isolatemetadata=1 -o callback-check$GOEXE ./callbackhost
+exec ./callback-check$GOEXE
+stdout '^metadata namespace denied$'
+
+-- go.mod --
+module example.org/isolateownership
+
+go 1.26
+
+require internal/fake v0.0.0
+replace internal/fake => ./fake
+-- jobs/jobs.go --
+package jobs
+import (
+ "context"
+ "net/textproto"
+ "fmt"
+ "reflect"
+ "regexp"
+ "runtime/metrics"
+ "sync/atomic"
+ "isolate"
+)
+var counter = 41
+//go:isolate
+func Probe(mode byte) (string,error) {
+ if mode == 1 { return textproto.CanonicalMIMEHeaderKey("content-type"),nil }
+ if mode == 2 { fmt.Print("forbidden private output"); return "unexpected",nil }
+ counter++
+ descriptions := metrics.All()
+ if len(descriptions) == 0 || descriptions[0].Name == "" { panic("metric descriptions changed") }
+ descriptions[0].Name = "private description"
+ // A nil defer is registered successfully and panics only on invocation.
+ reached := false
+ func() {
+  defer func() { if recover() == nil || !reached { panic("nil defer behavior changed") } }()
+  var fn func()
+  defer fn()
+  reached = true
+ }()
+ ctx, cancel := context.WithCancel(context.Background())
+ cancel()
+ if ctx.Err() != context.Canceled { panic("context cancellation changed") }
+ var value atomic.Value
+ value.Store("owned")
+ if value.Swap("next") != "owned" || !value.CompareAndSwap("next", "last") { panic("atomic value changed") }
+ record := reflect.StructOf([]reflect.StructField{{Name:"Text", Type:reflect.TypeFor[string](), Tag:`json:"text"`}})
+ field := record.Field(0)
+ if field.Name != "Text" || string(field.Tag) != `json:"text"` { panic("type fields changed") }
+ fn := reflect.FuncOf([]reflect.Type{record}, []reflect.Type{record}, false)
+ if fn.In(0) != record || fn.Out(0) != record { panic("type signature changed") }
+ left, right := reflect.New(record).Elem(), reflect.New(record).Elem()
+ left.Field(0).SetString("text")
+ right.Field(0).SetString("text")
+ if left.Interface() != right.Interface() { panic("constructed equality changed") }
+ mapType := reflect.MapOf(record, reflect.TypeFor[string]())
+ values := reflect.MakeMap(mapType)
+ values.SetMapIndex(left, reflect.ValueOf("mapped"))
+ if values.MapIndex(right).String() != "mapped" { panic("constructed map changed") }
+ if !regexp.MustCompile("^last$").MatchString(value.Load().(string)) { panic("regexp changed") }
+ return fmt.Sprintf("state:%d", counter),nil
+}
+func Plain() string { result,err := Probe(0); if err != nil { panic(err) }; return result }
+func Program(h isolate.Handle) isolate.Program {
+ return h.ProgramWithHandle(func(h isolate.Handle) {
+  input, err := isolate.Call(1,nil)
+  if err != nil { panic(err) }
+  err = h.Invoke(func(args ...isolate.Value) error { *args[0].Pointer.(*byte) = input[0]; return nil },
+   func(results ...isolate.Value) error { _, err := isolate.Call(2, []byte(results[0].Value.(string))); return err })
+  if err != nil { panic(err) }
+ })
+}
+-- host/main.go --
+package main
+import (
+ "context"
+ "errors"
+ "fmt"
+ "isolate"
+ "time"
+ "example.org/isolateownership/jobs"
+)
+func main() {
+ if jobs.Plain() != "state:42" { panic("host state") }
+ now := time.Date(2025,time.January,2,0,0,0,0,time.UTC)
+ handle, ok := isolate.LookupFunction(jobs.Probe)
+ if !ok { panic("missing marked function") }
+ for _, deterministic := range []bool{false,true} {
+  for _, mode := range []byte{0,0,1,2} {
+   instance,err := isolate.New(isolate.Config{Program: jobs.Program(handle), Deterministic:deterministic, InitialTime:&now, TimerOp:9})
+   if err != nil { panic(err) }
+   if err := instance.Start(); err != nil { panic(err) }
+   select {
+   case command := <-instance.Commands(): command.Reply([]byte{mode},nil)
+   case <-instance.Done(): panic(instance.Wait())
+   }
+   if mode == 0 {
+    select {
+    case command := <-instance.Commands():
+     if string(command.Payload) != "state:42" { panic("instance state") }
+     command.Reply(nil,nil)
+    case <-instance.Done(): panic(instance.Wait())
+    }
+    if err := instance.Wait(); err != nil { panic(err) }
+   } else {
+    var fault *isolate.OwnershipError
+    err := instance.Wait()
+    if mode == 1 && !errors.As(err,&fault) { panic(fmt.Sprintf("process state allowed: %v",err)) }
+    if mode == 2 && err == nil { panic("private output was allowed") }
+   }
+   ctx,cancel := context.WithTimeout(context.Background(),time.Second)
+   err = instance.Kill(ctx)
+   cancel()
+   if err != nil { panic(err) }
+  }
+ }
+ if jobs.Plain() != "state:43" { panic("host state changed") }
+ fmt.Println("default ownership enforced")
+}
+-- badlink/main.go --
+package main
+import _ "unsafe"
+//go:linkname enter runtime.isolateEnterMetadata
+func enter() uintptr
+//go:isolate
+func Probe() { enter() }
+func main() {}
+
+-- fake/go.mod --
+module internal/fake
+
+go 1.26
+-- fake/callback/callback.go --
+package callback
+var Called bool
+func Callback() { Called = true; panic("untrusted callback executed") }
+func Generic[T any]() { Callback() }
+-- callbackhost/main.go --
+package main
+import (
+ "fmt"
+ "strings"
+ "unsafe"
+ "internal/fake/callback"
+)
+//go:linkname newGroup runtime.isolateNewGroup
+func newGroup() unsafe.Pointer
+//go:linkname setGroup runtime.isolateSetGroup
+func setGroup(unsafe.Pointer) unsafe.Pointer
+//go:linkname setOwner runtime.isolateSetOwner
+func setOwner(uintptr) uintptr
+//go:linkname enter runtime.isolateEnterMetadata
+func enter() uintptr
+//go:linkname leave runtime.isolateLeaveMetadata
+func leave(uintptr)
+//go:noinline
+func invoke(fn func()) { fn() }
+//go:noinline
+func deferred(fn func()) { defer fn() }
+//go:noinline
+func panicDeferred(fn func()) { defer fn(); panic("force unwind") }
+func main() {
+ // Host calls retain ordinary behavior outside a service scope.
+ func() { defer func() { if recover() != "untrusted callback executed" { panic("host callback changed") } }(); callback.Callback() }()
+ callback.Called = false
+ for mode := 0; mode < 4; mode++ {
+  func() {
+   group := setGroup(newGroup())
+   previous := setOwner(7101)
+   defer setGroup(group)
+   defer setOwner(previous)
+   var failure any
+   var owner uintptr
+   func() {
+    // Recovery belongs to this deliberately privileged fixture and is
+    // registered before entering the service. No callback is recorded inside
+    // the service until the instrumented dispatcher validates its target.
+    defer func() { failure = recover() }()
+    owner = enter()
+    switch mode {
+    case 0: invoke(callback.Callback)
+    case 1: deferred(callback.Callback)
+    case 2: panicDeferred(callback.Callback)
+    case 3: invoke(callback.Generic[int])
+    }
+   }()
+   leave(owner)
+   message,ok := failure.(string)
+   if !ok || !strings.HasPrefix(message,"isolate: unaudited metadata callback internal/fake/callback.") { panic("untrusted callback accepted") }
+  }()
+  if callback.Called { panic("untrusted callback executed in service") }
+ }
+ fmt.Println("metadata namespace denied")
+}

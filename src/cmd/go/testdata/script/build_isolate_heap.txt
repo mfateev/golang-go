@@ -154,7 +154,7 @@ stdout '^isolate: foreign heap reference publication$'
 exec ./publication.exe publish-bulk
 stdout '^isolate: foreign heap reference publication$'
 exec ./publication.exe publish-static
-stdout '^isolate: foreign heap reference publication$'
+stdout '^isolate: access to process global$'
 
 exec ./publication.exe copy-publish
 stdout '^isolate: foreign heap reference publication$'
@@ -270,6 +270,21 @@ stdout '^allowed$'
 [race] exec ./equality-race.exe own
 [race] stdout '^allowed$'
 
+exec ./publication.exe indirect-atomic-load
+stdout '^isolate: read from foreign heap$'
+exec ./publication.exe indirect-atomic-store
+stdout '^isolate: write to foreign heap$'
+exec ./publication.exe indirect-atomic-pointer
+stdout '^isolate: foreign heap reference publication$'
+exec ./publication.exe global-read
+stdout '^isolate: access to process global$'
+exec ./publication.exe global-write
+stdout '^isolate: access to process global$'
+exec ./publication.exe global-reference
+stdout '^isolate: process global reference publication$'
+exec ./publication.exe readonly
+stdout '^allowed$'
+
 -- go.mod --
 module example.org/isolateheap
 go 1.26
@@ -304,6 +319,26 @@ type holder struct {
 }
 type mapKey struct { A, B *record }
 var published *record
+var staticCounter = 7
+//go:noinline
+func readStatic() int { return staticCounter }
+//go:noinline
+func writeStatic() { staticCounter++ }
+//go:noinline
+func indirectLoad(fn func(*int64) int64, p *int64) int64 { return fn(p) }
+//go:noinline
+func indirectStore(fn func(*int64, int64), p *int64) { fn(p, 11) }
+//go:noinline
+func indirectPointer(fn func(*unsafe.Pointer, unsafe.Pointer), p *unsafe.Pointer, value unsafe.Pointer) { fn(p, value) }
+//go:noinline
+func retainGlobal() *int { result := new(*int); *result = &staticCounter; return *result }
+//go:noinline
+func readonlyFixture() {
+    var value any = uint64(7)
+    if value.(uint64) != 7 || string([]byte("static text")) != "static text" { panic("static values") }
+    f := func() int { return 13 }
+    if f() != 13 { panic("static code") }
+}
 //go:noinline
 func allocate() *record { return &record{Data: [64]int{11}} }
 //go:noinline
@@ -498,6 +533,7 @@ func main() {
     hostKey := strings.Repeat("ForeignKey", 17)
     hostRunes := []rune(hostKey)
     hostAtomic := allocateAtomic()
+    hostScalar := new(int64)
     hostPointer := allocatePointer()
     atomic.StorePointer(hostPointer, unsafe.Pointer(host))
     var owned *record
@@ -833,6 +869,13 @@ func main() {
         bridge.Set((*unsafe.Pointer)(unsafe.Pointer(&source.Pointer)), unsafe.Pointer(host))
         moveHolder(target, source)
     })
+    case "indirect-atomic-load": run(101, func() { indirectLoad(atomic.LoadInt64, hostScalar) })
+    case "indirect-atomic-store": run(101, func() { indirectStore(atomic.StoreInt64, hostScalar) })
+    case "indirect-atomic-pointer": run(101, func() { slot := new(unsafe.Pointer); indirectPointer(atomic.StorePointer, slot, unsafe.Pointer(host)) })
+    case "global-read": run(101, func() { _ = readStatic() })
+    case "global-write": run(101, func() { writeStatic() })
+    case "global-reference": run(101, func() { _ = retainGlobal() })
+    case "readonly": run(101, readonlyFixture)
     case "publish-static": run(101, func() { publishStatic(owned) })
     default: panic("unknown test")
     }

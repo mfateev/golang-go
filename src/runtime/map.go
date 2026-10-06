@@ -213,6 +213,8 @@ func reflect_makemap(t *abi.MapType, cap int) *maps.Map {
 //
 //go:linkname reflect_mapaccess reflect.mapaccess
 func reflect_mapaccess(t *abi.MapType, m *maps.Map, key unsafe.Pointer) unsafe.Pointer {
+	isolateCheckHeapMap(unsafe.Pointer(m), false)
+	isolateCheckHeapMapKey(t, unsafe.Pointer(m), key, false)
 	elem, ok := mapaccess2(t, m, key)
 	if !ok {
 		// reflect wants nil for a missing element
@@ -223,6 +225,8 @@ func reflect_mapaccess(t *abi.MapType, m *maps.Map, key unsafe.Pointer) unsafe.P
 
 //go:linkname reflect_mapaccess_faststr reflect.mapaccess_faststr
 func reflect_mapaccess_faststr(t *abi.MapType, m *maps.Map, key string) unsafe.Pointer {
+	isolateCheckHeapMap(unsafe.Pointer(m), false)
+	isolateCheckHeapMapKey(t, unsafe.Pointer(m), unsafe.Pointer(&key), false)
 	elem, ok := mapaccess2_faststr(t, m, key)
 	if !ok {
 		// reflect wants nil for a missing element
@@ -241,23 +245,35 @@ func reflect_mapaccess_faststr(t *abi.MapType, m *maps.Map, key string) unsafe.P
 //
 //go:linkname reflect_mapassign reflect.mapassign0
 func reflect_mapassign(t *abi.MapType, m *maps.Map, key unsafe.Pointer, elem unsafe.Pointer) {
+	isolateCheckHeapMap(unsafe.Pointer(m), true)
+	isolateCheckHeapMapKey(t, unsafe.Pointer(m), key, true)
+	isolateCheckHeapAccess(elem, t.Elem.Size_, false)
+	isolateCheckHeapMove(t.Elem, unsafe.Pointer(m), elem)
 	p := mapassign(t, m, key)
 	typedmemmove(t.Elem, p, elem)
 }
 
 //go:linkname reflect_mapassign_faststr reflect.mapassign_faststr0
 func reflect_mapassign_faststr(t *abi.MapType, m *maps.Map, key string, elem unsafe.Pointer) {
+	isolateCheckHeapMap(unsafe.Pointer(m), true)
+	isolateCheckHeapMapKey(t, unsafe.Pointer(m), unsafe.Pointer(&key), true)
+	isolateCheckHeapAccess(elem, t.Elem.Size_, false)
+	isolateCheckHeapMove(t.Elem, unsafe.Pointer(m), elem)
 	p := mapassign_faststr(t, m, key)
 	typedmemmove(t.Elem, p, elem)
 }
 
 //go:linkname reflect_mapdelete reflect.mapdelete
 func reflect_mapdelete(t *abi.MapType, m *maps.Map, key unsafe.Pointer) {
+	isolateCheckHeapMap(unsafe.Pointer(m), true)
+	isolateCheckHeapMapKey(t, unsafe.Pointer(m), key, false)
 	mapdelete(t, m, key)
 }
 
 //go:linkname reflect_mapdelete_faststr reflect.mapdelete_faststr
 func reflect_mapdelete_faststr(t *abi.MapType, m *maps.Map, key string) {
+	isolateCheckHeapMap(unsafe.Pointer(m), true)
+	isolateCheckHeapMapKey(t, unsafe.Pointer(m), unsafe.Pointer(&key), false)
 	mapdelete_faststr(t, m, key)
 }
 
@@ -272,6 +288,7 @@ func reflect_mapdelete_faststr(t *abi.MapType, m *maps.Map, key string) {
 //
 //go:linkname reflect_maplen reflect.maplen
 func reflect_maplen(m *maps.Map) int {
+	isolateCheckHeapMap(unsafe.Pointer(m), false)
 	if m == nil {
 		return 0
 	}
@@ -294,6 +311,7 @@ func isolateMapLen(m *maps.Map) int {
 
 //go:linkname reflect_mapclear reflect.mapclear
 func reflect_mapclear(t *abi.MapType, m *maps.Map) {
+	isolateCheckHeapMap(unsafe.Pointer(m), true)
 	mapclear(t, m)
 }
 

@@ -6,6 +6,10 @@
 ! go build -mod=mod ./host
 stderr 'metadata services require google.golang.org/protobuf@v1.36.11 without a replacement, nested module, or vendored source'
 
+# Host-only implementations may be reached through a shared registry callback.
+! go build -mod=mod ./hostonly
+stderr 'metadata services require google.golang.org/protobuf@v1.36.11 without a replacement, nested module, or vendored source'
+
 # Vendor metadata cannot claim privileges by changing only modules.txt.
 cp vendor.go.mod go.mod
 ! go build -mod=vendor ./host
@@ -82,3 +86,15 @@ func Work() (int, error) { return probe.Value(), nil }
 package main
 import "example.org/isolateMetadata/jobs"
 func main() { jobs.Work() }
+
+-- pure/jobs.go --
+package pure
+//go:isolate
+func Work() (int, error) { return 1, nil }
+-- hostonly/main.go --
+package main
+import (
+ "example.org/isolateMetadata/pure"
+ "google.golang.org/protobuf/probe"
+)
+func main() { pure.Work(); probe.Value() }

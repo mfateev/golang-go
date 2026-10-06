@@ -456,6 +456,9 @@ const (
 
 	RegisterParams // TODO(register args) remove after register abi is working
 
+	// Compiler-only source provenance, serialized with generic function bodies.
+	// No source directive can set this bit.
+	IsolateMetadataTrusted
 )
 
 var BlankNode *Name

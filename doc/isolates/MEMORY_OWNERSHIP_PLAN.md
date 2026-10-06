@@ -1,860 +1,156 @@
-# Memory ownership: productization item 2
-
-Prerequisite: determinism item 1 passed local gates and all four native jobs;
-the results and source revisions are checked in at `cf8d69e7b9`. This feature
-does not include freezing cached heaps or implementing a separate collector.
-
-## Allocation and collection
-
-- Give each instance an allocator cache independent of the processor executing
-  its goroutines. Moving between processors must not move its allocation owner.
-- Small and large object spans have exactly one owner. The process remains
-  owner zero. The shared page allocator and GC remain process machinery; object
-  placement and central-list reuse must never mix owners within a span.
-- Tiny allocation blocks must not combine host and instance objects. Initially
-  disable tiny packing for instance allocations rather than introduce another
-  hidden GC root in each cache. Preserve the ordinary process fast paths.
-- Keep owner caches in a runtime registry that GC can flush at the correct
-  sweep boundaries and include in allocation/scan accounting. The registry must
-  not keep instances alive. A separate GC-visible cache handle can retire the
-  non-GC cache after the group becomes unreachable, including groups with
-  cyclic transport callbacks.
-- Reuse compatible partial spans through the existing central lists. A bounded
-  owner search may allocate a fresh span; measure fragmentation before tuning
-  it or adding owner-specific central queues. Never retag a span containing live
-  objects. Fully swept empty spans may change owner.
-- Keep ordinary concurrent tracing and sweeping. Owner tags prepare for later
-  cached-heap GC work, but this feature must not skip tracing or free a heap
-  while runtime queues can still reference it.
-
-## Compiler and boundary checks
-
-- Extend the build manifest beyond its POC package allowlist. Every reachable
-  mutable global needs instance state or an explicit process-service policy;
-  an unclassified state access must fail closed.
-- Instrument pointer reads/writes, pointer publication, slice/closure/interface
-  access, maps, channels, reflection, and bulk copies. Enforce the same owner
-  across all supported access paths, including small objects and interior
-  pointers. Host execution keeps its ordinary behavior for process objects.
-- Retain the copied-byte `Call` boundary and typed, compiler-generated invokers.
-  Workflow arguments and results are converted within their instance. Host
-  callbacks and allocator/runtime metadata use explicit trusted paths.
-- Share immutable code, static type metadata, and proven read-only data. Do not
-  treat arbitrary process-owned heap objects as immutable merely because their
-  owner is zero.
-
-## Process metadata services: accepted policy
-
-Reflection and protobuf use process-wide type registries and lazy caches. Some
-hold locks shared with the host, and some allocate metadata on their first use.
-The POC currently classifies the default converter dependency graph as a process
-service; that broad exemption is insufficient for enforced heap ownership.
-
-The user approved a small audited set of trusted metadata operations:
-their shared caches and immutable metadata remain process-owned, decoded user
-values remain instance-owned, and revocation waits until a service has released
-its process locks before discarding the caller. Ordinary application locks and
-mutable objects remain private to an instance. The no-shared-locks rule applies to application locks.
-Shared service access is not an application privilege: only compiler/runtime-approved metadata operations
-may enter it. Arbitrary converters, callbacks, and mutable workflow values may
-not inherit the service scope. Service entry precedes acquiring any shared lock;
-exit follows releasing every such lock. Nested calls restore the original owner
-and a pending Kill takes effect at the outermost exit.
-
-Keep the service manifest narrow and versioned. Auditing a new dependency version
-is required before granting its implementation service access. The broad POC
-converter dependency exemption must not be mistaken for a completed ownership
-audit.
-## Implemented foundation
-
-The runtime now gives each instance its own allocator cache. Generated fast paths
-and generic/race allocation paths select the same cache; small and large spans
-retain a single owner, including interior pointers. Instance tiny packing is
-disabled. GC sweep preparation, scan/allocation accounting, profiling and
-`ReadMemStats` include these caches. An acyclic finalizable handle retires an
-unreachable cache without freeing still-live heap objects.
-
-The Temporal adapter also constructs the pinned default converter separately
-in each instance's workflow package state. Its mutable converter map, ordered
-list and options no longer reuse the host worker's singleton. The worker keeps
-its standard default object. Wire compatibility tests and the retained history
-cover the independently constructed converter; its external dependency graph
-still needs the broader package audit below.
-
-Metadata scopes preserve the instance's group, clock and process restrictions,
-while switching allocation and cache access to the process owner. They keep the
-dispatch token while waiting on shared service locks. Kill remains pending until
-outermost service exit, after lock cleanup; application continuation and defers
-then remain discarded. A scope cannot start application goroutines, call the
-host or exit the process. Runtime housekeeping goroutines, including GC workers
-started by service allocations, remain outside the instance. Nested scopes and
-panic unwinding restore the original owner.
-
-### Initial service manifest
-
-- Reflection type construction: `PointerTo`, `ChanOf`, `FuncOf`, `SliceOf`,
-  `StructOf`, `ArrayOf` and `MapOf`. Canonical type descriptions are shared;
-  reflected values and caller callbacks keep instance ownership.
-- Protobuf `google.golang.org/protobuf@v1.36.11`: explicitly listed lazy
-  descriptor/index builders, message/extension type initialization, and registry
-  lookup/count methods. The exact function list is in
-  `src/cmd/internal/isolatepolicy/metadata.go`.
-- Generated Temporal descriptors: `go.temporal.io/api@v1.63.6`. Both modules
-  require these audited versions, without replacements, nested modules or vendored source.
-- Shared operations reject instance/stack receivers. Message initialization
-  accepts only the built-in protobuf descriptor implementation. Dynamic call
-  targets inside scopes must belong to the reviewed runtime/library or pinned
-  metadata namespaces; custom descriptor callbacks are rejected before execution.
-- Registry mutation/visitors, legacy descriptor implementations, lazy option
-  decoders and custom descriptors remain unsupported inside instances. Ordinary
-  host registration, visitors and custom descriptors retain their behavior.
-
-This foundation does **not** complete feature 2. General pointer access and
-publication checks, immutable metadata provenance, and replacement of the broad
-POC converter/activity package exemptions still require implementation and audit.
-An owner-zero allocation alone is not proof of safe immutable sharing.
-
-### Heap access diagnostic
-
-The compiler's opt-in `-d=isolateheap=1` diagnostic now checks ordinary typed
-loads, stores, zeroing and bulk moves, plus map/channel operations and every
-select operand before the operation. Map checks include stack-backed headers,
-missing-key lookups, length, iteration, assignment, deletion and clearing.
-Channel checks precede send, receive and close, and cover length/capacity.
-Current-instance access is allowed; host/instance and instance/instance heap
-access is rejected. Metadata builders may read borrowed private arguments from
-their own instance, but cannot mutate them or access another instance's data.
-
-Level two (`-d=isolateheap=2`) additionally validates references in typed stores
-and bulk moves, including pointers, slice/string backing data, interface data and
-closure objects. It scans the compiler type's GC bitmap for pointer-bearing bulk
-copies. Read-only borrowing by a metadata builder cannot retain private arguments
-in process caches. A reference to an instance object cannot be stored in a
-linker-allocated process global. Large returned structures are copied to a local
-temporary before diagnostic calls can overwrite their ABI result/spill area.
-
-The diagnostic is **not enabled by normal isolate builds**. General stack/static
-ownership, complete publication coverage, raw compiler accesses, reflected operations,
-library intrinsics and assembly still require coverage. Process metadata beyond the canonical reflection roots below
-still needs positive provenance before sharing; owner zero grants no blanket
-read exemption here. Collection checks emitted in application code do not audit
-the runtime and library operations it calls. The copied-byte bridge remains a
-trusted path. These checks are a way to test the next ownership layer, not a
-completed containment claim.
-
-Compiler regressions exercise actual language operations with deliberately
-exposed foreign pointers/maps/channels, verify rejection before mutation, and
-retain ordinary own-state and nil behavior. A multiple-result regression ensures
-inserted checks preserve call-result extraction and large returned structures.
-
-Local validation passed the full short runtime/isolate/map and compiler
-typecheck/SSA suites, five runtime ownership repetitions under both race and
-static lock ranking, and the language-operation compiler script. The SDK
-dispatcher driver compiled with the diagnostic on all `sdk-go-poc` packages and
-passed at `GOMAXPROCS=1/2/8` with `GOGC=1`. Native CI includes these gates and
-preserves their output alongside ordinary builds and saved-history replay.
-
-Level-two store/move regressions also passed, including a late foreign pointer
-in a 10,000-pointer object, instance/instance and host/instance reference checks,
-and preventing a metadata service from retaining borrowed data. These runtime
-checks passed five race and static-lock-ranking repetitions. Pointer-bearing
-multi-result structures exposed an ABI spill-area overwrite; a local snapshot
-before inserted calls fixed the regression.
-
-The first stricter SDK audit rejected a dynamic `reflect.Type` returned by
-`ArrayOf` when stored in a `StructField`. The canonical-root policy and subsequent
-panic/entry fixes below resolve those observed failures. Native CI now uses level
-two for SDK application packages; the complete external dependency graph still
-requires its separate audit. Owner zero never grants blanket immutable sharing.
-
-## Initial audit
-
-- `malloc.go` and generated `malloc_generated.go` both fetch the processor's
-  cache directly. Update `_mkmalloc` and regenerate its output; changing only
-  the generic allocator leaves the normal fast paths mixing owners.
-- `mcentral.cacheSpan` currently returns any compatible size-class span.
-  Owner matching must cover swept and unswept partial/full paths, not merely
-  newly grown spans. Preserved empty spans can be retagged after sweeping.
-- GC resets scan accounting at mark termination and prepares caches for the
-  new sweep generation. It also flushes idle caches before the next cycle.
-  Owner caches must participate without keeping their groups alive.
-- `profilealloc` updates per-cache sample counters, and `ReadMemStats` flushes
-  allocation counts. Selecting an owner cache for allocation must also select
-  the correct profiling counters and include it in those flushes.
-- The existing selected package layouts already include reflection and time;
-  the converter/activity dependency graphs remain broad process exemptions.
-  Narrowing those exemptions depends on the process-service policy above.
-
-## Gates
-
-1. Allocation tests cover tiny/small/large, scan/noscan, interior pointers,
-   processor migration, concurrent instances, repeated GC, cache retirement,
-   and allocation statistics. Test both generated fast paths and race paths.
-   `isolate.TestIsolateCachedEviction` additionally holds 1,024 real deterministic
-   instances suspended with 64 KiB of live heap state each, forces repeated GC,
-   resumes instances to verify state, then evicts them. Three batches check weak
-   instance references, zero live members, allocator-registry counts, goroutine
-   counts and live heap reclamation. Short runs use 256 instances/two batches.
-   Freed pages retained by Go for reuse are excluded from the live-object test.
-2. Negative tests reject host/instance and instance/instance crossings through
-   every supported language and reflection operation. Positive tests retain
-   immutable sharing and copied-byte transport.
-3. Package-state tests use the same package on the host and in two instances,
-   including initialization, caches, callbacks, and default converter use.
-4. Run compiler/runtime regression and lock-ranking gates, SDK/sample tests,
-   and the retained determinism history on the native platform matrix. Ownership
-   work must preserve the item 1 trace and ordinary Temporal workflows.
-5. Check in results and all three repositories; publish the supported service
-   manifest and any remaining exclusions before claiming feature 2 complete.
-
-## Foundation validation (2026-10-05)
-
-- Full `src/all.bash`: `ALL TESTS PASSED` on Linux arm64. This run preceded
-  addition of the read-only allocator-count diagnostic and cached-eviction test;
-  those additions passed the focused normal/race/lock-ranking gates below.
-- Cached eviction: three batches of 1,024 suspended instances passed. Each
-  retained approximately 69.6 MB of live heap; after eviction, all weak instance
-  references cleared, allocator-cache count returned to zero, goroutine count
-  returned to two, and live heap returned to approximately 1.1 MB.
-- `go test -race runtime isolate -run
-  'TestIsolateAlloc|TestIsolateMetadata|TestIsolateCachedEviction|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates'
-  -count=5`: passed. The cached test alone created/evicted 15,360 instances.
-- The same filter with `GOEXPERIMENT=staticlockranking`, `-short -count=5`:
-  passed. Metadata revocation/suspension also passed ten ordinary repeated runs.
-- Marked/legacy compiler scripts and the new metadata-source policy script:
-  passed. SDK tests, tracked sample packages, and the real SDK dispatcher driver
-  passed; the dispatcher driver also passed under the race detector.
-- Six fresh-process saved-history replays (`GOMAXPROCS=1/2/8`, default/disabled
-  CPU features, host `TZ=America/Los_Angeles`): all retained 195 observations and
-  SHA-256 `12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
-
-The native CI workflow now includes cached eviction, allocation/metadata race
-and lock-ranking gates, rejected metadata-source builds, and the SDK driver
-under the race detector. Its next run validates this ownership foundation on
-Linux/macOS arm64/amd64; the checkpoint below records those results, which do not
-close the remaining feature 2 gates.
-
-The first native foundation run (`37347075109`, Go `4891462c93`, SDK
-`27e2eb5`) passed both Linux jobs and exposed an existing Darwin preemption
-lock-ranking mismatch on both macOS architectures: `preemptM` acquires the exec
-read lock with `sched`/`allp` held, while the table placed the read lock earlier.
-The audited thread-creation read section only calls OS/C thread-start code.
-The corrected DAG places `execR` after `allp`; a regression exercises this order
-on every platform. Full runtime/isolate short suites with static lock ranking
-passed locally after the correction. The native checkpoint below includes this
-correction.
-
-The second native run (`37348765744`, Go `52aa269caa`, SDK `52210a4`)
-passed both macOS jobs and exposed a GC startup regression in both Linux SDK driver
-jobs. The service goroutine restriction also rejected runtime GC workers when
-the first collection was triggered by a reflection metadata allocation. The
-restriction now uses the same system-goroutine classification as creation;
-runtime workers never inherit the instance, while application starts still fail.
-A fresh-process regression covers cold startup and additional workers after
-increasing `GOMAXPROCS`, checks instance membership and scope restoration, and
-separately tests application goroutine rejection. The allocation/metadata,
-determinism and cached-eviction race and static-lock-ranking gates passed five
-local repetitions after this fix. The SDK driver also passed at
-`GOMAXPROCS=1/2/8` with both default GC and `GOGC=1`.
-
-Goroutine entry classification subsequently stopped constructing a temporary
-`g` in `newproc`. ARM64 disassembly confirms its frame fell from 672 to 80 bytes;
-ordinary goroutine creation keeps its small frame even when no service is
-active. Cold GC/service rejection tests passed five race and lock-ranking
-repetitions, and finalizer/cleanup/goroutine/Goexit regressions passed.
-
-## Native foundation checkpoint (2026-10-05)
-
-[Native run 37350494589](https://github.com/mfateev/golang-go/actions/runs/37350494589)
-passed every job with Go `0859219659163634ca710c6772112a481e9a369e`, SDK
-`52210a45ba52fb5b47fb94fb642b87831653966a`, and samples
-`1e77ee7ed61514455a3382b0bbe0e9050468a214`.
-
-| Platform | Result |
-| --- | --- |
-| Linux AMD64 | Passed |
-| Linux ARM64 | Passed |
-| macOS AMD64 | Passed |
-| macOS ARM64 | Passed |
-
-All jobs passed runtime/compiler conformance, cached eviction, race and static
-lock ranking, SDK/sample tests, and ordinary/race SDK dispatcher drivers. Across
-24 fresh-process replays, each retained 195 observations and SHA-256
-`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
-Artifacts preserve complete logs and checked-out revisions. This validates the
-allocator/metadata/eviction foundation; the later compiler heap diagnostics have
-their own native gates, and feature 2 remains incomplete.
-
-The level-one heap/collection diagnostic subsequently passed all four jobs in
-[native run 37352477411](https://github.com/mfateev/golang-go/actions/runs/37352477411),
-Go `7ac505c77ed281f9e05503e1e0e0a44f63333dc6`, with the same SDK/sample revisions.
-This adds the negative language-operation script and SDK driver compiled with
-the diagnostic at `GOMAXPROCS=1/2/8`, `GOGC=1`. It does not validate later
-level-two publication work or close the outstanding ownership gates.
-
-## Boundary response ownership
-
-`Call` clones both response bytes and nonempty error text under the receiving
-instance's restored owner. Constructing `errors.New` alone would retain the
-host's string backing allocation. `internal/isolatebridge.TestBoundaryResponseOwnership`
-checks the payload, error object and message allocation owners in concurrent
-and deterministic instances. Native CI includes this regression in ordinary,
-race and static-lock-ranking runs.
-
-## Canonical reflection descriptor provenance
-
-The seven supported reflection constructors now register their canonical result
-with the runtime after cache insertion and shared-lock cleanup, before restoring
-the caller's owner. Registration accepts only process-owned allocation roots and
-records the ABI descriptor header's exact extent. The registry shares the
-existing reflection-offset lock. It holds GC-visible roots with the same process
-lifetime as reflection's canonical caches, preventing an unrelated object from reusing an address with previously
-granted provenance.
-
-The heap diagnostics allow references to these exact roots to enter instance
-objects and allow reads within their registered header ranges. Instance writes,
-interior-pointer publication, reads beyond the header, and unregistered objects
-remain rejected. Allocation-slot lookup accounts for malloc headers on larger
-pointer-bearing allocations; it never grants access to the runtime header or
-size-class padding.
-
-This policy does not freeze or approve the entire reachable metadata graph.
-Names, struct-field arrays, equality closures, lazy GC masks and protobuf handles
-still need separate accessor/provenance policies. The subsequent string-panic transfer fix below makes the SDK application
-diagnostic pass at level two. That gate does not instrument its entire external
-dependency graph or close the broader package audit. Default builds continue to leave these
-partial diagnostics disabled.
-
-`runtime.TestIsolateHeapCanonicalTypes` covers concurrent cold/cache construction,
-canonical identity, every constructor, method-bearing struct types with malloc
-headers, bounded reads, rejected writes/publication and an unregistered metadata
-lookalike. The compiler language-operation script also exercises retaining the
-canonical interfaces in owned storage and rejects mutation/interior publication.
-
-The later publication diagnostic checkpoint
-[native run 37355982299](https://github.com/mfateev/golang-go/actions/runs/37355982299)
-passed all four platforms at Go `8c69f7224a8b00c5f5c2cd55a8a8f3cf0d8b047e`.
-The receiving-owner `Call` error fix also passed all four platforms in
-[native run 37357047704](https://github.com/mfateev/golang-go/actions/runs/37357047704),
-Go `54d7cf934a4f91b79e1a7f63b1d0e2237aad6eaa`. Both used SDK `52210a4`
-and samples `1e77ee7`. Their SDK gate uses diagnostic level one; level-two
-language/runtime tests do not imply that the full SDK passes level two.
-
-Canonical descriptor roots passed local publication/access tests, five race and
-static-lock-ranking repetitions, the compiler heap/metadata scripts, and full
-short suites for runtime, isolates, reflection, maps and SSA generation. These
-results include the malloc-header correction exposed by the reflection suite.
-The SDK full suite and level-one driver passed at `GOMAXPROCS=1/2/8`, `GOGC=1`.
-Six freshly built saved-history replays retained the same 195 observations and
-SHA-256 `12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
-
-## Compiler-lowered slice copies
-
-The heap diagnostic now validates compiler-lowered slice copies, make-and-copy,
-append growth and clearing. Pointerless `memmove` and `slicecopy` paths validate
-both accessed ranges; clearing validates the destination. Typed copying and
-allocation/growth helpers additionally scan every copied pointer at level two.
-The count is the smaller source/destination length, so zero-length operations
-retain their usual semantics and untouched tail elements are excluded. Range
-multiplication checks overflow before inspecting memory.
-
-A not-yet-allocated destination uses the caller's owner for publication checks.
-Every reference in the copied elements is validated before the actual copying
-helper runs,
-so a late foreign pointer cannot cause a partially updated destination. Direct
-SSA append-growth calls and lowered IR calls both receive the check. This remains
-an opt-in diagnostic; raw/reflected operations and the broader package audit are
-still outstanding.
-
-`runtime.TestIsolateHeapSliceCopies` checks the process/two-instance access matrix,
-empty copies, truncated tails and a foreign last reference in 10,000 elements.
-The compiler script covers overlap, empty copies, owned copy/append/clear,
-foreign byte/pointer copies, make-and-copy, append with and without growth,
-clearing, canonical type interface copying, and late-reference rejection before
-any destination element changes. Test-only allocation helpers force heap-backed
-fixtures so separate stack-policy exclusions cannot hide a missing heap check.
-
-Slice-copy validation: the compiler language-operation script and five normal,
-race and static-lock-ranking ownership repetitions passed. After restoring the
-execution environment, full short runtime/isolate/bridge/reflection/map/compiler
-suites passed, including ptrace and local-socket tests. The SDK level-one driver
-passed at `GOMAXPROCS=1/2/8`, `GOGC=1`. The first broad run under the restricted
-execution profile failed because ptrace and socket creation were denied;
-no tests were skipped or changed to accommodate that profile.
-
-## Metadata string panic transfer
-
-A service may build its diagnostic panic string under owner zero. At outermost
-service exit, after shared-lock cleanup and restoring the caller's allocator,
-the runtime copies a propagating string panic's interface box and backing bytes
-into the caller's heap. Named strings retain their exact dynamic type and text.
-Nested scopes defer transfer until the outermost exit; ordinary host execution
-and already-private/static payloads retain their behavior. Another instance's
-allocations are never absorbed by this transfer.
-
-This is a narrow string-payload policy. Non-string service panics still need a
-separate safe transfer policy; it does not authorize arbitrary process-owned
-error objects or panic values. Runtime regressions check dynamic/named strings,
-nested scopes, allocation owners and lock cleanup. The compiler script recovers
-a real `reflect.StructOf` panic into heap-backed application storage, where
-level-two publication checks reject an untransferred process-owned box.
-
-The SDK application's stricter audit exposed this boundary in a rejected custom
-descriptor callback. Native CI now compiles the SDK application packages with
-`-d=isolateheap=2` (previously level one). Its external dependencies retain their
-separate service/ownership audits; successful application checks are not proof
-that feature 2 is complete.
-
-## Function entry metadata transfer
-
-`Handle.ProgramWithHandle` creates a trusted entry wrapper that passes a copy of
-the compiler-created handle to a dispatcher. The SDK factory now uses a
-noncapturing dispatcher, avoiding an application read from a host-owned closure
-containing the handle. The wrapper is not inlined into instrumented callers.
-Its handle contains sealed compiler-created function metadata; other captured
-application state continues to require the ordinary ownership rules.
-
-The marked-function compiler script exercises the wrapper under race detection
-and level-two host-package instrumentation, checks the original workflow
-signature and state isolation, and rejects a nil dispatcher. Native SDK driver
-race builds now also use level-two application instrumentation. Existing
-`Handle.Program` and ordinary Temporal worker registration remain available.
-
-Panic/entry validation: five race and static-lock-ranking ownership runs passed,
-including cached eviction (15,360 real instances in the race gate). The marked
-function, heap and metadata compiler scripts passed. Full short runtime,
-isolate, bridge, reflection and map suites passed. The full SDK suite passed;
-its level-two driver passed normally and under race detection at
-`GOMAXPROCS=1/2/8`, `GOGC=1`. Six level-two fresh-process history replays retained
-195 observations and SHA-256
-`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
-
-The preceding canonical-root checkpoint also passed all four native jobs in
-[native run 37360385290](https://github.com/mfateev/golang-go/actions/runs/37360385290),
-Go `76997944b0a4a94a3b327ad685f70fdd58b3570b`, SDK `52210a4`, samples `1e77ee7`.
-That checkpoint predates the slice-copy and panic/entry changes above.
-
-## Reflection metadata strings
-
-Public reflection accessors copy process-heap strings into the calling instance:
-type descriptions, method/field names, package paths and struct tags. This permits
-ordinary application storage and use without approving the metadata object's
-entire reachable graph. Static strings and strings already owned by the caller
-retain their backing storage. Host callers and metadata builders retain the
-canonical process storage. Strings belonging to another instance are rejected.
-
-Repeated access to a dynamic description can therefore allocate a new string in
-the instance; the POC does not add an instance-local accessor cache. Canonical
-type identity and constructor caching remain unchanged. Field arrays, equality
-closures, lazy GC masks, protobuf handles and non-string service panics still
-require their separate policies.
-
-`TestIsolateMetadataStringOwnership` verifies backing owners and text for a
-dynamic type description, field name, tag and package path, then constructs
-another canonical type using the returned private name. The compiler script
-stores returned fields and descriptions in heap-backed application objects under
-level-two checks, covering the actual publication path.
-
-## GC safety of inserted entry checks
-
-Result slots in functions with defers are live to GC from function entry. The
-compiler now initializes these slots with direct SSA stores/zeroing before
-loading closure captures, and emits no ownership calls during initialization.
-An inserted call can grow the stack even when its argument is nil, so checking
-a zero store before finishing initialization is unsafe. Normal body stores
-retain their ownership checks.
-
-The SDK level-two driver reproduced an invalid pointer in `RunFunction` during
-stack growth. The same failure appears in the Linux arm64 and macOS arm64 logs
-of [native run 37364058144](https://github.com/mfateev/golang-go/actions/runs/37364058144).
-Those failures are compiler bugs, not container permission failures. The heap
-compiler regression now exercises multiple pointer-bearing result types,
-closure captures, defers, nested frames, stack reuse and concurrent GC.
-
-Reflection/entry validation: the full toolchain bootstrap and short runtime,
-isolate, bridge, reflection, compiler SSA/generation/typecheck suites passed.
-Marked/legacy function, metadata and heap compiler scripts passed. Five race
-and static-lock-ranking ownership runs passed, including 15,360 cached isolate
-evictions under race detection. The SDK full suite and level-two driver passed;
-the driver passed normally and under race detection at `GOMAXPROCS=1/2/8`,
-`GOGC=1`. Six level-two fresh-process history replays retained the same 195
-observations and SHA-256
-`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
-The prior native failures require a new run of the corrected source; local
-results do not establish the four-platform gate.
-
-## Direct atomic operations
-
-The heap diagnostic checks direct `sync/atomic` primitive calls at both compiler
-boundaries: intrinsic expansion and ordinary calls (including race-intercepted
-calls and pointer operations with write barriers). Checks cover the full scalar
-width and precede loads, stores, add, swap, compare-and-swap, AND and OR. Inlined
-typed atomic methods receive the same checks. Level two checks the new reference
-before pointer store/swap/compare-and-swap, including an unsuccessful comparison;
-it never permits retaining another owner's pointer based on the comparison.
-
-This closes an observed host mutation through `atomic.Int64.Store`. The compiler
-script exercises host/instance and instance/instance scalar access, host access
-to instance storage, pointer publication, unchanged rejected destinations and
-owned 32/64-bit, boolean, uintptr and pointer operations. Canonical reflection
-descriptor pointers retain their explicit immutable-sharing policy. Race builds
-exercise the non-intrinsic path.
-
-Indirect calls through function values, typed methods that remain in
-uninstrumented dependency code, `atomic.Value` and runtime/internal assembly still
-need their separate audit. This diagnostic remains opt-in and does not replace
-the outstanding static/stack and whole-program policies.
-
-Atomic validation: the heap/marked-function compiler scripts and compiler
-SSA/generation suites passed; `sync/atomic` passed normally and under race
-detection. The SDK level-two driver passed at `GOMAXPROCS=1/2/8`, `GOGC=1`,
-and under race detection at `GOMAXPROCS=8`, `GOGC=1`. The full SDK suite and
-all tracked sample packages passed. These local checks do not establish the
-complete memory-ownership or native platform gates.
-
-## Map helper keys
-
-The compiler now validates keys at the map-helper boundary as well as the map
-itself. Fast string lookup, assignment and deletion validate the backing bytes
-before hashing. Level-two pointer and string assignment paths validate the
-reference copied into the map. Generic helpers validate the complete inline key
-range, then assignment scans its GC bitmap for every copied reference.
-
-Every copied reference uses the map header's owner. Key slots may live in a
-different allocation and large keys are indirect; adding a key-field offset to
-the header would inspect unrelated memory. Runtime tests cover the process and
-two instances, a 10,000-pointer key with a foreign last reference, and preventing
-a metadata service from retaining a borrowed private key in its process map.
-The map/key fixtures are forced to the heap so stack exclusions cannot hide a
-missing check. Compiler cases verify rejection before insertion, permitted owned
-keys and the existing canonical-type sharing policy.
-
-This fixes an observed publication of a host-owned pointer through an instance
-map key. Recursive hashing/equality, references inside interface boxes and
-uninstrumented library map operations still need their own coverage. The
-diagnostic remains opt-in; these checks do not complete feature 2.
-
-Map-key validation: toolchain bootstrap, full short runtime/isolate/bridge,
-reflection/maps and compiler SSA/generation/typecheck suites passed. Marked,
-legacy, metadata and heap compiler scripts passed. Five runtime ownership and
-metadata repetitions passed under both race detection and static lock ranking.
-The SDK full suite passed; its level-two driver passed normally at
-`GOMAXPROCS=1/2/8`, `GOGC=1` and under race detection at `GOMAXPROCS=8`, `GOGC=1`.
-Six level-two fresh-process replays retained 195 observations and SHA-256
-`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
-
-The preceding reflection/entry fix, Go `326c773270`, passed Linux arm64/amd64
-and macOS arm64 in
-[native run 37365715782](https://github.com/mfateev/golang-go/actions/runs/37365715782).
-Its macOS Intel job never acquired a hosted runner and was cancelled by GitHub;
-no matrix entry was removed. It therefore does not establish the four-platform
-gate. The later atomic revision has a separate native run; map-key changes need
-their own complete matrix results.
-
-## String and rune conversion helpers
-
-The diagnostic validates source ranges before compiler-lowered byte/rune to
-string and string to byte/rune conversions. Rune slices use their full four-byte
-element width. Copying into a new private allocation does not authorize reading
-another owner's input. Empty conversions retain their normal behavior.
-
-The compiler regression covers foreign inputs for all four conversions, owned
-UTF-8 round trips, nil/empty inputs and invalid UTF-8/runes. A separate reproducer
-previously copied host bytes into an instance string and read them successfully;
-it now rejects the source before copying. Optimizations that replace conversions
-with aliases, other raw string operations and interface boxing still require
-their separate access/publication coverage.
-
-Conversion validation: marked-function, metadata and heap compiler scripts,
-short runtime/isolate/bridge/reflection and compiler SSA/generation/typecheck
-suites passed. The SDK full suite passed; its level-two driver passed at
-`GOMAXPROCS=1/2/8`, `GOGC=1`. These results are local; the native matrix remains
-subject to the hosted runner issue below.
-
-## Native runner availability checkpoint
-
-The atomic revision's Linux arm64 job in
-[native run 37366597840](https://github.com/mfateev/golang-go/actions/runs/37366597840)
-was cancelled without executing a step. GitHub's annotation states: “The job
-was not acquired by Runner of type hosted even after multiple attempts.” This
-is a hosted runner availability issue; the local container's ptrace/socket
-tests passed. Preserve the full four-platform matrix and let the user resolve
-the CI environment before claiming native validation or continuing implementation.
-
-After the user's container restart and instruction to resume, all four jobs in
-[native run 37368649258](https://github.com/mfateev/golang-go/actions/runs/37368649258)
-acquired runners. Both Linux jobs passed; the macOS jobs were still running at
-the following local checkpoint. No runner labels, matrix entries or test gates
-were changed to accommodate the earlier acquisition failure.
-
-## String operations and conversion aliases
-
-The diagnostic now checks backing bytes before comparison and concatenation
-helpers, including ARM64 equality intrinsic expansion. More than five
-concatenation operands also validate their header array before inspecting its
-strings. Optimized byte/string conversion aliases receive source checks too.
-Length-only equality branches that do not read backing bytes keep their normal
-behavior. Ordinary static strings, owned strings and empty inputs remain valid.
-
-A strict diagnostic reproducer previously compared and concatenated host strings
-successfully inside an instance; it now rejects the foreign backing bytes.
-Compiler regressions cover equality, inequality, ordering, two through six
-concatenation operands, conversion aliases, owned/empty inputs and race builds.
-Level two can reject a temporary operand array's reference publication before
-the concatenation helper; either rejection must precede the actual operation.
-
-Validation: full toolchain bootstrap, marked/legacy/metadata/heap compiler
-scripts and short runtime/isolate/bridge/reflection/maps/compiler SSA,
-generation and typecheck suites passed. Five race ownership/metadata/eviction
-runs passed, including 15,360 cached isolate evictions. The SDK full suite and
-strict driver passed; the driver passed at `GOMAXPROCS=1/2/8`, `GOGC=1`, and
-under race detection at `GOMAXPROCS=8`, `GOGC=1`. Six strict fresh-process
-replays retained 195 observations and SHA-256
-`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
-Interface boxing, indirect library/assembly paths, recursive value graphs,
-stack/static policy and whole dependency enforcement remain incomplete.
-
-## Interface boxing helpers
-
-Typed `convT`/`convTnoptr` boxing validates the source range and, at level two,
-every reference copied into its new allocation. Specialized string and slice
-boxing validates the retained backing reference. Creating an owned interface
-box never authorizes retaining another owner's backing memory. Empty string
-boxing uses the runtime's static zero representation and retains no source
-pointer; nonnil empty slices still retain their backing allocation and require
-the same ownership check as nonempty slices.
-
-Separate strict reproducers previously retained host strings/slices in private
-interface boxes; both now reject publication before boxing. Compiler cases also
-cover peer/host crossings, nonnil empty slices, pointer-bearing generic values,
-owned/nil/empty inputs and ordinary/race paths. Source checks remain level one;
-reference checks remain level two. Recursive graphs, indirect helper calls,
-static/stack policy and dependency enforcement still need their separate audit.
-
-Validation: full bootstrap, four compiler scripts, short runtime/isolate/bridge,
-reflection/compiler SSA/generation/typecheck suites and SDK full suite passed.
-The strict SDK driver passed at `GOMAXPROCS=1/2/8`, `GOGC=1`, plus race detection
-at `GOMAXPROCS=8`, `GOGC=1`. Six fresh-process strict replays retained the same
-195 observations and trace hash. A broader audit build instrumenting the pinned
-converter, protobuf and Temporal API packages compiled successfully, then
-rejected `MessageInfo.Descriptor` reading shared metadata outside a service.
-That dependency audit failure is not an environment issue or a passed gate.
-
-## Protobuf accessor audit
-
-The pinned manifest now also scopes `MessageInfo.Descriptor`, `Message.Fields`
-and `Fields.ByName`. These methods inspect process metadata or its lazy indexes;
-they do not marshal/unmarshal values or invoke application callbacks. Receiver
-checks precede scope entry. `MessageInfo`'s built-in descriptor guard now reads
-the shared `Desc` field after entry, with Leave already deferred, so strict
-instrumentation can safely validate it. Private message-info receivers remain
-rejected and panic paths restore the caller's owner.
-
-The SDK driver now identifies each negative operation and reports unexpected
-panics accurately. Its registry-mutation fixture uses a registered message type
-directly, rather than first constructing a reflected message. This reaches the
-mutation guard. The old argument's `Payload.ProtoReflect` instead exposed a
-separate ownership crossing: message state retains the shared `MessageInfo`
-pointer. Canonical protobuf message-info provenance and value paths remain open;
-the fixture change does not fix or approve that crossing.
-
-The compiler scripts, short runtime/isolate/bridge/typecheck suites, full SDK
-suite and five static-lock-ranking runs passed. The stricter driver now passes
-with level-two checks inside the pinned converter, protobuf and Temporal API
-packages as well as SDK application packages, normally and under race detection.
-Six replays built with those same flags retained 195 observations and the same
-trace hash. Native CI uses these broader driver/replay flags. This gate covers
-the exercised JSON workflow values and metadata operations; it does not prove
-general protobuf message-value containment or a complete dependency audit.
-
-## Canonical protobuf message-info roots
-
-The pinned `filetype.Builder.Build` now publishes completed message-info tables
-only after successful registration through its default process registry. The
-compiler captures whether `TypeRegistry` was initially nil and invokes the
-trusted publisher immediately before the builder's final return. A panic during
-construction does not publish the table. Builders inside an instance are
-rejected before execution; custom registries gain no provenance. Static tables
-and interior slices retain their separate policies.
-
-The publisher verifies the exact pinned `impl.MessageInfo` layout, built-in
-process-owned message descriptors, and the owner of every reference in the
-table's headers. Canonical non-map-entry element pointers may be retained by
-private message state and application interfaces. Strong GC-visible provenance
-records have the same process lifetime as the default registry. No instance or
-decoded value is added to this registry.
-
-Ordinary reads are limited to the immutable exported prefix: `GoReflectType`,
-`Desc`, `Exporter` and `OneofWrappers`. Protobuf's contract forbids mutation of
-these fields after initialization. Private initialization locks/counters and
-coder/reflection caches are excluded; accessing them still requires their
-audited service policy. Per-element bounds prevent reads across that prefix,
-into later mutable cells, or past the table. Only exact populated element roots
-receive publication permission; empty map-entry slots and interior pointers do
-not. Instance writes remain rejected. The reachable descriptor/callback/cache
-graph receives no implicit approval.
-
-The SDK metadata workflow retains `Payload` and `Header` message types in
-heap-backed private slots, creates a private message through a retained type,
-and keeps its payload/map live during concurrent lazy-cache allocations with
-frequent GC. It also rejects private message-info receivers and type builders.
-`TestIsolateHeapMessageInfoPrefixes` exercises immutable/mutable read boundaries,
-later elements, writes, empty slots, interior publication and excluded trailing
-bytes using privileged test-only layout fixtures. Those fixtures do not grant
-production provenance to arbitrary objects. An initial fixture failure came
-from allocating `testing.T.Helper` state under a synthetic owner; the test now
-keeps testing bookkeeping under the process owner.
-
-Validation: full bootstrap, four compiler scripts, full short
-runtime/isolate/bridge/reflection/maps/compiler suites and five race and
-static-lock-ranking ownership runs passed. Race cached eviction created and
-evicted 15,360 instances. Full SDK and all tracked sample packages passed. The
-strict driver with converter/protobuf/API instrumentation passed at
-`GOMAXPROCS=1/2/8`, `GOGC=1`, and with race detection at `GOMAXPROCS=8`, `GOGC=1`.
-Six strict replays retained 195 observations and SHA-256
-`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
-This resolves the observed message-state retention crossing. Full protobuf
-value operations, metadata graph access, reflected/indirect operations and
-whole-program enforcement remain open; feature 2 is not complete.
-
-## Native ownership checkpoint
-
-[Run 37373842063](https://github.com/mfateev/golang-go/actions/runs/37373842063)
-passed all four native Linux/macOS arm64/amd64 jobs. Its preserved revisions are
-Go `e0e131fb10e03b4e74c162ab486c36b50178d642`, SDK
-`a8a51e2f5b4d8655e4b31195274d7856a7da0155`, and samples
-`1e77ee7ed61514455a3382b0bbe0e9050468a214`. This validates the preceding string,
-boxing, accessor and canonical message-info changes. The earlier failure to
-acquire hosted runners did not recur in this run.
-
-## Read-only map borrowing in metadata services
-
-Runtime map lookups and iteration now use the same caller-owner query as
-compiler heap diagnostics. An audited metadata service can read its original
-instance's map, including in a nested scope. It cannot read another instance's
-map or mutate the borrowed map. Borrowing grants no permission to publish its
-references in a process cache. Ordinary process execution gains no borrowing
-privilege. Existing process-map compatibility in ordinary runtime reads remains
-separate from the stricter opt-in compiler diagnostic.
-
-Fast uint32/uint64/string deletion helpers now delegate the empty-map decision
-to `Map.Delete`, which checks write ownership first. Previously an empty map
-could return before the write check, and populated foreign maps could fail on
-the preliminary read check instead of the write check. Nil deletion retains its
-ordinary behavior.
-
-The regression matrix exercises host and two instance owners, ordinary and
-nested services, empty/small/large maps, fast integer/string and generic struct
-keys, successful and missing lookups, iteration, assignment, deletion, clearing,
-and compiler diagnostic checks. It first reproduced rejected caller-map reads
-and the deletion ordering gaps, then passed five repetitions after the fixes.
-Full bootstrap, four compiler scripts, short runtime/isolate/bridge/reflection/
-maps/compiler suites, full SDK and tracked sample suites passed. Five race and
-static-lock-ranking runs passed, including 15,360 cached instance evictions.
-The broader strict SDK driver passed at `GOMAXPROCS=1/2/8`, `GOGC=1`, and under
-race detection at `GOMAXPROCS=8`, `GOGC=1`. Six strict replays retained 195
-observations and the existing trace hash. Map cloning and publication of
-borrowed reference graphs still need their separate policies; feature 2 remains
-in progress.
-
-## Interface equality and comparable map-key values
-
-The compiler diagnostic now validates both operands before calling `efaceeq`
-or `ifaceeq`. These helpers can invoke type algorithms in runtime or library
-code that was compiled without diagnostics. The trusted validator checks
-indirect value bytes and follows comparable value layouts: strings and their
-backing bytes, arrays, nonblank struct fields, and nested empty or nonempty
-interfaces. Pointer/channel equality compares addresses without reading their
-targets. Nil comparisons, ignored blank fields and ordinary uncomparable-type
-panics retain their Go behavior.
-
-Generic map-key validation uses the same inspection before hashing/equality
-and before key publication. An owned interface box does not authorize reading
-foreign string backing retained inside it, including through another struct or
-interface. Reference publication retains its separate level-two check.
-
-Two deliberately privileged reproducers exposed these gaps: one compared
-owned string boxes after corrupting a backing pointer to process memory; the
-other inserted that corrupted box as an interface map key. Both previously
-completed successfully and now reject the foreign read. Compiler regressions
-cover host/peer boxes, corrupted scalar/named strings, arrays/structs, nested
-empty/nonempty interfaces, map lookup/assignment keys, owned values, nil/direct
-comparisons and uncomparable types at both diagnostic levels and under race
-detection. The corruption fixture is explicitly uninstrumented and cannot be
-inlined. Argument selection happens before attaching the test instance; the
-initial fixture incorrectly read process `os.Args` after attachment and rejected
-that read before reaching the intended operation.
-
-Validation: final full bootstrap, four compiler scripts, short runtime/isolate/
-bridge/reflection/maps/compiler suites, full SDK and tracked sample suites
-passed. Five race and static-lock-ranking ownership runs passed, including
-15,360 cached instance evictions. The broader strict SDK driver passed at
-`GOMAXPROCS=1/2/8`, `GOGC=1`, and under race detection at
-`GOMAXPROCS=8`, `GOGC=1`. Six strict fresh-process replays retained 195
-observations and SHA-256
-`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
-This validates instrumented equality/key entry points. General pointer graphs,
-stack/static ownership, indirect/library/assembly paths, metadata graphs and
-whole-dependency enforcement remain open.
-
-## Ownership violations terminate managed instances
-
-The accepted policy permanently terminates the whole instance on a detected
-memory ownership violation. Every public `isolate.New` installs the trusted
-runtime reporter before initialization. Heap access/reference checks, runtime
-map/coroutine checks, and metadata receiver/string ownership checks use the
-same fatal path. Ordinary host errors and privileged unmanaged runtime probes
-retain their diagnostic panics; applications have no recovery setting.
-
-The runtime publishes one immutable, process-owned first-fault record and
-immediately revokes admission/dispatch. It discards the offending application
-goroutine without running application defers or recovery. Waiters are scanned
-once by a process goroutine, which also wakes Call and reports a typed
-`*isolate.OwnershipError` to the host. Initialization faults fail `New`; faults
-from a running main or child fail `Wait`. Completion, Suspend and Resume consult
-the recorded cause, so delayed reporter scheduling cannot substitute a generic
-revocation error. The failed instance cannot be restarted.
-
-Inside an audited metadata service, the runtime unwinds trusted cleanup defers
-with recovery disabled. Shared service locks must be released before the
-outermost scope exit restores the instance owner and discards the goroutine.
-`Kill(ctx)` waits for this cleanup and all attached goroutines; it may return
-`KillPendingError` while a service is blocked. Reporting a failure is not proof
-that cleanup or heap reclamation has completed. Existing scheduler/wait
-restrictions still apply, including the lack of bounded termination for
-uninterrupted application CPU loops. This does not replace the provisional
-main-only completion policy for ordinary child failures.
-
-Regressions cover main/child/initializer faults in concurrent and deterministic
-instances, suppressed application recovery/defers, unchanged process memory,
-process-owned error text, simultaneous child faults and competing Kill calls,
-metadata lock cleanup and a pending Kill during cleanup. Retaining 64 host
-errors must release every failed instance and allocator cache. The first
-version embedded its error in the Isolate object; this regression retained all
-64 instances/caches. The error is now allocated separately on the host before
-initialization, and the same regression passes. A compiler fixture
-injects foreign typed arguments only through an uninstrumented test dispatcher,
-then checks real instrumented reads, writes and reference publication, including
-race builds. The SDK driver separately requires fatal private-registry and
-private-MessageInfo receiver errors, then runs another healthy workflow in the
-same host.
-
-The earlier interface-equality checkpoint (`7179bdedf5`) passed all four native
-CI jobs: [run 37387699529](https://github.com/mfateev/golang-go/actions/runs/37387699529).
-Feature 2 remains incomplete: heap diagnostics are still opt-in, stack/static
-ownership and general pointer graphs remain unaudited, and normal builds do
-not yet enforce the whole dependency graph.
-
-Local validation of the termination implementation on Linux arm64 passed:
-full bootstrap; all five compiler scripts; short runtime/isolate/bridge,
-build/trace, context/time/sync/iter/reflection/maps/random and compiler suites;
-five race and static-lock-ranking runs (including cached eviction and the
-new ownership-fault tests); full SDK and tracked sample suites. The default
-SDK driver and the strict four-dependency driver passed at GOMAXPROCS 1/2/8
-with GOGC=1, and under race detection at GOMAXPROCS=8 with GOGC=1. Six strict
-fresh-process replays at GOMAXPROCS 1/2/8, with CPU features enabled/disabled
-and TZ=America/Los_Angeles, retained 195 observations and the unchanged SHA-256
-`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
-The native CI matrix includes the fatal compiler fixture, ownership stress,
-and error-retention regression; its new run is separate from the earlier
-native checkpoint cited above.
+# Memory ownership: productization feature 2
+
+Status: implementation complete; final acceptance validation in progress.
+Feature 1 was checked in and validated before this work began. This feature
+provides ownership for statically linked, reviewed Go workflow code. It does
+not freeze suspended heaps or implement a separate collector (feature 3).
+
+## Enforced contract
+
+Every marked-function or configured-program build enables level-two memory
+checks throughout its compiled dependency graph. A user-supplied
+`-d=isolateheap=0` cannot disable enforcement. An ordinary build without isolate
+entries keeps the normal Go execution path. Checked functions also retain their
+ordinary host behavior when executed outside an instance.
+
+Each instance has its own package globals and allocator cache. Small and large
+heap spans have one owner, independent of the processor running the goroutine.
+Instance tiny allocations do not share packing blocks. Owner caches participate
+in the ordinary Go collector's flushing, sweeping, accounting and profiling;
+a GC-visible acyclic handle retires an unreachable cache without retaining its
+instance or freeing live objects prematurely.
+
+Reads, writes and reference publication validate ownership before the operation.
+Coverage includes typed pointer access, interfaces and boxing, closure access,
+strings, slices, bulk copies, maps and map keys, channels and select operands,
+reflected calls and collection operations, and direct/indirect atomics. Current
+stack storage is permitted; another goroutine's stack, process globals, and
+unclassified memory are denied to private code. Pointer equality does not read
+the pointed-to object. Nil and language bounds behavior remain Go behavior.
+
+A detected violation permanently revokes the managed instance, suppresses
+application recovery and defers, and reports `*isolate.OwnershipError` through
+`New`, `Wait`, `Suspend` or `Resume`. Trusted metadata cleanup releases shared
+locks before discard. `Kill(ctx)` waits for cleanup and attached goroutines;
+a pending result does not restore permission to run. Retained host error objects
+do not retain failed instances or allocator caches.
+
+The host boundary still copies bytes and error text into the receiving owner's
+allocations. Workflow arguments/results use the compiler-generated typed
+invoker and the default converter inside the instance. Application objects,
+channels, closures and mutable caches are not shared with the host or peers.
+
+## Build manifest and supported library policy
+
+`-isolate-report` classifies every reachable package:
+
+| Classification | State and access policy |
+|---|---|
+| `instance-state` | Replay the selected initializer and route mutable globals to each instance; the host retains separate state. |
+| `process-state-denied` | Initialize on the host. Compile with the same compulsory checks; private access to mutable process state fails. Stateless operations may still work. Exact audited metadata operations have the service policy below. |
+| `trusted-runtime` | GOROOT allocator, scheduler, compiler ABI, sanitizer and transport implementations enforce explicit internal contracts. External modules cannot inherit this classification by matching a package name. |
+
+Application dependencies normally receive instance state. The Temporal activity
+SDK and converter dependency graphs retain host initialization because they
+include worker services, registries, environment reads and gRPC configuration.
+This startup classification grants no access exemption. The converter package
+itself and SDK workflow support state are instantiated separately for each
+workflow. Custom worker converters/codecs and general protobuf workflow values
+remain future converter-support work (feature 8).
+
+Selected standard-library state covers `bytes`, `strings`, `errors`, `io`,
+`fmt`, `strconv`, `context`, `time`, `reflect`, `internal/reflectlite`,
+`math`, `math/rand`, `math/rand/v2`,
+`regexp`/`regexp/syntax`, `unicode`/`unicode/utf8`/`unicode/utf16`,
+`encoding/binary`, `encoding/base32`, `encoding/base64`, and JSON's v1/v2
+implementation packages. The authoritative package list is
+[src/cmd/go/internal/work/isolate.go](../../src/cmd/go/internal/work/isolate.go).
+Other standard packages are checked and their unselected mutable state is
+unavailable inside an instance. For example, `net/textproto`'s process-wide MIME
+header cache is rejected; listing a dependency is not a support promise.
+
+`sync.Pool` keeps instance objects out of process pool lists. Its collector hook
+is trusted because it runs with the world stopped. `sync/atomic.Value` validates
+receiver access and retained interface contents explicitly before its pinned
+first-store section; compiler checks do not run inside that sentinel sequence.
+Raw reflected/indirect atomic calls receive equivalent operand checks.
+`runtime/metrics.All` copies descriptions and their string backing data into
+the caller's owner. SHA-256 validates digest/input ranges before any assembly
+backend; its exact backend selector cells expose implementation configuration
+without allowing writes or sharing application objects. Other `runtime/*`
+library packages receive normal checks; the runtime exemption covers only core machinery and sanitizer/cgo hooks.
+
+## Shared immutable metadata and audited services
+
+Only linker-defined read-only ranges and explicitly published canonical
+metadata can be shared. Owner zero is not an immutable classification. Shared
+reflection metadata includes precise type headers, function parameter arrays,
+method/field tables, packed name ranges and canonical equality/hash closures.
+Mutable/lazy parts of an unrelated metadata graph gain no permission. Cold itab
+creation and interface assertion/switch cache allocation use the process owner;
+immutable dynamic itabs receive exact provenance. These caches retain types and
+code, never workflow receivers or private allocations.
+
+Reviewed metadata services may inspect their original caller's private arguments
+without mutation or retention. They enter before acquiring a process lock,
+release all locks before leaving, restore nested ownership, and honor pending
+revocation on outermost exit. They cannot start application goroutines, call the
+host or exit the process. Compiler-recorded function provenance, preserved
+through generic exports and instantiation, prevents service privileges from reaching application callbacks, including packages named like
+GOROOT libraries. Reflection's assembly invocation path checks the actual
+target. Defer targets are validated before registration, covering normal returns and panic unwinding
+while preserving ordinary nil-defer behavior.
+
+The service manifest consists of:
+
+- Reflection type constructors: `PointerTo`, `ChanOf`, `FuncOf`, `SliceOf`,
+  `StructOf`, `ArrayOf`, and `MapOf`.
+- Protobuf `google.golang.org/protobuf@v1.36.11`: enumerated lazy descriptor/index
+  builders, message/extension type initialization, and registry lookup/count
+  methods. Generated descriptors use `go.temporal.io/api@v1.63.6`. Replacement,
+  vendored, nested-module and unaudited-version sources are rejected throughout
+  the compiled graph, including host-only implementations reachable from registries.
+- Exact process metadata handle cells, SHA-256 backend-selection scalar reads and its
+  fixed round table, and a proven immutable prefix of canonical
+  protobuf `MessageInfo` records. This does not approve their mutable cache fields
+  or all protobuf marshal/unmarshal paths.
+
+The authoritative function/cell manifest is
+[src/cmd/internal/isolatepolicy/metadata.go](../../src/cmd/internal/isolatepolicy/metadata.go).
+Private service receivers and custom descriptors are rejected. Registry mutation,
+visitors, legacy descriptors, lazy option decoders and unreviewed callbacks remain
+unsupported in instances; host implementations retain their normal behavior.
+
+## Scope and remaining productization
+
+This is the memory contract for reviewed code using supported Go operations.
+It does not claim containment of hostile assembly, cgo, arbitrary unsafe pointer
+fabrication or external native memory. Complete effect/unsafe enforcement is
+feature 4. Custom converter support is feature 8. Ordinary child-failure semantics,
+resource limits, replay-aware logging and bounded CPU-loop termination retain
+their separate productization gates. Suspended instances are still traced by the
+shared collector; whole-heap eviction and frozen-heap GC are feature 3.
+
+## Acceptance gates
+
+1. Full toolchain bootstrap and `src/all.bash`.
+2. Six compiler integration scripts, including default enforcement, host plus
+   two-instance state, namespace impersonation, reflection, pointer publication,
+   atomics, immutable metadata and metadata source rejection.
+3. Runtime/library/compiler suites and five ownership/dispatcher/metadata
+   repetitions under both race detection and static lock ranking.
+4. Three batches of 1,024 cached instances, with 64 KiB live state each, weak
+   instance/cache/error references and reclamation checks. Five race runs evict
+   15,360 cached instances. Go's reusable free pages are not counted as live leaks.
+5. SDK and tracked sample suites; default and strict dependency drivers at
+   `GOMAXPROCS=1/2/8`, `GOGC=1`, and a race driver. Unmarked workflows keep the
+   ordinary Temporal SDK path.
+6. Six fresh-process saved-history replays with different processor counts,
+   CPU features and host time zones. Preserve 195 observations and SHA-256
+   `12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
+7. Commit/push the implementation and pass all native Linux/macOS arm64/amd64
+   CI jobs before closing feature 2.
+
+Final results will be recorded here after these gates finish. Earlier partial
+checkpoints and debugging evidence are retained in
+[Memory ownership implementation history](./MEMORY_OWNERSHIP_HISTORY.md).

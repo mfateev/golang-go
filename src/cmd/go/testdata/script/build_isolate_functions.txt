@@ -104,11 +104,18 @@ func run(name, suffix string) {
     instance, err := isolate.New(isolate.Config{Program: program})
     if err != nil { panic(err) }
     if err := instance.Start(); err != nil { panic(err) }
-    command := <-instance.Commands()
+    var command *isolate.Command
+    select {
+    case command = <-instance.Commands():
+    case <-instance.Done(): panic(instance.Wait())
+    }
     input, err := json.Marshal([]any{jobs.Request{Name: name}, suffix, time.Second})
     if err != nil { panic(err) }
     command.Reply(input, nil)
-    command = <-instance.Commands()
+    select {
+    case command = <-instance.Commands():
+    case <-instance.Done(): panic(instance.Wait())
+    }
     var result jobs.Response
     if err := json.Unmarshal(command.Payload, &result); err != nil { panic(err) }
     fmt.Printf("marked %s:%d\n", result.Message, result.Counter)

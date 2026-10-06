@@ -165,3 +165,44 @@ func IsolateHeapNewSliceCopyForTest(src any, length int, publish bool) {
 	source := (*slice)(s.data)
 	isolateCheckHeapSliceCopy((*slicetype)(unsafe.Pointer(s._type)).Elem, nil, length, source.array, source.len, publish)
 }
+
+func IsolateCurrentGForTest() unsafe.Pointer { return unsafe.Pointer(getg()) }
+func IsolateStackAccessForTest(other unsafe.Pointer, crossEnd bool) {
+	gp := getg()
+	if other != nil {
+		gp = (*g)(other)
+	}
+	addr, size := gp.stack.hi-1, uintptr(1)
+	if crossEnd {
+		size = 2
+	}
+	isolateCheckHeapAccess(unsafe.Pointer(addr), size, false)
+}
+func IsolateStackPublicationForTest(dst unsafe.Pointer) {
+	isolateCheckHeapReference(dst, unsafe.Pointer(getg().stack.hi-1))
+}
+
+func IsolateBoundaryBytesForTest(src []byte) []byte  { return isolateCopyBoundaryBytes(src) }
+func IsolateBoundaryStringForTest(src string) string { return isolateCopyBoundaryString(src) }
+func IsolateItabTableForTest() (uintptr, uintptr) {
+	lock(&itabLock)
+	defer unlock(&itabLock)
+	size := itabTable.size
+	owner, _ := isolateAllocOrigin(unsafe.Pointer(itabTable))
+	return size, owner
+}
+
+func IsolateInterfaceCacheOwnersForTest() (uintptr, uintptr) {
+	var value any = new(any)
+	typ := efaceOf(&value)._type
+	assertion := buildTypeAssertCache(&emptyTypeAssertCache, typ, nil)
+	switching := buildInterfaceSwitchCache(&emptyInterfaceSwitchCache, typ, 0, nil)
+	a, _ := isolateAllocOrigin(unsafe.Pointer(assertion))
+	b, _ := isolateAllocOrigin(unsafe.Pointer(switching))
+	return a, b
+}
+
+func IsolateItabBoundsForTest(value interface{ Marker() }) (unsafe.Pointer, uintptr) {
+	iface := *(*iface)(unsafe.Pointer(&value))
+	return unsafe.Pointer(iface.tab), unsafe.Sizeof(itab{})
+}

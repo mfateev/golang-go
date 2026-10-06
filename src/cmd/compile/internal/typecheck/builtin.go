@@ -263,21 +263,24 @@ var runtimeDecls = [...]struct {
 	{"isolateCheckMetadataReceiver", funcTag, 166},
 	{"isolateCheckMetadataDescriptor", funcTag, 32},
 	{"isolateCheckMetadataCall", funcTag, 33},
+	{"isolateCheckMetadataClosure", funcTag, 76},
 	{"isolateCheckHeapAccess", funcTag, 167},
-	{"isolateCheckHeapSelect", funcTag, 168},
-	{"isolateCheckHeapStrings", funcTag, 169},
+	{"isolateCheckHeapGlobalRead", funcTag, 168},
+	{"isolateCheckHeapAtomicCall", funcTag, 169},
+	{"isolateCheckHeapSelect", funcTag, 170},
+	{"isolateCheckHeapStrings", funcTag, 171},
 	{"isolatePublishMessageInfos", funcTag, 32},
-	{"isolateCheckHeapMap", funcTag, 170},
-	{"isolateCheckHeapMapKey", funcTag, 171},
-	{"isolateCheckHeapReference", funcTag, 172},
+	{"isolateCheckHeapMap", funcTag, 172},
+	{"isolateCheckHeapMapKey", funcTag, 173},
+	{"isolateCheckHeapReference", funcTag, 174},
 	{"isolateCheckHeapMove", funcTag, 75},
-	{"isolateCheckHeapCopy", funcTag, 173},
-	{"isolateCheckHeapSliceCopy", funcTag, 174},
-	{"isolateCheckHeapInterfaceEqual", funcTag, 171},
+	{"isolateCheckHeapCopy", funcTag, 175},
+	{"isolateCheckHeapSliceCopy", funcTag, 176},
+	{"isolateCheckHeapInterfaceEqual", funcTag, 173},
 }
 
 func runtimeTypes() []*types.Type {
-	var typs [175]*types.Type
+	var typs [177]*types.Type
 	typs[0] = types.ByteType
 	typs[1] = types.NewPtr(typs[0])
 	typs[2] = types.Types[types.TANY]
@@ -446,13 +449,15 @@ func runtimeTypes() []*types.Type {
 	typs[165] = newSig(params(typs[7], typs[67], typs[164], typs[30], typs[13], typs[71], typs[71]), params(typs[67]))
 	typs[166] = newSig(params(typs[7]), nil)
 	typs[167] = newSig(params(typs[1], typs[5], typs[6]), nil)
-	typs[168] = newSig(params(typs[1], typs[13]), nil)
-	typs[169] = newSig(params(typs[40]), nil)
-	typs[170] = newSig(params(typs[1], typs[6]), nil)
-	typs[171] = newSig(params(typs[1], typs[1], typs[1], typs[6]), nil)
-	typs[172] = newSig(params(typs[1], typs[1]), nil)
-	typs[173] = newSig(params(typs[1], typs[13], typs[1], typs[13], typs[5]), nil)
-	typs[174] = newSig(params(typs[1], typs[1], typs[13], typs[1], typs[13], typs[6]), nil)
+	typs[168] = newSig(params(typs[1], typs[5], typs[1], typs[5]), nil)
+	typs[169] = newSig(params(typs[5], typs[1], typs[1], typs[1]), nil)
+	typs[170] = newSig(params(typs[1], typs[13]), nil)
+	typs[171] = newSig(params(typs[40]), nil)
+	typs[172] = newSig(params(typs[1], typs[6]), nil)
+	typs[173] = newSig(params(typs[1], typs[1], typs[1], typs[6]), nil)
+	typs[174] = newSig(params(typs[1], typs[1]), nil)
+	typs[175] = newSig(params(typs[1], typs[13], typs[1], typs[13], typs[5]), nil)
+	typs[176] = newSig(params(typs[1], typs[1], typs[13], typs[1], typs[13], typs[6]), nil)
 	return typs[:]
 }
 

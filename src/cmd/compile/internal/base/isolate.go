@@ -15,6 +15,11 @@ var isolateEntrySkip map[string]bool
 // package's layout and initializer modes also apply to exported declarations.
 func InitIsolatePackageSelection() {
 	if Debug.IsolatePackages != "" {
+		// Every compiled dependency receives the same state manifest. Checks
+		// are compulsory even for packages whose mutable state is denied to
+		// private code; package exclusion grants no memory access privilege.
+		Debug.IsolateHeap = 2
+		Debug.IsolateMetadata = 1
 		isolateSelectedPackages = make(map[string]bool)
 		for _, path := range strings.Split(Debug.IsolatePackages, ":") {
 			if path == "" {
@@ -26,6 +31,9 @@ func InitIsolatePackageSelection() {
 			Debug.IsolateGlobals = 1
 			Debug.IsolateInit = 1
 		}
+	}
+	if Flag.Std && isolateRuntimeImplementation(Ctxt.Pkgpath) {
+		Debug.IsolateHeap = 0
 	}
 	if Debug.IsolateImports != "" {
 		isolateSelectedImports = make(map[string]bool)
@@ -62,4 +70,22 @@ func IsolateImportSelected(path string) bool {
 // process initialization as well as per-instance initialization.
 func IsolateEntrySkip(path string) bool {
 	return isolateEntrySkip[path]
+}
+
+// These GOROOT implementations own the allocator, scheduler, compiler ABI,
+// sanitizer hooks and copied-byte transport. They enforce their own contracts
+// and cannot call application instrumentation while running without a P or on
+// an unmapped system stack. No external module inherits this exemption.
+func isolateRuntimeImplementation(path string) bool {
+	if path == "runtime" || strings.HasPrefix(path, "internal/runtime/") {
+		return true
+	}
+	switch path {
+	case "runtime/cgo", "runtime/race", "runtime/asan", "runtime/msan",
+		"internal/abi", "internal/goarch", "internal/goos", "internal/cpu", "internal/bytealg",
+		"internal/race", "internal/asan", "internal/msan", "internal/coverage/rtcov",
+		"internal/isolatebridge", "internal/isolateproto", "isolate":
+		return true
+	}
+	return false
 }

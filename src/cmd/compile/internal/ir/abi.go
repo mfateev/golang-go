@@ -6,7 +6,10 @@ package ir
 
 import (
 	"cmd/compile/internal/base"
+	"cmd/internal/isolatepolicy"
 	"cmd/internal/obj"
+	"internal/abi"
+	"strings"
 )
 
 // InitLSym defines f's obj.LSym and initializes it based on the
@@ -75,4 +78,29 @@ func setupTextLSym(f *Func, flag int) {
 	}
 
 	base.Ctxt.InitTextSym(f.LSym, flag, f.Pos())
+	// Record source provenance before names or linkname aliases reach the linker.
+	// Standard callbacks are trusted only when compiled from GOROOT. Module
+	// callbacks require the source-pinned metadata build selected by cmd/go.
+	pkg, name := f.Sym().Pkg.Path, f.Sym().Name
+	trusted := f.Pragma&IsolateMetadataTrusted != 0 || IsolateMetadataSourceTrusted(pkg, name)
+	// Pure equality/hash algorithms are compiler generated, including those
+	// for application types. They cannot call application-defined operations.
+	if pkg == "type" && (strings.HasPrefix(name, ".eq.") || strings.HasPrefix(name, ".hash.")) {
+		trusted = true
+	}
+	if trusted {
+		f.LSym.Func().FuncFlag |= abi.FuncFlagIsolateMetadataTrusted
+	}
+
+}
+
+// IsolateMetadataSourceTrusted is evaluated when the source declaration is
+// compiled/exported. Generic instantiations may be emitted in application
+// packages; their serialized provenance, not the importing package or a source
+// filename/line directive, determines callback trust.
+func IsolateMetadataSourceTrusted(pkg, name string) bool {
+	if base.Flag.Std && (isolatepolicy.MetadataCallbackPackage(pkg) || isolatepolicy.MetadataLifecycleCallback(pkg, name)) {
+		return true
+	}
+	return base.Debug.IsolateMetadata != 0 && (strings.HasPrefix(pkg, isolatepolicy.ProtobufModule+"/") || strings.HasPrefix(pkg, isolatepolicy.TemporalAPIModule+"/"))
 }

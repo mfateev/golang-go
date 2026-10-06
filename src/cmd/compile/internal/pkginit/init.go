@@ -258,7 +258,9 @@ func checkIsolateGlobalWrites(fn *ir.Func) {
 	}
 	// Every closure has its own entry in Target.Funcs.
 	ir.VisitList(fn.Body, func(n ir.Node) {
-		if name, ok := n.(*ir.Name); ok && isolateProcessGlobal(name) {
+		// Standard libraries also serve the host. Compulsory runtime checks
+		// fence their process I/O globals only when executed privately.
+		if name, ok := n.(*ir.Name); ok && isolateProcessGlobal(name) && !(base.Flag.Std && base.Debug.IsolateHeap != 0) {
 			base.ErrorfAt(fn.Pos(), 0, "isolate: code references process-owned global %s.%s", name.Sym().Pkg.Path, name.Sym().Name)
 		}
 		switch n := n.(type) {

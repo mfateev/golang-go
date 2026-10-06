@@ -42,7 +42,7 @@ func ScopeIsolateMetadata() {
 				rcvr := receiver.Nname.(*ir.Name)
 				ptr := Expr(ir.NewConvExpr(fn.Pos(), ir.OCONV, types.Types[types.TUNSAFEPTR], rcvr))
 				guards.Append(Stmt(Call(fn.Pos(), LookupRuntime("isolateCheckMetadataReceiver"), []ir.Node{ptr}, false)))
-				if name == "(*MessageInfo).initOnce" || name == "(*MessageInfo).Descriptor" {
+				if name == "(*MessageInfo).init" || name == "(*MessageInfo).initOnce" || name == "(*MessageInfo).Descriptor" {
 					descriptor := Expr(ir.NewSelectorExpr(fn.Pos(), ir.ODOT, rcvr, types.LocalPkg.Lookup("Desc")))
 					descriptor = AssignConv(descriptor, types.Types[types.TINTER], "metadata descriptor")
 					// The receiver guard precedes service entry. Its shared Desc

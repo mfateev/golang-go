@@ -622,5 +622,6 @@ violations and `Wait` reports running main/child violations as
 `*isolate.OwnershipError`; use `errors.As` to inspect `Reason`. Suspend/Resume
 also preserve that cause. An audited metadata service releases its process
 locks before its goroutine is discarded. Call `Kill(ctx)` to await the remaining
-cleanup; a pending result does not lift the revocation. The compiler's general
-heap checks remain opt-in while the ownership audit is in progress.
+cleanup; a pending result does not lift the revocation. Marked-function and configured-program builds enable compulsory memory checks
+throughout the dependency graph. See [Memory ownership](./MEMORY_OWNERSHIP_PLAN.md)
+for the supported state and metadata-service manifest and remaining exclusions.

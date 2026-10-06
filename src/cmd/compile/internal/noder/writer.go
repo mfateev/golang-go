@@ -1152,6 +1152,9 @@ func (w *writer) funcExt(obj *types2.Func) {
 	// least.
 
 	pragma := asPragmaFlag(decl.Pragma)
+	if ir.IsolateMetadataSourceTrusted(base.Ctxt.Pkgpath, obj.Name()) {
+		pragma |= ir.IsolateMetadataTrusted
+	}
 	if pragma&ir.Systemstack != 0 && pragma&ir.Nosplit != 0 {
 		w.p.errorf(decl, "go:nosplit and go:systemstack cannot be combined")
 	}

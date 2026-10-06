@@ -335,7 +335,9 @@ func initIntrinsics(cfg *intrinsicBuildConfig) {
 		return func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			// Target Atomic feature is identified by dynamic detection
 			addr := s.entryNewValue1A(ssaop.OpAddr, types.Types[types.TBOOL].PtrTo(), ir.Syms.Loong64HasDBAR_HINTS, s.sb)
-			v := s.load(types.Types[types.TBOOL], addr)
+			// Compiler CPU dispatch reads immutable startup configuration,
+			// independently of the application allocation owner.
+			v := s.rawLoad(types.Types[types.TBOOL], addr)
 			b := s.endBlock()
 			b.Kind = block.BlockIf
 			b.SetControl(v)
@@ -408,7 +410,9 @@ func initIntrinsics(cfg *intrinsicBuildConfig) {
 			} else {
 				// Target Atomic feature is identified by dynamic detection
 				addr := s.entryNewValue1A(ssaop.OpAddr, types.Types[types.TBOOL].PtrTo(), ir.Syms.ARM64HasATOMICS, s.sb)
-				v := s.load(types.Types[types.TBOOL], addr)
+				// Compiler CPU dispatch reads immutable startup configuration,
+				// independently of the application allocation owner.
+				v := s.rawLoad(types.Types[types.TBOOL], addr)
 				b := s.endBlock()
 				b.Kind = block.BlockIf
 				b.SetControl(v)
@@ -466,7 +470,9 @@ func initIntrinsics(cfg *intrinsicBuildConfig) {
 	makeAtomicXchg8GuardedIntrinsicLoong64 := func(op ssaop.Op) func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 		return func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			addr := s.entryNewValue1A(ssaop.OpAddr, types.Types[types.TBOOL].PtrTo(), ir.Syms.Loong64HasLAM_BH, s.sb)
-			v := s.load(types.Types[types.TBOOL], addr)
+			// Compiler CPU dispatch reads immutable startup configuration,
+			// independently of the application allocation owner.
+			v := s.rawLoad(types.Types[types.TBOOL], addr)
 			b := s.endBlock()
 			b.Kind = block.BlockIf
 			b.SetControl(v)
@@ -569,7 +575,9 @@ func initIntrinsics(cfg *intrinsicBuildConfig) {
 		return func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			// Target Atomic feature is identified by dynamic detection
 			addr := s.entryNewValue1A(ssaop.OpAddr, types.Types[types.TBOOL].PtrTo(), ir.Syms.Loong64HasLAMCAS, s.sb)
-			v := s.load(types.Types[types.TBOOL], addr)
+			// Compiler CPU dispatch reads immutable startup configuration,
+			// independently of the application allocation owner.
+			v := s.rawLoad(types.Types[types.TBOOL], addr)
 			b := s.endBlock()
 			b.Kind = block.BlockIf
 			b.SetControl(v)
@@ -819,7 +827,9 @@ func initIntrinsics(cfg *intrinsicBuildConfig) {
 	addF("math", "FMA",
 		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			addr := s.entryNewValue1A(ssaop.OpAddr, types.Types[types.TBOOL].PtrTo(), ir.Syms.ARMHasVFPv4, s.sb)
-			v := s.load(types.Types[types.TBOOL], addr)
+			// Compiler CPU dispatch reads immutable startup configuration,
+			// independently of the application allocation owner.
+			v := s.rawLoad(types.Types[types.TBOOL], addr)
 			b := s.endBlock()
 			b.Kind = block.BlockIf
 			b.SetControl(v)
@@ -894,7 +904,9 @@ func initIntrinsics(cfg *intrinsicBuildConfig) {
 	makeRoundLoong64 := func(op ssaop.Op) func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 		return func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			addr := s.entryNewValue1A(ssaop.OpAddr, types.Types[types.TBOOL].PtrTo(), ir.Syms.Loong64HasLSX, s.sb)
-			v := s.load(types.Types[types.TBOOL], addr)
+			// Compiler CPU dispatch reads immutable startup configuration,
+			// independently of the application allocation owner.
+			v := s.rawLoad(types.Types[types.TBOOL], addr)
 			b := s.endBlock()
 			b.Kind = block.BlockIf
 			b.SetControl(v)
@@ -1141,7 +1153,9 @@ func initIntrinsics(cfg *intrinsicBuildConfig) {
 	makeOnesCountLoong64 := func(op ssaop.Op) func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 		return func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			addr := s.entryNewValue1A(ssaop.OpAddr, types.Types[types.TBOOL].PtrTo(), ir.Syms.Loong64HasLSX, s.sb)
-			v := s.load(types.Types[types.TBOOL], addr)
+			// Compiler CPU dispatch reads immutable startup configuration,
+			// independently of the application allocation owner.
+			v := s.rawLoad(types.Types[types.TBOOL], addr)
 			b := s.endBlock()
 			b.Kind = block.BlockIf
 			b.SetControl(v)
@@ -1175,7 +1189,9 @@ func initIntrinsics(cfg *intrinsicBuildConfig) {
 			}
 
 			addr := s.entryNewValue1A(ssaop.OpAddr, types.Types[types.TBOOL].PtrTo(), ir.Syms.RISCV64HasZbb, s.sb)
-			v := s.load(types.Types[types.TBOOL], addr)
+			// Compiler CPU dispatch reads immutable startup configuration,
+			// independently of the application allocation owner.
+			v := s.rawLoad(types.Types[types.TBOOL], addr)
 			b := s.endBlock()
 			b.Kind = block.BlockIf
 			b.SetControl(v)

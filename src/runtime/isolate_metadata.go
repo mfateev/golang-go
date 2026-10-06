@@ -7,7 +7,6 @@ package runtime
 import (
 	"internal/abi"
 	"internal/runtime/atomic"
-	"internal/stringslite"
 	"unsafe"
 )
 
@@ -114,24 +113,31 @@ func isolateCheckMetadataDescriptor(value any) {
 // Service scopes must not propagate to user callbacks hidden behind interfaces
 // or function values. The compiler inserts this at dynamic call sites in an
 // isolate build; the ordinary host and application paths return immediately.
+//
+//go:linkname isolateCheckMetadataCall
 func isolateCheckMetadataCall(pc uintptr) {
 	gp := getg()
 	if gp.isolateGroup == nil || gp.isolateMetadataDepth == 0 {
 		return
 	}
-	name := funcname(findfunc(pc))
-	for _, prefix := range [...]string{
-		"runtime.", "internal/", "reflect.", "sync.", "sync/atomic.",
-		"bytes.", "strings.", "strconv.", "fmt.", "errors.", "sort.",
-		"cmp.", "slices.", "maps.", "iter.", "encoding/", "unicode/", "unicode.",
-		"type:.eq.", "type:.hash.",
-		"google.golang.org/protobuf/", "go.temporal.io/api/",
-	} {
-		if stringslite.HasPrefix(name, prefix) {
-			return
-		}
+	fn := findfunc(pc)
+	if fn.valid() && fn.flag&abi.FuncFlagIsolateMetadataTrusted != 0 {
+		return
 	}
+	name := funcname(fn)
 	panic("isolate: unaudited metadata callback " + name)
+}
+
+// Defer registration must preserve Go's nil-function behavior: a nil function
+// panics when invoked, not when registered. Avoid loading its code pointer (or
+// touching a closure at all on the ordinary host path) before saving the defer.
+func isolateCheckMetadataClosure(fn unsafe.Pointer) {
+	gp := getg()
+	if gp.isolateGroup == nil || gp.isolateMetadataDepth == 0 || fn == nil {
+		return
+	}
+	isolateCheckHeapAccess(fn, unsafe.Sizeof(uintptr(0)), false)
+	isolateCheckMetadataCall(*(*uintptr)(fn))
 }
 
 // A string panic created under the service owner must not publish either its

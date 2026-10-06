@@ -8,13 +8,11 @@
 package isolatebridge
 
 import (
-	"bytes"
 	"errors"
+	"internal/runtime/atomic"
 	"runtime"
 	"strconv"
-	"strings"
 	"sync"
-	"sync/atomic"
 	"unsafe"
 )
 
@@ -46,7 +44,7 @@ type Command struct {
 	Payload []byte
 
 	reply   chan response
-	replied atomic.Bool
+	replied atomic.Uint32
 }
 
 type response struct {
@@ -173,6 +171,8 @@ func (b *Boundary) SetExitHandler(fn func(int)) {
 }
 
 func (b *Boundary) exit(code int) {
+	owner := EnterProcess()
+	defer LeaveProcess(owner)
 	b.Stop()
 	if b.onExit != nil {
 		b.onExit(code)
@@ -263,6 +263,8 @@ func (b *Boundary) RevokeUnstarted() { revokeUnstarted(b.group) }
 // BeginStop publishes the revocation fence and wakes Call without waiting for
 // the runtime's scan of other wait queues. It is safe to call more than once.
 func (b *Boundary) BeginStop() {
+	owner := EnterProcess()
+	defer LeaveProcess(owner)
 	b.stop.Do(func() {
 		b.stopped.Store(true)
 		// Fence new isolate execution before Call resumes. Call's halt
@@ -276,6 +278,8 @@ func (b *Boundary) BeginStop() {
 // it on a separate process goroutine so that Kill can observe its deadline
 // even if the scan waits for a runtime lock.
 func (b *Boundary) WakeStoppedWaiters() {
+	owner := EnterProcess()
+	defer LeaveProcess(owner)
 	b.BeginStop()
 	b.wake.Do(func() {
 		wakeRevoked(b.group)
@@ -300,13 +304,13 @@ func (b *Boundary) Commands() <-chan *Command {
 // Reply answers a command once. The response bytes and error text are copied
 // before the waiting isolate goroutine receives them.
 func (c *Command) Reply(payload []byte, err error) {
-	if !c.replied.CompareAndSwap(false, true) {
+	if !c.replied.CompareAndSwap(0, 1) {
 		panic("isolate: command already replied")
 	}
-	r := response{payload: bytes.Clone(payload)}
+	r := response{payload: copyBoundaryBytes(payload)}
 	if err != nil {
 		r.hasErr = true
-		r.errText = strings.Clone(err.Error())
+		r.errText = copyBoundaryString(err.Error())
 	}
 	c.reply <- r
 }
@@ -343,9 +347,9 @@ func (b *Boundary) Call(op uint32, payload []byte) ([]byte, error) {
 	}
 	b.stopIfRevoked()
 	if r.hasErr {
-		return bytes.Clone(r.payload), errors.New(strings.Clone(r.errText))
+		return copyBoundaryBytes(r.payload), errors.New(copyBoundaryString(r.errText))
 	}
-	return bytes.Clone(r.payload), nil
+	return copyBoundaryBytes(r.payload), nil
 }
 
 func (b *Boundary) stopIfRevoked() {
@@ -387,7 +391,7 @@ func newHostCommand(id uint64, op uint32, payload []byte) *Command {
 	c := &Command{
 		ID:      id,
 		Op:      op,
-		Payload: bytes.Clone(payload),
+		Payload: copyBoundaryBytes(payload),
 		reply:   make(chan response, 1),
 	}
 	return c
@@ -425,3 +429,24 @@ func groupRunnable(unsafe.Pointer) int32
 
 //go:linkname revokeUnstarted runtime.isolateRevokeUnstarted
 func revokeUnstarted(unsafe.Pointer)
+
+// These trusted copies enforce the byte boundary without granting library-wide
+// permission to read process objects. Out-of-line bytes.Clone is instrumented
+// in ordinary libraries and must keep rejecting foreign storage there.
+//
+//go:linkname copyBoundaryBytes runtime.isolateCopyBoundaryBytes
+func copyBoundaryBytes([]byte) []byte
+
+//go:linkname copyBoundaryString runtime.isolateCopyBoundaryString
+func copyBoundaryString(string) string
+
+// EnterProcess and LeaveProcess bracket trusted lifecycle bookkeeping. They
+// carry no application callback and protect process locks from revocation.
+func EnterProcess() uintptr      { return enterProcess() }
+func LeaveProcess(owner uintptr) { leaveProcess(owner) }
+
+//go:linkname enterProcess runtime.isolateEnterMetadata
+func enterProcess() uintptr
+
+//go:linkname leaveProcess runtime.isolateLeaveMetadata
+func leaveProcess(uintptr)

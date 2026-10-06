@@ -1183,8 +1183,8 @@ func TestKillPreventsLateMainEntry(t *testing.T) {
 		t.Fatalf("Kill before main entry = %v, want pending", err)
 	}
 	releaseRunner.Store(true)
-	if err := i.Wait(); err != nil {
-		t.Fatal(err)
+	if err := i.Wait(); err != errMainRevoked {
+		t.Fatalf("Wait after preventing entry = %v, want %v", err, errMainRevoked)
 	}
 	if mainRan.Load() {
 		t.Fatal("main entered after revocation")

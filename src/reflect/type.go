@@ -2600,8 +2600,11 @@ func StructOf(fields []StructField) (result Type) {
 
 	typ.Equal = nil
 	if comparable {
+		// Capture the canonical type directly, rather than a mutable local
+		// pointer cell. The runtime publishes this immutable algorithm layout.
+		equalType := typ
 		typ.Equal = func(p, q unsafe.Pointer) bool {
-			for _, ft := range typ.Fields {
+			for _, ft := range equalType.Fields {
 				pi := add(p, ft.Offset, "&x.field safe")
 				qi := add(q, ft.Offset, "&x.field safe")
 				if !ft.Typ.Equal(pi, qi) {

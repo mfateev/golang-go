@@ -283,6 +283,10 @@ var reflectOffs struct {
 	// canonical protobuf MessageInfo elements. Their reachable graphs are not
 	// approved implicitly.
 	isolateTypes map[unsafe.Pointer]uintptr
+	// Exact constructor-created side objects, including tiny-packed names.
+	isolateTypeParts map[unsafe.Pointer][]isolateTypePart
+	// Dynamic interface tables use persistent non-Go storage. Keys and
+	// bounds are integers and cannot retain receiver values or instances.
 	// Canonical protobuf MessageInfo arrays from the default process registry.
 	// Exact element roots are in isolateTypes; only their immutable exported
 	// prefixes may be read outside a metadata service.

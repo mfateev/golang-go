@@ -636,6 +636,18 @@ const (
 
 //go:linkname reflect_rselect reflect.rselect
 func reflect_rselect(cases []runtimeSelect) (int, bool) {
+	for _, cas := range cases {
+		if cas.dir == selectDefault {
+			continue
+		}
+		isolateCheckHeapAccess(unsafe.Pointer(cas.ch), 1, true)
+		if cas.ch != nil {
+			isolateCheckHeapAccess(cas.val, uintptr(cas.ch.elemsize), cas.dir == selectRecv)
+			if cas.dir == selectSend {
+				isolateCheckHeapMove(cas.ch.elemtype, unsafe.Pointer(cas.ch), cas.val)
+			}
+		}
+	}
 	if len(cases) == 0 {
 		block()
 	}

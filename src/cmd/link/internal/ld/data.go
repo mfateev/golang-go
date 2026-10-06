@@ -2152,6 +2152,8 @@ func (state *dodataState) allocateDataSections(ctxt *Link) {
 	sect = state.allocateNamedDataSection(segro, ".rodata", sym.ReadOnly, 04)
 	ldr.SetSymSect(ldr.LookupOrCreateSym("runtime.rodata", 0), sect)
 	ldr.SetSymSect(ldr.LookupOrCreateSym("runtime.erodata", 0), sect)
+	ldr.SetSymSect(ldr.LookupOrCreateSym("runtime.relrodata", 0), sect)
+	ldr.SetSymSect(ldr.LookupOrCreateSym("runtime.erelrodata", 0), sect)
 	for _, symn := range sym.ReadOnly {
 		symnStartValue := state.datsize
 		if len(state.data[symn]) != 0 {
@@ -2277,7 +2279,9 @@ func (state *dodataState) allocateDataSections(ctxt *Link) {
 	}
 
 	if len(state.data[sym.SRODATARELRO]) > 0 {
-		createRelroSect("", sym.SRODATARELRO)
+		relro := createRelroSect("", sym.SRODATARELRO)
+		ldr.SetSymSect(ldr.LookupOrCreateSym("runtime.relrodata", 0), relro)
+		ldr.SetSymSect(ldr.LookupOrCreateSym("runtime.erelrodata", 0), relro)
 	}
 
 	sect = createRelroSect(".go.type", sym.STYPE)
@@ -2285,6 +2289,8 @@ func (state *dodataState) allocateDataSections(ctxt *Link) {
 	ldr.SetSymSect(ldr.LookupOrCreateSym("runtime.etypes", 0), sect)
 
 	sect = createRelroSect(".go.func", sym.SGOFUNC)
+	ldr.SetSymSect(ldr.LookupOrCreateSym("runtime.funcdesc", 0), sect)
+	ldr.SetSymSect(ldr.LookupOrCreateSym("runtime.efuncdesc", 0), sect)
 
 	state.allocateSingleSymSections(segRelro, sym.SELFRELROSECT, sym.SRODATA, relroPerm)
 	state.allocateSingleSymSections(segRelro, sym.SMACHORELROSECT, sym.SRODATA, relroPerm)
@@ -3240,6 +3246,13 @@ func (ctxt *Link) address() []*sym.Segment {
 
 	ctxt.xdefine("runtime.rodata", sym.SRODATA, int64(rodata.Vaddr))
 	ctxt.xdefine("runtime.erodata", sym.SRODATA, int64(rodata.Vaddr+rodata.Length))
+	funcdesc := ldr.SymSect(ldr.LookupOrCreateSym("runtime.funcdesc", 0))
+	ctxt.xdefine("runtime.funcdesc", sym.SRODATA, int64(funcdesc.Vaddr))
+	ctxt.xdefine("runtime.efuncdesc", sym.SRODATA, int64(funcdesc.Vaddr+funcdesc.Length))
+	if relro := ldr.SymSect(ldr.LookupOrCreateSym("runtime.relrodata", 0)); relro != nil {
+		ctxt.xdefine("runtime.relrodata", sym.SRODATA, int64(relro.Vaddr))
+		ctxt.xdefine("runtime.erelrodata", sym.SRODATA, int64(relro.Vaddr+relro.Length))
+	}
 	ctxt.xdefine("runtime.types", sym.SRODATA, int64(types.Vaddr))
 	ctxt.xdefine("runtime.etypes", sym.SRODATA, int64(types.Vaddr+types.Length))
 

@@ -344,6 +344,7 @@ func (g *groupsReference) group(typ *abi.MapType, i uint64) groupReference {
 }
 
 func cloneGroup(typ *abi.MapType, newGroup, oldGroup groupReference) {
+	isolateCheckCloneGroup(typ, newGroup.data, oldGroup.data)
 	typedmemmove(typ.Group, newGroup.data, oldGroup.data)
 	if typ.IndirectKey() {
 		// Deep copy keys if indirect.

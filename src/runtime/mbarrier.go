@@ -211,6 +211,7 @@ func wbMove(typ *_type, dst, src unsafe.Pointer) {
 //
 //go:linkname reflect_typedmemmove reflect.typedmemmove
 func reflect_typedmemmove(typ *_type, dst, src unsafe.Pointer) {
+	isolateCheckHeapSliceCopy(typ, dst, 1, src, 1, true)
 	if raceenabled {
 		raceWriteObjectPC(typ, dst, sys.GetCallerPC(), abi.FuncPCABIInternal(reflect_typedmemmove))
 		raceReadObjectPC(typ, src, sys.GetCallerPC(), abi.FuncPCABIInternal(reflect_typedmemmove))
@@ -341,6 +342,7 @@ func typedslicecopy(typ *_type, dstPtr unsafe.Pointer, dstLen int, srcPtr unsafe
 //
 //go:linkname reflect_typedslicecopy reflect.typedslicecopy
 func reflect_typedslicecopy(elemType *_type, dst, src slice) int {
+	isolateCheckHeapSliceCopy(elemType, dst.array, dst.len, src.array, src.len, true)
 	if !elemType.Pointers() {
 		return slicecopy(dst.array, dst.len, src.array, src.len, elemType.Size_)
 	}
@@ -378,6 +380,7 @@ func typedmemclr(typ *_type, ptr unsafe.Pointer) {
 //
 //go:linkname reflect_typedmemclr reflect.typedmemclr
 func reflect_typedmemclr(typ *_type, ptr unsafe.Pointer) {
+	isolateCheckHeapAccess(ptr, typ.Size_, true)
 	typedmemclr(typ, ptr)
 }
 
@@ -388,6 +391,7 @@ func maps_typedmemclr(typ *_type, ptr unsafe.Pointer) {
 
 //go:linkname reflect_typedmemclrpartial reflect.typedmemclrpartial
 func reflect_typedmemclrpartial(typ *_type, ptr unsafe.Pointer, off, size uintptr) {
+	isolateCheckHeapAccess(ptr, size, true)
 	if writeBarrier.enabled && typ.Pointers() {
 		// Pass nil for the type. ptr does not point to value of type typ,
 		// but rather points into one so it's not safe to apply the optimization.
@@ -400,6 +404,7 @@ func reflect_typedmemclrpartial(typ *_type, ptr unsafe.Pointer, off, size uintpt
 
 //go:linkname reflect_typedarrayclear reflect.typedarrayclear
 func reflect_typedarrayclear(typ *_type, ptr unsafe.Pointer, len int) {
+	isolateCheckHeapCopy(ptr, len, ptr, len, typ.Size_)
 	size := typ.Size_ * uintptr(len)
 	if writeBarrier.enabled && typ.Pointers() {
 		// This always clears whole elements of an array, so it's

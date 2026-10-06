@@ -35,6 +35,7 @@ import (
 	"cmd/compile/internal/staticdata"
 	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
+	"cmd/internal/isolatepolicy"
 	"cmd/internal/obj"
 	"cmd/internal/objabi"
 	"cmd/internal/src"
@@ -1517,8 +1518,26 @@ func (s *state) instrumentMove(t *types.Type, dst, src *ssa.Value) {
 }
 
 func (s *state) instrument2(t *types.Type, addr, addr2 *ssa.Value, kind instrumentKind) {
-	if base.Debug.IsolateHeap != 0 && !base.Flag.CompilingRuntime && t.Size() != 0 {
+	if s.isolateHeapEnabled() && t.Size() != 0 {
 		check := func(p *ssa.Value, write bool) {
+			if !write && base.Debug.IsolateMetadata != 0 {
+				root := p
+				for root.Op == ssaop.OpOffPtr || root.Op == ssaop.OpCopy || root.Op == ssaop.OpAddPtr || root.Op == ssaop.OpPtrIndex {
+					root = root.Args[0]
+				}
+				if root.Op == ssaop.OpAddr {
+					if sym, ok := root.Aux.(*obj.LSym); ok && isolatepolicy.MetadataGlobal(sym.Name) {
+						// Approve only the complete declared cell/table range, including
+						// dynamic indexes. This grants no arbitrary adjacent global read.
+						previous := s.prevCall
+						s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapGlobalRead"), true, nil,
+							p, s.constInt(types.Types[types.TUINTPTR], t.Size()), root,
+							s.constInt(types.Types[types.TUINTPTR], root.Type.Elem().Size()))
+						s.prevCall = previous
+						return
+					}
+				}
+			}
 			if ssa.IsStackAddr(p) {
 				return
 			}
@@ -1639,7 +1658,7 @@ func (s *state) move(t *types.Type, dst, src *ssa.Value) {
 	s.moveWhichMayOverlap(t, dst, src, false)
 }
 func (s *state) moveWhichMayOverlap(t *types.Type, dst, src *ssa.Value, mayOverlap bool) {
-	if base.Debug.IsolateHeap != 0 && !base.Flag.CompilingRuntime {
+	if s.isolateHeapEnabled() {
 		origin := src
 		for origin.Op == ssaop.OpOffPtr || origin.Op == ssaop.OpCopy {
 			origin = origin.Args[0]
@@ -1656,7 +1675,7 @@ func (s *state) moveWhichMayOverlap(t *types.Type, dst, src *ssa.Value, mayOverl
 		}
 	}
 	s.instrumentMove(t, dst, src)
-	if base.Debug.IsolateHeap > 1 && !base.Flag.CompilingRuntime && t.HasPointers() {
+	if s.isolateHeapEnabled() && base.Debug.IsolateHeap > 1 && t.HasPointers() {
 		previous := s.prevCall
 		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapMove"), true, nil, s.reflectType(t), dst, src)
 		s.prevCall = previous
@@ -4881,6 +4900,15 @@ func (s *state) openDeferRecord(n *ir.CallExpr) {
 	// runtime panic code to use. But in the defer exit code, we will
 	// call the function directly if it is a static function.
 	closureVal := s.expr(fn)
+	// Validate before recording the callback for the runtime panic path, which
+	// invokes saved defers without executing the compiler's normal exit code.
+	if s.isolateHeapEnabled() {
+		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapAccess"), true, nil,
+			closureVal, s.constInt(types.Types[types.TUINTPTR], s.config.PtrSize), s.constBool(false))
+	}
+	if base.Debug.IsolateMetadata != 0 && !base.Flag.CompilingRuntime {
+		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckMetadataClosure"), true, nil, closureVal)
+	}
 	closure := s.openDeferSave(fn.Type(), closureVal)
 	opendefer.closureNode = closure.Aux.(*ir.Name)
 	if !(fn.Op() == ir.ONAME && fn.(*ir.Name).Class == ir.PFUNC) {
@@ -4997,7 +5025,14 @@ func (s *state) openDeferExit() {
 		if r.closure != nil {
 			v := s.load(r.closure.Type.Elem(), r.closure)
 			s.maybeNilCheckClosure(v, callDefer)
+			if s.isolateHeapEnabled() {
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapAccess"), true, nil,
+					v, s.constInt(types.Types[types.TUINTPTR], s.config.PtrSize), s.constBool(false))
+			}
 			codeptr := s.rawLoad(types.Types[types.TUINTPTR], v)
+			if base.Debug.IsolateMetadata != 0 && !base.Flag.CompilingRuntime {
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckMetadataCall"), true, nil, codeptr)
+			}
 			aux := ssa.ClosureAuxCall(s.f.ABIDefault.ABIAnalyzeTypes(nil, nil))
 			call = s.newValue2A(ssaop.OpClosureLECall, aux.LateExpansionResultType(), aux, codeptr, v)
 		} else {
@@ -5183,7 +5218,7 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 			s.isolateCheckAtomic(n.Fun.Sym(), callArgs)
 			s.isolateCheckStringCall(n.Fun.Sym(), callArgs)
 		}
-		if base.Debug.IsolateHeap != 0 && !base.Flag.CompilingRuntime &&
+		if s.isolateHeapEnabled() &&
 			(k == callNormal || k == callTail) && n.Fun.Op() == ir.ONAME && n.Fun.Sym().Pkg == ir.Pkgs.Runtime {
 			name := n.Fun.Sym().Name
 			check := func(arg int, write bool) {
@@ -5285,11 +5320,18 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 			s.rtcall(ir.Syms.Racefuncexit, true, nil)
 		}
 
+		// A closure's code pointer is a memory read too. Validate its object
+		// before normal calls and before handing it to newproc/deferproc.
+		if s.isolateHeapEnabled() && closure != nil {
+			s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapAccess"), true, nil,
+				closure, s.constInt(types.Types[types.TUINTPTR], s.config.PtrSize), s.constBool(false))
+		}
+
 		// An audited operation may invoke an interface method or closure from a
 		// supplied descriptor. Validate its target before granting caller code
 		// the service's process owner and revocation mask. Runtime internals have
 		// their own callback contracts and cannot grow stacks at these sites.
-		if base.Debug.IsolateMetadata != 0 && !base.Flag.CompilingRuntime && (k == callNormal || k == callTail) {
+		if base.Debug.IsolateMetadata != 0 && !base.Flag.CompilingRuntime && (k == callNormal || k == callTail || k == callDefer) {
 			if closure != nil {
 				codeptr = s.rawLoad(types.Types[types.TUINTPTR], closure)
 			}
@@ -5297,6 +5339,23 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckMetadataCall"), true, nil, codeptr)
 			}
 		}
+		if s.isolateHeapEnabled() && (k == callNormal || k == callTail) &&
+			(closure != nil || codeptr != nil) && len(callArgs) != 0 &&
+			(callArgs[0].Type.IsPtr() || callArgs[0].Type.IsUnsafePtr()) {
+			if closure != nil && codeptr == nil {
+				codeptr = s.rawLoad(types.Types[types.TUINTPTR], closure)
+			}
+			operands := []*ssa.Value{codeptr, callArgs[0]}
+			for i := 1; i < 3; i++ {
+				p := s.constNil(types.Types[types.TUNSAFEPTR])
+				if i < len(callArgs) && (callArgs[i].Type.IsPtr() || callArgs[i].Type.IsUnsafePtr()) {
+					p = callArgs[i]
+				}
+				operands = append(operands, p)
+			}
+			s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapAtomicCall"), true, nil, operands...)
+		}
+
 		callArgs = append(callArgs, s.mem())
 
 		// call target
@@ -5821,7 +5880,7 @@ func (s *state) intDivide(n ir.Node, a, b *ssa.Value) *ssa.Value {
 func (s *state) rtcall(fn *obj.LSym, returns bool, results []*types.Type, args ...*ssa.Value) []*ssa.Value {
 	// append growth is also emitted directly by SSA, bypassing the lowered IR
 	// call path. Validate the old elements before a growth helper copies them.
-	if base.Debug.IsolateHeap != 0 && !base.Flag.CompilingRuntime &&
+	if s.isolateHeapEnabled() &&
 		(fn == ir.Syms.Growslice || fn == ir.Syms.GrowsliceNoAlias || fn == ir.Syms.GrowsliceBuf || fn == ir.Syms.GrowsliceBufNoAlias) {
 		oldLen := s.newValue2(s.ssaOp(ir.OSUB, types.Types[types.TINT]), types.Types[types.TINT], args[1], args[3])
 		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapSliceCopy"), true, nil,
@@ -5881,7 +5940,7 @@ func (s *state) rtcall(fn *obj.LSym, returns bool, results []*types.Type, args .
 // do *left = right for type t.
 func (s *state) storeType(t *types.Type, left, right *ssa.Value, skip skipMask, leftIsStmt bool) {
 	s.instrument(t, left, instrumentWrite)
-	if base.Debug.IsolateHeap > 1 && !base.Flag.CompilingRuntime && t.HasPointers() && skip&skipPtr == 0 {
+	if s.isolateHeapEnabled() && base.Debug.IsolateHeap > 1 && t.HasPointers() && skip&skipPtr == 0 {
 		s.isolateCheckStoredReferences(t, left, right)
 	}
 
@@ -6317,7 +6376,7 @@ func (s *state) referenceTypeBuiltin(n *ir.UnaryExpr, x *ssa.Value) *ssa.Value {
 	if n.X.Type().IsMap() && n.Op() == ir.OCAP {
 		s.Fatalf("cannot inline cap(map)") // cap(map) does not exist
 	}
-	if n.X.Type().IsMap() && base.Debug.IsolateHeap != 0 && !base.Flag.CompilingRuntime {
+	if n.X.Type().IsMap() && s.isolateHeapEnabled() {
 		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapMap"), true, nil, x, s.constBool(false))
 	}
 	if n.X.Type().IsMap() && base.Debug.IsolatePackages != "" {
@@ -8440,3 +8499,8 @@ func isStructNotSIMD(t *types.Type) bool {
 }
 
 var BoundsCheckFunc [ssa.BoundsKindCount]*obj.LSym
+
+func (s *state) isolateHeapEnabled() bool {
+	return base.Debug.IsolateHeap != 0 && !base.Flag.CompilingRuntime &&
+		!(base.Flag.Std && isolatepolicy.RuntimeHook(base.Ctxt.Pkgpath, ir.FuncName(s.curfn)))
+}
