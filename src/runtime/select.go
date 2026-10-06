@@ -62,7 +62,7 @@ func selunlock(scases []scase, lockorder []uint16) {
 
 func selparkcommit(gp *g, _ unsafe.Pointer) bool {
 	park := true
-	if gp.isolateGroup != nil {
+	if gp.isolateGroup != nil && gp.isolateMetadataDepth == 0 {
 		// Revocation claims selectDone before changing isolateSelectWake.
 		// If it won before this commit, return to selectgo for cleanup.
 		park = gp.isolateSelectWake.CompareAndSwap(0, 1)
@@ -248,7 +248,7 @@ func selectgo(cas0 *scase, order0 *uint16, pc0 *uintptr, nsends, nrecvs int, blo
 		isolateParkForever(waitReason, traceBlockSelect, 1)
 	}
 	var selectGroup *isolateRevocationGroup
-	if block && gp.isolateGroup != nil {
+	if block && gp.isolateGroup != nil && gp.isolateMetadataDepth == 0 {
 		selectGroup = gp.isolateGroup
 		gp.isolateSelectWake.Store(0)
 		if !selectGroup.registerPark(gp, isolateSelectRegistered, nil) {

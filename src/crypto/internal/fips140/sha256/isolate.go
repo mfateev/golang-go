@@ -7,6 +7,7 @@ package sha256
 import "unsafe"
 
 //go:linkname isolateCheckHeapAccess runtime.isolateCheckHeapAccess
+//go:noescape
 func isolateCheckHeapAccess(unsafe.Pointer, uintptr, bool)
 
 func isolateCheckInput(d *Digest, p []byte) {

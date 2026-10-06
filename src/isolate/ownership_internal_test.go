@@ -180,6 +180,77 @@ func TestOwnershipFaultUnwindsMetadataLocks(t *testing.T) {
 	}
 }
 
+// Runtime services retain their process wait records through revocation. The
+// host can finish the operation, then the outer service exit discards the G.
+func TestOwnershipFaultMetadataChannelCleanup(t *testing.T) {
+	for _, operation := range []string{"send", "receive", "select"} {
+		t.Run(operation, func(t *testing.T) {
+			ready := make(chan struct{})
+			resume := make(chan struct{})
+			never := make(chan struct{})
+			var cleaned, after atomic.Bool
+			var lock sync.Mutex
+			program := Program{entry: isolatebridge.ProgramEntry{
+				NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+				Main: func() {
+					func() {
+						owner := ownershipEnterMetadata()
+						defer ownershipLeaveMetadata(owner)
+						lock.Lock()
+						defer lock.Unlock()
+						defer cleaned.Store(true)
+						close(ready)
+						switch operation {
+						case "send":
+							resume <- struct{}{}
+						case "receive":
+							<-resume
+						case "select":
+							select {
+							case <-resume:
+							case <-never:
+								panic("unexpected service wake")
+							}
+						}
+					}()
+					after.Store(true)
+				},
+			}}
+			i, err := New(Config{Program: program})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := i.Start(); err != nil {
+				t.Fatal(err)
+			}
+			<-ready
+			// Publish revocation before allowing the process operation to finish.
+			i.boundary.BeginStop()
+			i.boundary.WakeStoppedWaiters()
+			if cleaned.Load() {
+				t.Fatal("service wait was interrupted")
+			}
+			if operation == "send" {
+				<-resume
+			} else {
+				close(resume)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := i.Kill(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if !cleaned.Load() || after.Load() {
+				t.Fatal("service cleanup or discard failed")
+			}
+			if !lock.TryLock() {
+				t.Fatal("process lock was abandoned")
+			}
+			lock.Unlock()
+		})
+	}
+}
+
 func TestOwnershipFaultConcurrentReportAndKill(t *testing.T) {
 	old := runtime.GOMAXPROCS(8)
 	defer runtime.GOMAXPROCS(old)

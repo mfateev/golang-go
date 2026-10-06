@@ -80,6 +80,12 @@ func MetadataGlobal(symbol string) bool {
 	// SHA backend flags select equivalent implementations. These scalar reads
 	// and the fixed round table expose no application object or write privilege.
 	switch symbol {
+	case "internal/cpu.X86", "internal/cpu.ARM", "internal/cpu.ARM64",
+		"internal/cpu.Loong64", "internal/cpu.MIPS64X", "internal/cpu.PPC64", "internal/cpu.S390X":
+		// Feature records are fixed during runtime startup. Replayed library
+		// initializers (for example math.useFMA) need these bounded reads;
+		// writes and reads of other CPU package state remain checked.
+		return true
 	case "crypto/internal/fips140/sha256.useSHA2", "crypto/internal/fips140/sha256.useAVX2",
 		"crypto/internal/fips140/sha256.useSHANI", "crypto/internal/fips140/sha256.useSHA256",
 		"crypto/internal/fips140/sha256.ppc64sha2", "crypto/internal/fips140/sha256._K":

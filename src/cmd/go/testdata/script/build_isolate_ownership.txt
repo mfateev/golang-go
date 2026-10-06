@@ -29,6 +29,7 @@ replace internal/fake => ./fake
 package jobs
 import (
  "context"
+ "math"
  "net/textproto"
  "fmt"
  "reflect"
@@ -43,6 +44,7 @@ func Probe(mode byte) (string,error) {
  if mode == 1 { return textproto.CanonicalMIMEHeaderKey("content-type"),nil }
  if mode == 2 { fmt.Print("forbidden private output"); return "unexpected",nil }
  counter++
+ if math.Exp(0) != 1 { panic("math initialization changed") }
  descriptions := metrics.All()
  if len(descriptions) == 0 || descriptions[0].Name == "" { panic("metric descriptions changed") }
  descriptions[0].Name = "private description"

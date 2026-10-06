@@ -744,6 +744,22 @@ func gcStart(trigger gcTrigger) {
 	releasem(mp)
 	mp = nil
 
+	// GC initialization owns process semaphores and may wait for newly created
+	// workers on a process channel. Revocation must not abandon these waits or
+	// their locks. Housekeeping allocations also belong to the process.
+	owner := isolateEnterMetadata()
+	defer func() {
+		gp := getg()
+		if gp.isolateMetadataDepth != 0 {
+			gp.isolateOwner = owner
+			gp.isolateMetadataDepth--
+			isolateDiscardIfRevoked()
+		}
+		// GC startup cannot return an application panic. Avoid the general
+		// service exit's allocating panic copier here: malloc dispatch tables
+		// reference gcStart during package initialization.
+	}()
+
 	if gp := getg(); gp.bubble != nil {
 		// Disassociate the G from its synctest bubble while allocating.
 		// This is less elegant than incrementing the group's active count,
