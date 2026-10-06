@@ -1659,25 +1659,16 @@ func (s *state) move(t *types.Type, dst, src *ssa.Value) {
 }
 func (s *state) moveWhichMayOverlap(t *types.Type, dst, src *ssa.Value, mayOverlap bool) {
 	if s.isolateHeapEnabled() {
-		origin := src
-		for origin.Op == ssaop.OpOffPtr || origin.Op == ssaop.OpCopy {
-			origin = origin.Args[0]
-		}
-		if origin.Op == ssaop.OpSelectNAddr {
-			// Incoming call results share the outgoing argument/spill area.
-			// A diagnostic call can overwrite that area even when prevCall
-			// is preserved. Snapshot the result before inserting any calls.
-			_, stable := s.temp(s.peekPos(), t)
-			copy := s.newValue3I(ssaop.OpMove, types.TypeMem, t.Size(), stable, src, s.mem())
-			copy.Aux = t
-			s.vars[memVar] = copy
-			src = stable
-		}
+		src = s.isolateStableMoveSource(t, src)
 	}
 	s.instrumentMove(t, dst, src)
 	if s.isolateHeapEnabled() && base.Debug.IsolateHeap > 1 && t.HasPointers() {
 		previous := s.prevCall
-		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapMove"), true, nil, s.reflectType(t), dst, src)
+		if ssa.IsStackAddr(dst) {
+			s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapStackMove"), true, nil, s.reflectType(t), src)
+		} else {
+			s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapMove"), true, nil, s.reflectType(t), dst, src)
+		}
 		s.prevCall = previous
 	}
 	if mayOverlap && t.IsArray() && t.NumElem() > 1 && !ssa.IsInlinableMemmove(dst, src, t.Size(), s.f.Config) {
@@ -1720,6 +1711,23 @@ func (s *state) moveWhichMayOverlap(t *types.Type, dst, src *ssa.Value, mayOverl
 	store := s.newValue3I(ssaop.OpMove, types.TypeMem, t.Size(), dst, src, s.mem())
 	store.Aux = t
 	s.vars[memVar] = store
+}
+
+func (s *state) isolateStableMoveSource(t *types.Type, src *ssa.Value) *ssa.Value {
+	origin := src
+	for origin.Op == ssaop.OpOffPtr || origin.Op == ssaop.OpCopy {
+		origin = origin.Args[0]
+	}
+	if origin.Op != ssaop.OpSelectNAddr {
+		return src
+	}
+	// ABI result storage shares the outgoing argument/spill area. Snapshot it
+	// without a safepoint before an ownership probe can overwrite that area.
+	_, stable := s.temp(s.peekPos(), t)
+	copy := s.newValue3I(ssaop.OpMove, types.TypeMem, t.Size(), stable, src, s.mem())
+	copy.Aux = t
+	s.vars[memVar] = copy
+	return stable
 }
 
 // stmtList converts the statement list n to SSA and adds it to s.
@@ -4652,8 +4660,44 @@ func (s *state) assignWhichMayOverlap(left ir.Node, right *ssa.Value, deref bool
 
 	// If this assignment clobbers an entire local variable, then emit
 	// OpVarDef so liveness analysis knows the variable is redefined.
-	if base, ok := clobberBase(left).(*ir.Name); ok && base.OnStack() && skip == 0 && (t.HasPointers() || ssa.IsMergeCandidate(base)) {
-		s.vars[memVar] = s.newValue1Apos(ssaop.OpVarDef, types.TypeMem, base, s.mem(), !ir.IsAutoTmp(base))
+	if local, ok := clobberBase(left).(*ir.Name); ok && local.OnStack() && skip == 0 && (t.HasPointers() || ssa.IsMergeCandidate(local)) {
+		if s.isolateHeapEnabled() && t.HasPointers() {
+			// Probe before VarDef or taking the destination's address. Once
+			// an aggregate is defined/addressed, GC may scan every pointer
+			// field, including fields the actual store has not initialized.
+			// Source evaluation has already finished, so self assignments and
+			// overlapping sources retain their original contents during checks.
+			if deref {
+				if right != nil {
+					right = s.isolateStableMoveSource(t, right)
+					s.instrument(t, right, instrumentRead)
+					if base.Debug.IsolateHeap > 1 {
+						previous := s.prevCall
+						s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapStackMove"), true, nil, s.reflectType(t), right)
+						s.prevCall = previous
+					}
+				}
+			} else if base.Debug.IsolateHeap > 1 {
+				s.isolateCheckStoredReferences(t, s.sp, right)
+			}
+			s.vars[memVar] = s.newValue1Apos(ssaop.OpVarDef, types.TypeMem, local, s.mem(), !ir.IsAutoTmp(local))
+			addr := s.addr(left)
+			if deref {
+				if right == nil {
+					zero := s.newValue2I(ssaop.OpZero, types.TypeMem, t.Size(), addr, s.mem())
+					zero.Aux = t
+					s.vars[memVar] = zero
+				} else {
+					copy := s.newValue3I(ssaop.OpMove, types.TypeMem, t.Size(), addr, right, s.mem())
+					copy.Aux = t
+					s.vars[memVar] = copy
+				}
+			} else {
+				s.store(t, addr, right)
+			}
+			return
+		}
+		s.vars[memVar] = s.newValue1Apos(ssaop.OpVarDef, types.TypeMem, local, s.mem(), !ir.IsAutoTmp(local))
 	}
 
 	// Left is not ssa-able. Compute its address.
@@ -5489,6 +5533,17 @@ func etypesign(e types.Kind) int8 {
 	return 0
 }
 
+// Select valid storage before applying a package-layout offset. Computing an
+// offset from a nil instance base and selecting the host address afterwards can
+// leave a small invalid pointer live across an ownership or race safepoint.
+func (s *state) isolateGlobalAddr(basePtr, host, offset *ssa.Value) *ssa.Value {
+	t := basePtr.Type
+	hasBase := s.newValue2(ssaop.OpNeqPtr, types.Types[types.TBOOL], basePtr, s.constNil(t))
+	storage := s.ternary(hasBase, basePtr, host)
+	delta := s.ternary(hasBase, offset, s.constInt(types.Types[types.TUINTPTR], 0))
+	return s.newValue2(ssaop.OpAddPtr, t, storage, delta)
+}
+
 // addr converts the address of the expression n to SSA, adds it to s and returns the SSA result.
 // The value that the returned Value represents is guaranteed to be non-nil.
 func (s *state) addr(n ir.Node) *ssa.Value {
@@ -5535,21 +5590,15 @@ func (s *state) addr(n ir.Node) *ssa.Value {
 				if offset, ok := isolateGlobalOffset(n); ok {
 					key := s.entryNewValue1A(ssaop.OpAddr, types.Types[types.TUNSAFEPTR], isolatePackageKey(), s.sb)
 					basePtr := s.rtcall(typecheck.LookupRuntimeFunc("isolateE4GetPackageBase"), true, []*types.Type{t}, key)[0]
-					hasBase := s.newValue2(ssaop.OpNeqPtr, types.Types[types.TBOOL], basePtr, s.constNil(t))
-					if offset != 0 {
-						basePtr = s.newValue1I(ssaop.OpOffPtr, t, offset, basePtr)
-					}
-					return s.ternary(hasBase, basePtr, linksymOffset(n.Linksym(), 0))
+					return s.isolateGlobalAddr(basePtr, linksymOffset(n.Linksym(), 0), s.constInt(types.Types[types.TUINTPTR], offset))
 				}
 			}
 			if isolateImportedGlobal(n) {
 				key := s.entryNewValue1A(ssaop.OpAddr, types.Types[types.TUNSAFEPTR], isolateImportedKey(n), s.sb)
 				basePtr := s.rtcall(typecheck.LookupRuntimeFunc("isolateE4GetImportedPackageBase"), true, []*types.Type{t}, key)[0]
-				hasBase := s.newValue2(ssaop.OpNeqPtr, types.Types[types.TBOOL], basePtr, s.constNil(t))
 				offsetAddr := s.entryNewValue1A(ssaop.OpAddr, types.NewPtr(types.Types[types.TUINTPTR]), isolateImportedOffset(n), s.sb)
 				offset := s.load(types.Types[types.TUINTPTR], offsetAddr)
-				basePtr = s.newValue2(ssaop.OpAddPtr, t, basePtr, offset)
-				return s.ternary(hasBase, basePtr, linksymOffset(n.Linksym(), 0))
+				return s.isolateGlobalAddr(basePtr, linksymOffset(n.Linksym(), 0), offset)
 			}
 			if base.Debug.IsolateE4 != 0 &&
 				types.LocalPkg.Path == "internal/isolateproto/testdata/e4compiletoy" &&
@@ -5559,13 +5608,13 @@ func (s *state) addr(n ir.Node) *ssa.Value {
 				// process-global symbol remains the fallback during ordinary
 				// package initialization, before a base has been selected.
 				basePtr := s.rtcall(typecheck.LookupRuntimeFunc("isolateE4GetBase"), true, []*types.Type{t})[0]
-				hasBase := s.newValue2(ssaop.OpNeqPtr, types.Types[types.TBOOL], basePtr, s.constNil(t))
+				offset := int64(0)
 				if n.Sym().Name == "epoch" {
 					// The toy's Graph has exactly three pointer-word fields.
 					// A real implementation needs generated package layout data.
-					basePtr = s.newValue1I(ssaop.OpOffPtr, t, 3*int64(types.PtrSize), basePtr)
+					offset = 3 * int64(types.PtrSize)
 				}
-				return s.ternary(hasBase, basePtr, linksymOffset(n.Linksym(), 0))
+				return s.isolateGlobalAddr(basePtr, linksymOffset(n.Linksym(), 0), s.constInt(types.Types[types.TUINTPTR], offset))
 			}
 			return linksymOffset(n.Linksym(), 0)
 		case ir.PPARAM:
@@ -5962,9 +6011,26 @@ func (s *state) storeType(t *types.Type, left, right *ssa.Value, skip skipMask, 
 }
 
 func (s *state) isolateCheckStoredReferences(t *types.Type, dst, value *ssa.Value) {
+	for value.Op == ssaop.OpCopy {
+		value = value.Args[0]
+	}
+	switch value.Op {
+	case ssaop.OpConstNil, ssaop.OpConstSlice, ssaop.OpConstInterface, ssaop.OpConstString:
+		// Nil and linker-owned string constants cannot publish foreign state.
+		// In particular, zeroing a fresh stack aggregate must not introduce a
+		// safepoint before its pointer fields have actually been initialized.
+		return
+	}
 	check := func(pointer *ssa.Value) {
+		if pointer.Op == ssaop.OpConstNil {
+			return
+		}
 		previous := s.prevCall
-		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapReference"), true, nil, dst, pointer)
+		if ssa.IsStackAddr(dst) {
+			s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapStackReference"), true, nil, pointer)
+		} else {
+			s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapReference"), true, nil, dst, pointer)
+		}
 		s.prevCall = previous
 	}
 	switch {
@@ -5981,11 +6047,18 @@ func (s *state) isolateCheckStoredReferences(t *types.Type, dst, value *ssa.Valu
 			if field.Type.HasPointers() {
 				addr := s.newValue1I(ssaop.OpOffPtr, field.Type.PtrTo(), field.Offset, dst)
 				part := s.newValue1I(ssaop.OpStructSelect, field.Type, int64(i), value)
+				if value.Op == ssaop.OpStructMake {
+					part = value.Args[i]
+				}
 				s.isolateCheckStoredReferences(field.Type, addr, part)
 			}
 		}
 	case t.IsArray() && t.NumElem() == 1:
-		s.isolateCheckStoredReferences(t.Elem(), dst, s.newValue1I(ssaop.OpArraySelect, t.Elem(), 0, value))
+		part := s.newValue1I(ssaop.OpArraySelect, t.Elem(), 0, value)
+		if value.Op == ssaop.OpArrayMake1 {
+			part = value.Args[0]
+		}
+		s.isolateCheckStoredReferences(t.Elem(), dst, part)
 	case t.Size() == 0:
 		return
 	default:

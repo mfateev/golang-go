@@ -21,6 +21,12 @@ stderr -count=3 '^shared init$'
 [cgo] [race] stdout '^json options isolated$'
 [cgo] [race] stdout '^time local isolated$'
 
+# Ownership probes are safepoints. Force movement at runtime entry to expose
+# partially initialized stack closures and aggregate destinations to GC.
+[cgo] [race] go build -race -gcflags=runtime=-d=maymorestack=runtime.mayMoreStackMove -isolate-dir=./orders -isolate-dir=./billing -o worker_move$GOEXE ./host
+[cgo] [race] exec ./worker_move$GOEXE
+[cgo] [race] stdout '^json options isolated$'
+
 go build -isolate-dir=./exitprog -o exitworker$GOEXE ./host_exit
 exec ./exitworker$GOEXE
 stdout '^isolate exit status 42$'
