@@ -91,14 +91,39 @@ and fatal cross-owner error reporting. Full `src/all.bash`, cached-instance
 reclamation stress, SDK/sample suites and all four native Linux/macOS arm64/amd64
 jobs passed on 2026-10-06. See the acceptance evidence in
 [Memory ownership](./MEMORY_OWNERSHIP_PLAN.md).
-Frozen-heap GC remains feature 3; effect/unsafe containment and custom converter
-support retain their separate feature 4 and 8 gates. The validated determinism
-contract still excludes its documented unsupported operations.
+Feature 3 (frozen-heap GC) is deferred at the user's request. The next feature is
+**4 (enforced effect restrictions)**. Custom converter support retains its
+separate feature 8 gate. The validated determinism contract still excludes its
+documented unsupported operations.
 
 See [Native isolate determinism](./NATIVE_DETERMINISM_PLAN.md) for the supported
 operations and reproducibility contract. Unsupported map key kinds and
 machine-dependent effects require explicit restrictions rather than an implied
 promise that arbitrary Go code can replay.
+
+### Feature 4 policy decisions (2026-10-06)
+
+| Area | Agreed policy |
+|---|---|
+| Printing and standard logging | Forward through a dedicated host call, with routing and handling configured on the worker. Preserve replay-aware handling. |
+| Environment and file configuration | Reject workflow reads; pass configuration as workflow input so history records it. |
+| Unsafe and native escape paths | Reject application escape paths; permit explicitly audited implementations in the runtime and supported libraries. |
+| Enforcement | Compile-time diagnostics for identifiable forbidden operations, plus runtime enforcement for indirect and reflected calls. Ordinary host code and activities retain their existing behavior. |
+
+The logging call carries copied bytes and metadata across the isolate boundary;
+worker loggers, writers and callbacks remain host-owned. Replay information must
+come from the host so worker configuration can control duplicate output. The
+implementation must define deterministic return behavior for printing APIs that
+return a byte count or error, including host sink failures.
+
+Violation handling is still awaiting a policy decision. The proposal is to
+terminate the isolate and report a Workflow Task failure with the offending
+operation and stack trace, preventing workflow recovery of the violation.
+
+Dependency auditing and runtime hooks, including finalizers and cleanup
+callbacks, need investigation to ensure they cannot perform effects outside
+deterministic dispatch. The detailed operation matrix and implementation remain
+pending.
 
 ## Milestones and gates
 
