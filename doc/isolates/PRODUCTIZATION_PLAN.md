@@ -84,10 +84,13 @@ list above, not to the milestone numbers below.
 Feature 1's local and native gates passed on 2026-10-05; its implementation,
 history fixture, sample fixes, and CI are checked in and pushed in all three
 repositories. See the native validation checkpoint in
-[Native isolate determinism](./NATIVE_DETERMINISM_PLAN.md). Feature 2's implementation now enables compulsory dependency-wide memory
-checks, instance allocator caches and package state, precise immutable metadata
-sharing, audited process services, and fatal cross-owner error reporting. Its
-final acceptance gates are running; see [Memory ownership](./MEMORY_OWNERSHIP_PLAN.md).
+[Native isolate determinism](./NATIVE_DETERMINISM_PLAN.md). Feature 2 is also
+complete: compulsory dependency-wide memory checks, instance allocator caches
+and package state, precise immutable metadata sharing, audited process services,
+and fatal cross-owner error reporting. Full `src/all.bash`, cached-instance
+reclamation stress, SDK/sample suites and all four native Linux/macOS arm64/amd64
+jobs passed on 2026-10-06. See the acceptance evidence in
+[Memory ownership](./MEMORY_OWNERSHIP_PLAN.md).
 Frozen-heap GC remains feature 3; effect/unsafe containment and custom converter
 support retain their separate feature 4 and 8 gates. The validated determinism
 contract still excludes its documented unsupported operations.
