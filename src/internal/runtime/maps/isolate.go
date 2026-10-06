@@ -12,6 +12,9 @@ func isolateMapOwner() uintptr
 //go:linkname isolateMetadataBorrowOwner runtime.isolateMetadataBorrowOwner
 func isolateMetadataBorrowOwner() uintptr
 
+//go:linkname isolateOwnershipViolation runtime.isolateOwnershipViolation
+func isolateOwnershipViolation(string)
+
 //go:linkname isolateDeterministic runtime.isolateDeterministic
 func isolateDeterministic() bool
 
@@ -22,7 +25,7 @@ func (m *Map) IsolateOwner() uintptr { return m.owner }
 
 func (m *Map) checkIsolateWrite() {
 	if m.owner != isolateMapOwner() {
-		panic("isolate: map write crosses owner boundary")
+		isolateOwnershipViolation("isolate: map write crosses owner boundary")
 	}
 }
 
@@ -31,6 +34,6 @@ func (m *Map) checkIsolateRead() {
 		if m.owner == isolateMetadataBorrowOwner() {
 			return
 		}
-		panic("isolate: map read crosses owner boundary")
+		isolateOwnershipViolation("isolate: map read crosses owner boundary")
 	}
 }

@@ -31,7 +31,7 @@ func isolateCheckHeapAccess(p unsafe.Pointer, size uintptr, write bool) {
 	}
 	end := uintptr(p) + size - 1
 	if end < uintptr(p) {
-		panic("isolate: heap access range overflow")
+		isolateOwnershipViolation("isolate: heap access range overflow")
 	}
 	for addr := uintptr(p); ; {
 		s := spanOfHeap(addr)
@@ -43,9 +43,9 @@ func isolateCheckHeapAccess(p unsafe.Pointer, size uintptr, write bool) {
 				return
 			}
 			if write {
-				panic("isolate: write to foreign heap")
+				isolateOwnershipViolation("isolate: write to foreign heap")
 			}
-			panic("isolate: read from foreign heap")
+			isolateOwnershipViolation("isolate: read from foreign heap")
 		}
 		// Ordinary Go objects occupy one span. Continue across heap spans for
 		// larger ranges; non-heap addresses have their separate policy above.
@@ -92,9 +92,9 @@ func isolateCheckHeapMap(p unsafe.Pointer, write bool) {
 		}
 	}
 	if write {
-		panic("isolate: map write crosses owner boundary")
+		isolateOwnershipViolation("isolate: map write crosses owner boundary")
 	}
-	panic("isolate: map read crosses owner boundary")
+	isolateOwnershipViolation("isolate: map read crosses owner boundary")
 }
 
 // Generic map helpers read a typed key and copy its references into map-owned
@@ -138,7 +138,7 @@ func isolateCheckHeapReference(dst, value unsafe.Pointer) {
 		if source.isolateAllocOwner == 0 && isolateReadOnlyTypeRoot(value) {
 			return
 		}
-		panic("isolate: foreign heap reference publication")
+		isolateOwnershipViolation("isolate: foreign heap reference publication")
 	}
 }
 
@@ -173,7 +173,7 @@ func isolatePublishType(typ *abi.Type) {
 		return
 	} // Linker metadata already has its static policy.
 	if getg().isolateOwner != 0 || span.isolateAllocOwner != 0 {
-		panic("isolate: canonical type must be process-owned")
+		isolateOwnershipViolation("isolate: canonical type must be process-owned")
 	}
 	base := isolateTypeObjectBase(p)
 	if base != uintptr(p) {
@@ -256,7 +256,7 @@ func isolateCheckHeapCopy(dst unsafe.Pointer, dstLen int, src unsafe.Pointer, sr
 		return
 	}
 	if uintptr(n) > ^uintptr(0)/width {
-		panic("isolate: heap copy range overflow")
+		isolateOwnershipViolation("isolate: heap copy range overflow")
 	}
 	size := uintptr(n) * width
 	isolateCheckHeapAccess(src, size, false)

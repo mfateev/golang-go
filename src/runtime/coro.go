@@ -108,7 +108,7 @@ func coroswitch(c *coro) {
 		return
 	}
 	if c.isolateGroup != nil {
-		panic("isolate: coroutine crosses owner boundary")
+		isolateOwnershipViolation("isolate: coroutine crosses owner boundary")
 	}
 	gp := getg()
 	gp.coroarg = c

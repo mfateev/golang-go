@@ -820,7 +820,7 @@ func (m *Map) Clone(typ *abi.MapType) *Map {
 	// Note: this should never be called with a nil map.
 	owner := isolateMapOwner()
 	if m.owner != 0 && m.owner != owner {
-		panic("isolate: map clone crosses owner boundary")
+		isolateOwnershipViolation("isolate: map clone crosses owner boundary")
 	}
 	if m.writing != 0 {
 		fatal("concurrent map clone and map write")

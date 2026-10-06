@@ -613,3 +613,14 @@ changes, continue-as-new, child workflow and signal semantics, and
    may decode its first `NextRequest` reply and choose a workflow function. The
    runtime needs only the static program table; the SDK's typed dispatch and
    result protocol still need a concrete design.
+
+### Memory ownership failures
+
+A detected ownership violation permanently revokes the entire managed instance.
+Application `recover` and defers cannot resume it. `New` reports initialization
+violations and `Wait` reports running main/child violations as
+`*isolate.OwnershipError`; use `errors.As` to inspect `Reason`. Suspend/Resume
+also preserve that cause. An audited metadata service releases its process
+locks before its goroutine is discarded. Call `Kill(ctx)` to await the remaining
+cleanup; a pending result does not lift the revocation. The compiler's general
+heap checks remain opt-in while the ownership audit is in progress.

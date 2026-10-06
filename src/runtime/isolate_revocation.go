@@ -38,8 +38,9 @@ func (group *isolateRevocationGroup) revoke() {
 	}
 }
 
-// markRevoked publishes the durable admission fence. The caller that wins
-// the CAS owns the one waiter scan; other callers may already see revocation.
+// markRevoked publishes the durable admission fence. Waiter scanning is
+// separately claimed by wakeRevoked, so a host Kill can finish waking a group
+// whose ownership fault has already published this fence.
 func (group *isolateRevocationGroup) markRevoked() bool {
 	for {
 		state := group.admission.Load()
@@ -56,6 +57,9 @@ func (group *isolateRevocationGroup) markRevoked() bool {
 func (group *isolateRevocationGroup) wakeRevoked() {
 	if group.admission.Load()&isolateRevokedBit == 0 {
 		throw("isolate: waking group before revocation")
+	}
+	if !group.wakeStarted.CompareAndSwap(0, 1) {
+		return
 	}
 	isolateRevokePollWaiters(group)
 	isolateRevokeParkWaiters(group)

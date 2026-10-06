@@ -21,19 +21,19 @@ import (
 // Boundary is one host command transport. Its channel is
 // infrastructure for the Phase 2B API probe, not a contained isolate heap.
 type Boundary struct {
-	owner         uintptr
-	group         unsafe.Pointer
-	calls         chan *Command
-	next          atomic.Uint64
-	halt          chan struct{}
-	stop          sync.Once
-	wake          sync.Once
-	wakeNeeded    bool
-	stopped       atomic.Bool
-	onExit        func(int)
-	timerOp       uint32
-	deterministic bool
-	pendingCalls  atomic.Int64
+	owner            uintptr
+	group            unsafe.Pointer
+	calls            chan *Command
+	next             atomic.Uint64
+	halt             chan struct{}
+	stop             sync.Once
+	wake             sync.Once
+	stopped          atomic.Bool
+	onExit           func(int)
+	onOwnershipFault func(string)
+	timerOp          uint32
+	deterministic    bool
+	pendingCalls     atomic.Int64
 }
 
 var nextOwner atomic.Uintptr
@@ -179,6 +179,29 @@ func (b *Boundary) exit(code int) {
 	}
 }
 
+// SetOwnershipFaultHandler installs the managed lifecycle reporter before any
+// instance code runs. Bare transport/runtime probes have no managed handler.
+func (b *Boundary) SetOwnershipFaultHandler(fn func(string)) {
+	if b.onOwnershipFault != nil || fn == nil {
+		panic("isolate: invalid ownership fault handler")
+	}
+	b.onOwnershipFault = fn
+	setOwnershipFaultHandler(b.group, b.ownershipFault)
+}
+
+// OwnershipFaultReason returns the immutable, process-owned first fault, even
+// when its asynchronous lifecycle reporter has not run yet.
+func (b *Boundary) OwnershipFaultReason() string { return ownershipFaultReason(b.group) }
+
+//go:linkname ownershipFaultReason runtime.isolateOwnershipFaultReason
+func ownershipFaultReason(unsafe.Pointer) string
+
+func (b *Boundary) ownershipFault(reason string) {
+	b.BeginStop()
+	b.onOwnershipFault(reason)
+	b.WakeStoppedWaiters()
+}
+
 // Run binds b to the current goroutine for fn. Ordinary child goroutines
 // inherit that binding. Deterministic mode also claims the group execution
 // token before running fn.
@@ -244,7 +267,7 @@ func (b *Boundary) BeginStop() {
 		b.stopped.Store(true)
 		// Fence new isolate execution before Call resumes. Call's halt
 		// channel is independent of the scan of runtime wait queues.
-		b.wakeNeeded = markRevoked(b.group)
+		markRevoked(b.group)
 		close(b.halt)
 	})
 }
@@ -255,9 +278,7 @@ func (b *Boundary) BeginStop() {
 func (b *Boundary) WakeStoppedWaiters() {
 	b.BeginStop()
 	b.wake.Do(func() {
-		if b.wakeNeeded {
-			wakeRevoked(b.group)
-		}
+		wakeRevoked(b.group)
 	})
 }
 
@@ -386,6 +407,9 @@ func newGroup() unsafe.Pointer
 
 //go:linkname setGroupExit runtime.isolateSetGroupExit
 func setGroupExit(unsafe.Pointer, func(int))
+
+//go:linkname setOwnershipFaultHandler runtime.isolateSetOwnershipFaultHandler
+func setOwnershipFaultHandler(unsafe.Pointer, func(string))
 
 //go:linkname setGroup runtime.isolateSetGroup
 func setGroup(unsafe.Pointer) unsafe.Pointer

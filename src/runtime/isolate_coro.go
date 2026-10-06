@@ -43,7 +43,7 @@ func isolateCorostart(c *coro) {
 func isolateCoroSwitch(c *coro) {
 	gp := getg()
 	if c.isolateGroup != gp.isolateGroup {
-		panic("isolate: coroutine crosses owner boundary")
+		isolateOwnershipViolation("isolate: coroutine crosses owner boundary")
 	}
 	if gp == c.isolateRunner {
 		c.isolateReply <- struct{}{}

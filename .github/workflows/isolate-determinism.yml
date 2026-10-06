@@ -74,15 +74,15 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/cpu-disabled.log"
             exit 1
           fi
-          if ! ./bin/go test -race runtime isolate internal/isolatebridge -run 'TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateMetadata|TestIsolateHeap|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/race.log" 2>&1; then
+          if ! ./bin/go test -race runtime isolate internal/isolatebridge -run 'TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/race.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/race.log"
             exit 1
           fi
-          if ! GOEXPERIMENT=staticlockranking ./bin/go test -short runtime isolate internal/isolatebridge -run 'TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateMetadata|TestIsolateHeap|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/lockranking.log" 2>&1; then
+          if ! GOEXPERIMENT=staticlockranking ./bin/go test -short runtime isolate internal/isolatebridge -run 'TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/lockranking.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/lockranking.log"
             exit 1
           fi
-          if ! ./bin/go test cmd/go -run 'TestScript/build_isolate_(functions|programs|metadata|heap)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
+          if ! ./bin/go test cmd/go -run 'TestScript/build_isolate_(functions|programs|metadata|heap|fault)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/compiler.log"
             exit 1
           fi

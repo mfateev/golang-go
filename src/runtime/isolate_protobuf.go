@@ -68,7 +68,7 @@ func isolatePublishMessageInfos(values any) {
 		return // Static tables retain the separate linker-memory policy.
 	}
 	if span.isolateAllocOwner != 0 {
-		panic("isolate: canonical message info table must be process-owned")
+		isolateOwnershipViolation("isolate: canonical message info table must be process-owned")
 	}
 	if isolateTypeObjectBase(infos.array) != uintptr(infos.array) {
 		return // An interior slice cannot grant its entire allocation provenance.
@@ -93,7 +93,7 @@ func isolatePublishMessageInfos(values any) {
 			throw("isolate: unaudited canonical message descriptor")
 		}
 		if ds := spanOfHeap(uintptr(desc.data)); ds != nil && ds.isolateAllocOwner != 0 {
-			panic("isolate: canonical message descriptor must be process-owned")
+			isolateOwnershipViolation("isolate: canonical message descriptor must be process-owned")
 		}
 	}
 	reflectOffsLock()

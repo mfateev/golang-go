@@ -797,11 +797,64 @@ This validates instrumented equality/key entry points. General pointer graphs,
 stack/static ownership, indirect/library/assembly paths, metadata graphs and
 whole-dependency enforcement remain open.
 
-Before promoting diagnostics to mandatory enforcement, decide the behavior of
-an ownership violation inside an instance. The current diagnostic is a
-recoverable panic. The proposed enforcement policy permanently revokes the
-instance, discards application goroutines/defers and reports an ownership error
-to the host. Active metadata services must release their process locks before
-discarding the caller. This failure-policy decision is pending human feedback;
-feature 2 remains incomplete and normal builds still do not enable the heap
-diagnostic.
+## Ownership violations terminate managed instances
+
+The accepted policy permanently terminates the whole instance on a detected
+memory ownership violation. Every public `isolate.New` installs the trusted
+runtime reporter before initialization. Heap access/reference checks, runtime
+map/coroutine checks, and metadata receiver/string ownership checks use the
+same fatal path. Ordinary host errors and privileged unmanaged runtime probes
+retain their diagnostic panics; applications have no recovery setting.
+
+The runtime publishes one immutable, process-owned first-fault record and
+immediately revokes admission/dispatch. It discards the offending application
+goroutine without running application defers or recovery. Waiters are scanned
+once by a process goroutine, which also wakes Call and reports a typed
+`*isolate.OwnershipError` to the host. Initialization faults fail `New`; faults
+from a running main or child fail `Wait`. Completion, Suspend and Resume consult
+the recorded cause, so delayed reporter scheduling cannot substitute a generic
+revocation error. The failed instance cannot be restarted.
+
+Inside an audited metadata service, the runtime unwinds trusted cleanup defers
+with recovery disabled. Shared service locks must be released before the
+outermost scope exit restores the instance owner and discards the goroutine.
+`Kill(ctx)` waits for this cleanup and all attached goroutines; it may return
+`KillPendingError` while a service is blocked. Reporting a failure is not proof
+that cleanup or heap reclamation has completed. Existing scheduler/wait
+restrictions still apply, including the lack of bounded termination for
+uninterrupted application CPU loops. This does not replace the provisional
+main-only completion policy for ordinary child failures.
+
+Regressions cover main/child/initializer faults in concurrent and deterministic
+instances, suppressed application recovery/defers, unchanged process memory,
+process-owned error text, simultaneous child faults and competing Kill calls,
+metadata lock cleanup and a pending Kill during cleanup. Retaining 64 host
+errors must release every failed instance and allocator cache. The first
+version embedded its error in the Isolate object; this regression retained all
+64 instances/caches. The error is now allocated separately on the host before
+initialization, and the same regression passes. A compiler fixture
+injects foreign typed arguments only through an uninstrumented test dispatcher,
+then checks real instrumented reads, writes and reference publication, including
+race builds. The SDK driver separately requires fatal private-registry and
+private-MessageInfo receiver errors, then runs another healthy workflow in the
+same host.
+
+The earlier interface-equality checkpoint (`7179bdedf5`) passed all four native
+CI jobs: [run 37387699529](https://github.com/mfateev/golang-go/actions/runs/37387699529).
+Feature 2 remains incomplete: heap diagnostics are still opt-in, stack/static
+ownership and general pointer graphs remain unaudited, and normal builds do
+not yet enforce the whole dependency graph.
+
+Local validation of the termination implementation on Linux arm64 passed:
+full bootstrap; all five compiler scripts; short runtime/isolate/bridge,
+build/trace, context/time/sync/iter/reflection/maps/random and compiler suites;
+five race and static-lock-ranking runs (including cached eviction and the
+new ownership-fault tests); full SDK and tracked sample suites. The default
+SDK driver and the strict four-dependency driver passed at GOMAXPROCS 1/2/8
+with GOGC=1, and under race detection at GOMAXPROCS=8 with GOGC=1. Six strict
+fresh-process replays at GOMAXPROCS 1/2/8, with CPU features enabled/disabled
+and TZ=America/Los_Angeles, retained 195 observations and the unchanged SHA-256
+`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
+The native CI matrix includes the fatal compiler fixture, ownership stress,
+and error-retention regression; its new run is separate from the earlier
+native checkpoint cited above.

@@ -47,19 +47,21 @@ type Command = isolatebridge.Command
 // uses the ordinary Go heap. Deterministic mode gates its native goroutines
 // through a FIFO execution token; it does not provide containment.
 type Isolate struct {
-	entry         func()
-	runState      func(func())
-	boundary      *isolatebridge.Boundary
-	started       atomic.Bool
-	lifecycleMu   sync.Mutex
-	killed        bool
-	done          chan struct{}
-	completeOnce  sync.Once
-	watchOnce     sync.Once
-	scanOnce      sync.Once
-	exitRequested atomic.Bool
-	exitErr       ExitError
-	err           error // published by closing done
+	entry              func()
+	runState           func(func())
+	boundary           *isolatebridge.Boundary
+	started            atomic.Bool
+	lifecycleMu        sync.Mutex
+	killed             bool
+	done               chan struct{}
+	completeOnce       sync.Once
+	watchOnce          sync.Once
+	scanOnce           sync.Once
+	exitRequested      atomic.Bool
+	exitErr            ExitError
+	ownershipRequested atomic.Bool
+	ownershipErr       *OwnershipError
+	err                error // published by closing done
 }
 
 var errMainPanicked = errors.New("isolate: main panicked")
@@ -76,6 +78,13 @@ type ExitError struct{ Code int }
 func (e *ExitError) Error() string {
 	return "isolate: exited with status " + strconv.Itoa(e.Code)
 }
+
+// OwnershipError reports a permanently revoked instance after a memory owner
+// violation. Application recover and defers cannot resume the instance. Kill
+// waits for the remaining runtime/service cleanup fence.
+type OwnershipError struct{ Reason string }
+
+func (e *OwnershipError) Error() string { return e.Reason }
 
 // KillPendingError reports goroutines still attached to a revoked instance.
 // Running includes goroutines in syscalls; no stack sample is available yet.
@@ -115,6 +124,9 @@ func New(cfg Config) (*Isolate, error) {
 		entry:    cfg.Program.entry.Main,
 		boundary: boundary,
 		done:     make(chan struct{}),
+		// Allocate separately on the host: retaining a reported error must
+		// not keep its instance, boundary, or allocator cache alive.
+		ownershipErr: new(OwnershipError),
 	}
 	var runState func(func())
 	var err error
@@ -125,6 +137,10 @@ func New(cfg Config) (*Isolate, error) {
 	closeDone := func() { doneOnce.Do(func() { close(done) }) }
 	boundary.SetExitHandler(func(code int) {
 		i.completeExit(code)
+		closeDone()
+	})
+	boundary.SetOwnershipFaultHandler(func(reason string) {
+		i.completeOwnershipFault(reason)
 		closeDone()
 	})
 	go func() {
@@ -148,6 +164,13 @@ func New(cfg Config) (*Isolate, error) {
 		})
 	}()
 	<-done
+	if reason := boundary.OwnershipFaultReason(); reason != "" {
+		i.completeOwnershipFault(reason)
+	}
+	if i.ownershipRequested.Load() {
+		boundary.Stop()
+		return nil, i.ownershipErr
+	}
 	if i.exitRequested.Load() {
 		boundary.Stop()
 		return nil, &i.exitErr
@@ -226,7 +249,9 @@ func (i *Isolate) Start() error {
 
 func (i *Isolate) complete(err error) {
 	i.completeOnce.Do(func() {
-		i.err = err
+		if !i.recordOwnershipFault() {
+			i.err = err
+		}
 		close(i.done)
 	})
 }
@@ -235,11 +260,32 @@ func (i *Isolate) completeExit(code int) {
 	i.exitRequested.Store(true)
 	i.completeOnce.Do(func() {
 		i.exitErr.Code = code
-		if code != 0 {
+		if !i.recordOwnershipFault() && code != 0 {
 			i.err = &i.exitErr
 		}
 		close(i.done)
 	})
+}
+
+func (i *Isolate) completeOwnershipFault(_ string) {
+	i.completeOnce.Do(func() {
+		i.recordOwnershipFault()
+		close(i.done)
+	})
+}
+
+// Called only by the winner of completeOnce, before publishing done. A fault
+// can revoke the main before the process reporter runs; preserve its cause in
+// that completion race instead of reporting a generic revocation.
+func (i *Isolate) recordOwnershipFault() bool {
+	reason := i.boundary.OwnershipFaultReason()
+	if reason == "" {
+		return false
+	}
+	i.ownershipErr.Reason = reason
+	i.ownershipRequested.Store(true)
+	i.err = i.ownershipErr
+	return true
 }
 
 // A revoked main may be discarded by the runtime without running Go defers.
@@ -271,7 +317,11 @@ func (i *Isolate) Suspend() error {
 	if i == nil || !i.started.Load() {
 		return errors.New("isolate: instance not started")
 	}
-	return i.boundary.Suspend()
+	err := i.boundary.Suspend()
+	if reason := i.boundary.OwnershipFaultReason(); reason != "" {
+		return &OwnershipError{Reason: reason}
+	}
+	return err
 }
 
 // Resume allows suspended instance work to run in FIFO order.
@@ -279,7 +329,11 @@ func (i *Isolate) Resume() error {
 	if i == nil || !i.started.Load() {
 		return errors.New("isolate: instance not started")
 	}
-	return i.boundary.Resume()
+	err := i.boundary.Resume()
+	if reason := i.boundary.OwnershipFaultReason(); reason != "" {
+		return &OwnershipError{Reason: reason}
+	}
+	return err
 }
 
 // PendingCalls counts outstanding host operations. Inspect after Suspend;
@@ -287,11 +341,13 @@ func (i *Isolate) Resume() error {
 // synchronization and is deadlocked under the trusted deterministic contract.
 func (i *Isolate) PendingCalls() int64 { return i.boundary.PendingCalls() }
 
-// Done is closed when the program's main goroutine exits.
+// Done is closed on main completion, exit, or a fatal ownership failure.
+// Kill must still establish the remaining goroutine/service cleanup fence.
 func (i *Isolate) Done() <-chan struct{} { return i.done }
 
 // Wait waits for main to return or terminate and reports its failure.
-// Native child goroutines are not yet covered by this provisional lifecycle.
+// Ownership faults in children also terminate Wait. Other child failures are
+// not yet covered by this provisional lifecycle.
 func (i *Isolate) Wait() error {
 	if i == nil || !i.started.Load() {
 		return errors.New("isolate: instance not started")

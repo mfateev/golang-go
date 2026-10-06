@@ -929,6 +929,10 @@ func (p *_panic) start(pc uintptr, sp unsafe.Pointer) {
 // the deferred function itself was nil (e.g., "defer (func())(nil)").
 func (p *_panic) nextDefer() (func(), bool) {
 	gp := getg()
+	if gp.isolateGroup != nil && gp.isolateGroup.ownershipFault.Load() != nil && gp.isolateMetadataDepth == 0 {
+		gp.isolateGroup.markRevoked()
+		isolateDiscardIfRevoked()
+	}
 
 	if !p.deferreturn {
 		if gp._panic != p {
@@ -1082,6 +1086,9 @@ func (p *_panic) initOpenCodedDefers(fn funcInfo, varp unsafe.Pointer) bool {
 // The implementation of the predeclared function recover.
 func gorecover() any {
 	gp := getg()
+	if gp.isolateGroup != nil && gp.isolateGroup.ownershipFault.Load() != nil {
+		return nil
+	}
 	p := gp._panic
 	if p == nil || p.goexit || p.recovered {
 		return nil

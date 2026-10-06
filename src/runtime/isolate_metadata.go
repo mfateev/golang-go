@@ -90,7 +90,7 @@ func isolateCheckMetadataReceiver(p unsafe.Pointer) {
 	} else if isGoPointerWithoutSpan(p) {
 		return
 	}
-	panic("isolate: metadata service requires a process-owned receiver")
+	isolateOwnershipViolation("isolate: metadata service requires a process-owned receiver")
 }
 
 func isolateCheckMetadataDescriptor(value any) {
@@ -184,7 +184,7 @@ func isolateCopyMetadataString(message string) string {
 		return message
 	}
 	if origin != 0 {
-		panic("isolate: metadata string belongs to another instance")
+		isolateOwnershipViolation("isolate: metadata string belongs to another instance")
 	}
 	clone, data := rawstring(len(message))
 	copy(data, message)

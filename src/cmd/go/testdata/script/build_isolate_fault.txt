@@ -1,0 +1,109 @@
+# Managed instances must terminate on real compiler-generated ownership checks.
+# Only the uninstrumented dispatcher injects foreign pointers into typed slots;
+# normal SDK dispatch transfers bytes instead.
+[short] skip
+[compiler:gccgo] skip
+
+go build -gcflags=example.org/isolatefault/jobs=-d=isolateheap=2 -o fault.exe ./host
+exec ./fault.exe
+stdout -count=2 '^managed read terminated$'
+stdout -count=2 '^managed write terminated$'
+stdout -count=2 '^managed publication terminated$'
+stdout '^host alive$'
+
+[race] go build -race -gcflags=example.org/isolatefault/jobs=-d=isolateheap=2 -o fault-race.exe ./host
+[race] exec ./fault-race.exe
+[race] stdout -count=2 '^managed read terminated$'
+[race] stdout -count=2 '^managed write terminated$'
+[race] stdout -count=2 '^managed publication terminated$'
+[race] stdout '^host alive$'
+
+-- go.mod --
+module example.org/isolatefault
+
+go 1.26
+-- jobs/jobs.go --
+package jobs
+
+import "example.org/isolatefault/dispatch"
+
+//go:isolate
+func Probe(p *int, mode int) {
+    defer func() {
+        _ = recover()
+        panic("application recover/defer ran after ownership violation")
+    }()
+    switch mode {
+    case 0: dispatch.Use(*p)
+    case 1: *p = 9
+    case 2:
+        slot := new(*int)
+        *slot = p
+        dispatch.Keep(slot)
+    }
+}
+-- dispatch/dispatch.go --
+package dispatch
+
+import "isolate"
+
+// These deliberately uninstrumented test-only helpers force values to escape
+// and inject a foreign argument without hiding the operation inside Probe.
+var sink **int
+
+//go:noinline
+func Keep(p **int) { sink = p }
+
+//go:noinline
+func Use(n int) {}
+
+func Program(h isolate.Handle, foreign *int, mode int) isolate.Program {
+    return h.ProgramWithHandle(func(h isolate.Handle) {
+        err := h.Invoke(func(v ...isolate.Value) error {
+            *v[0].Pointer.(**int) = foreign
+            *v[1].Pointer.(*int) = mode
+            return nil
+        }, func(...isolate.Value) error { return nil })
+        panic(err) // Any return means containment failed.
+    })
+}
+-- host/main.go --
+package main
+
+import (
+    "context"
+    "errors"
+    "fmt"
+    "isolate"
+    "time"
+
+    "example.org/isolatefault/dispatch"
+    "example.org/isolatefault/jobs"
+)
+
+func main() {
+    handle, ok := isolate.LookupFunction(jobs.Probe)
+    if !ok { panic("missing marked function") }
+    now := time.Date(2025, time.January, 2, 0, 0, 0, 0, time.UTC)
+    foreign := new(int)
+    *foreign = 7
+    names := []string{"read", "write", "publication"}
+    reasons := []string{"isolate: read from foreign heap", "isolate: write to foreign heap", "isolate: foreign heap reference publication"}
+    for _, deterministic := range []bool{false, true} {
+        for mode, name := range names {
+            i, err := isolate.New(isolate.Config{Program: dispatch.Program(handle, foreign, mode), Deterministic: deterministic, InitialTime: &now, TimerOp: 1})
+            if err != nil { panic(err) }
+            if err := i.Start(); err != nil { panic(err) }
+            var fault *isolate.OwnershipError
+            if err := i.Wait(); !errors.As(err, &fault) || fault.Reason != reasons[mode] { panic(fmt.Sprintf("wrong fault: %v", err)) }
+            ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+            err = i.Kill(ctx)
+            cancel()
+            if err != nil { panic(err) }
+            if err := i.Start(); err == nil { panic("faulted instance restarted") }
+            if *foreign != 7 { panic("foreign data changed") }
+            fmt.Println("managed", name, "terminated")
+        }
+    }
+    fmt.Println("host alive")
+}
