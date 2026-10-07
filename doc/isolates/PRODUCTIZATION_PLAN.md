@@ -1,6 +1,6 @@
 # Productization plan for Go isolates and the Temporal SDK
 
-Status: proposed release plan; POC baseline updated 2026-10-05. This follows the trusted Temporal POC in
+Status: proposed release plan; POC baseline updated 2026-10-07. This follows the trusted Temporal POC in
 [TEMPORAL_POC.md](./TEMPORAL_POC.md) and the runtime contract in
 [ISOLATE_API.md](./ISOLATE_API.md).
 
@@ -16,7 +16,7 @@ tenants or bounded termination of uninterrupted CPU loops.
 
 Today `golang-go` discovers marked functions during ordinary builds, supplies
 selected per-instance package globals, a copied-byte `Call` boundary, and
-provisional revocation. Opt-in deterministic mode now provides FIFO native
+whole-group revocation and cleanup. Opt-in deterministic mode now provides FIFO native
 goroutines, reproducible select, canonical integer/string map iteration, and
 exact suspend/resume fences. The Temporal adapter enables it and handles all
 concurrent commands before ending a workflow task. Its concurrent activity and
@@ -26,8 +26,10 @@ Dispatcher stress and race tests passed. See
 [NATIVE_DETERMINISM_PLAN.md](./NATIVE_DETERMINISM_PLAN.md) for the contract and
 evidence. Native Linux/macOS arm64/amd64 conformance and saved-history replay
 passed on 2026-10-05. The runtime still uses
-one shared Go collector with owner-specific heap spans. Remaining child-failure,
-unreviewed runtime-wait and effect restrictions retain separate release gates.
+one shared Go collector with owner-specific heap spans. Lifecycle failures are
+contained within the instance, and the SDK retires local callbacks on completion
+and eviction. Unreviewed runtime/library operations, resource limits and remaining
+Temporal features retain separate release gates.
 
 The first release keeps static linking and one selected dependency version per
 module/import path. Independently loaded `.so` programs, two versions behind
@@ -98,8 +100,15 @@ reporting. Full `src/all.bash`, compiler integration, race/lock-ranking stress,
 SDK/sample tests, live-server failure-history checks and all four native
 Linux/macOS arm64/amd64 jobs passed on 2026-10-07. See the acceptance evidence in
 [Effect restrictions](./EFFECT_RESTRICTIONS_PLAN.md).
-Feature **5 (reliable lifecycle)** is in implementation and acceptance validation.
-See [Reliable lifecycle](./LIFECYCLE_PLAN.md) for its contract and release gates. Custom converter support retains
+Feature **5 (reliable lifecycle)** has validated runtime and definition cleanup,
+panic containment, startup and pending-termination diagnostics, and SDK callback
+retirement. Full Go, SDK/sample, live-server and all four native gates passed on
+2026-10-07. Its worker-shutdown integration remains open: the pinned SDK's shared
+sticky cache is not evicted by `Worker.Stop`, so safe per-worker cleanup needs an
+SDK hook or an explicitly narrower process-wide shutdown contract. See
+[Reliable lifecycle](./LIFECYCLE_PLAN.md) for the design decision and evidence.
+After feature 5 is finished, feature **6 (resource controls)** is next; feature 3
+remains deferred. Custom converter support retains
 its separate feature 8 gate. The validated determinism contract still excludes
 its documented unsupported operations.
 

@@ -1,6 +1,7 @@
 # Reliable lifecycle: productization feature 5
 
-Status: implementation and acceptance validation in progress (2026-10-07).
+Status: runtime and definition lifecycle implemented and validated; worker
+shutdown integration awaits a design decision (2026-10-07).
 Features 1, 2 and 4 are complete. Feature 3, frozen-heap GC, remains deferred.
 
 ## Contract
@@ -90,5 +91,60 @@ select stream. A regression compares immediate and delayed receipt; the original
 195-observation history retains its recorded hash. Dispatcher admission also
 counts pending joins so Start never publishes a false idle interval.
 
-Validation remains in progress. No completion claim is made until the full Go,
-SDK/sample, stress, service-history and four-platform gates above are green.
+The implemented runtime and definition paths passed their acceptance gates.
+Worker shutdown remains open as described below; feature 5 is not yet complete.
+
+Local acceptance passed on 2026-10-07: full `src/all.bash`, repeated lifecycle
+race/static-lock-ranking stress, all eight compiler integration scripts, the
+complete SDK suite, tracked samples, the standalone bridge driver, and real
+Temporal server event assertions. Six fresh-process replay variants (GOMAXPROCS
+1/2/8, default/disabled CPU features) match the saved 195-observation result:
+`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
+
+Native validation exposed an outdated `runtime.g` size fixture and inconsistent
+SDK treatment of ownership violations depending on which terminal notification
+arrived first. The size fixture now covers the added lifecycle fields on 32-bit
+and 64-bit targets. Both SDK paths now report ownership violations as Workflow
+Task failures and retain their diagnostic stack; the driver and lifecycle
+regression test require this outcome.
+
+## Accepted implementation evidence (2026-10-07)
+
+The [native acceptance run](https://github.com/mfateev/golang-go/actions/runs/37586840637)
+passed all four jobs: Linux/macOS arm64/amd64. Every artifact contains these exact
+source revisions:
+
+- Toolchain: `fa0808fdca6df6a52c3c59018b72de97814f423b`
+- SDK POC: `aa3bc479fabdd11a9ecd96061d2d831e129f3760`
+- Samples: `a2f364746f75cb42dd0381c46597b5e8c782b94d`
+
+Each platform passed full short runtime/library conformance, lifecycle and
+ownership/determinism race stress repeated five times, static lock ranking repeated
+five times, all eight isolate compiler scripts, the complete SDK and sample suites,
+the standalone bridge driver, its race/ownership build, and its ownership build at
+GOMAXPROCS 1/2/8 with GOGC=1. All 24 native replay variants match the unchanged
+195-observation hash above. Complete logs are attached to the run and were also
+inspected locally under `/tmp/feature5-native-accepted`.
+
+The full local `src/all.bash` passed (`/tmp/feature5-all-bash-final.log`). Final SDK,
+sample and standalone driver output is captured in `/tmp/feature5-sdk-final.log`,
+`/tmp/feature5-samples-final.log`, and `/tmp/feature5-driver-final.log`. Live Temporal
+checks against the local development server verified execution completion,
+cooperative cancellation, ordinary returned application errors, and root/child
+panic, Goexit and exit as task failures (`/tmp/feature5-lifecycle-final-live.log`).
+The checker terminated its own negative-test executions; the development server
+was stopped after verification.
+
+## Remaining shutdown integration decision
+
+The pinned Temporal Go SDK shares its sticky workflow cache across workers.
+`Worker.Stop` stops pollers and task processors but does not evict cached workflow
+definitions. Its public process-wide purge is valid only after all workers stop.
+Definition `Close` is implemented and tested, but the worker-stop path must still
+reach it safely under the SDK's workflow-context lock.
+
+The preferred integration is a per-worker cache-eviction hook in a separate Go
+SDK fork. The alternative is to limit the shutdown contract to an explicit
+process-wide purge after all workers stop. This design choice remains pending;
+feature 5 is not complete until the agreed shutdown path is implemented and
+tested with a cached workflow, late events and another active worker.
