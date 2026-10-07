@@ -584,9 +584,11 @@ the strongest argument for building it first.
   For Temporal this is a workflow task failure, which is retried.
 - **Subset violation** — isolate-fatal, unrecoverable, not a panic
   (see ISOLATE_SUBSET.md: `recover` would otherwise become a probe channel).
-- **Limit exceeded** — `LimitExceeded`; host decides whether to kill.
-- **Kill** — unconditional; goroutines are stopped at preemption-safe points and
-  the isolate's spans are returned without tracing.
+- **Limit exceeded** — `ResourceLimitError`; the instance is permanently revoked.
+  The host uses `Kill(ctx)` to await cleanup or obtain pending diagnostics.
+- **Kill** — permanent revocation with cleanup at supported execution fences.
+  Uninterrupted execution can leave termination pending; normal GC reclaims the
+  unreachable private heap. Frozen-heap GC remains deferred.
 
 Note the asymmetry worth preserving: a *panic* is the isolate's own business and
 recoverable by isolate code; a *violation* is not.
@@ -642,3 +644,28 @@ locks before its goroutine is discarded. Call `Kill(ctx)` to await the remaining
 cleanup; a pending result does not lift the revocation. Marked-function and configured-program builds enable compulsory memory checks
 throughout the dependency graph. See [Memory ownership](./MEMORY_OWNERSHIP_PLAN.md)
 for the supported state and metadata-service manifest and remaining exclusions.
+
+### Host resource controls
+
+Install `Config.ResourceLimits` before initialization. `MaxMemoryBytes` charges
+owned allocation slots until sweep, attached stacks and attributable runtime
+metadata; `MaxGoroutines` includes initializer, entry and child goroutines.
+Zero means unlimited. These limits apply in both dispatch modes.
+
+`Isolate.Resources()` returns host-only current/peak counters, allocated and
+reserved heap bytes, stack/runtime bytes, scheduled intervals and progress.
+The counters are independently sampled; GC may refund charges after suspension.
+Shared process services and process-wide GC costs are excluded. Reserved span
+capacity includes allocated slots and is reported separately; this is not an RSS
+cap. Retaining a completed handle preserves diagnostics without retaining its
+private heap.
+
+`ResourceLimitError` preserves the first resource, limit, attempted usage,
+snapshot and stack. Recovery cannot resume the revoked instance. Host
+`FailTaskDuration` and `FailProgress` accept nanosecond limit/usage values and
+publish through the same permanent fence. The Temporal adapter configures active
+task watchdogs and copied observer events through
+`worker.SetIsolateResourceOptions`; violations fail the Workflow Task. Cached
+idle time does not consume a watchdog budget. No resource counters or policy are
+provided as deterministic workflow input. See
+[Resource controls](./RESOURCE_CONTROLS_PLAN.md) for accounting and validation.

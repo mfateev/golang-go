@@ -28,8 +28,9 @@ evidence. Native Linux/macOS arm64/amd64 conformance and saved-history replay
 passed on 2026-10-05. The runtime still uses
 one shared Go collector with owner-specific heap spans. Lifecycle failures are
 contained within the instance, and the SDK retires local callbacks on completion
-and eviction. Unreviewed runtime/library operations, resource limits and remaining
-Temporal features retain separate release gates.
+and eviction. Resource controls are implemented; operating targets, unreviewed
+runtime/library operations and remaining Temporal features retain separate
+release gates.
 
 The first release keeps static linking and one selected dependency version per
 module/import path. Independently loaded `.so` programs, two versions behind
@@ -108,8 +109,15 @@ is deferred at the user's request: the pinned SDK's shared sticky cache is not
 evicted by `Worker.Stop`, so safe per-worker cleanup needs an SDK hook or an
 explicitly narrower process-wide shutdown contract. See
 [Reliable lifecycle](./LIFECYCLE_PLAN.md) for the scope decision and evidence.
-Feature **6 (resource controls)** is next; feature 3
-remains deferred. Custom converter support retains
+Feature **6 (resource controls)** is complete for the agreed scope: host-only
+memory/stack/runtime accounting, memory and goroutine
+limits, active-task duration and progress watchdogs, and worker/replayer policy
+with copied observer events. Limit violations fail the Workflow Task. Full local
+Go, SDK/sample, real-server, 10,000-instance density and all four native platform
+checks passed on 2026-10-07, with all 24 native replay results unchanged. See
+[Resource controls](./RESOURCE_CONTROLS_PLAN.md) for scope and validation.
+Feature **7 (complete Temporal integration)** is next. Feature 3 remains deferred.
+Custom converter support retains
 its separate feature 8 gate. The validated determinism contract still excludes
 its documented unsupported operations.
 
