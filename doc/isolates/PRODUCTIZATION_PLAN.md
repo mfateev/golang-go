@@ -151,6 +151,25 @@ matrix, including application finalizers, cleanup callbacks and unaudited
 native/unsafe entry points. Feature 4 is complete; see its
 [operation matrix, audit boundaries and acceptance evidence](./EFFECT_RESTRICTIONS_PLAN.md).
 
+### Feature 7 API policy (2026-10-07)
+
+Stay as close as possible to the current pinned Temporal Go SDK. Match its API
+names, option types and fields, defaults, error types and behavior for activities,
+retries, continue-as-new, versioning, child workflows, queries and updates.
+SDK API innovations are deferred until after this compatibility work.
+
+Differences should follow the native Go execution model already agreed for the
+POC: standard `context.Context`, `go`, channels, `select`, and deterministic
+`time` replace the SDK's workflow context and concurrency/time abstractions.
+Asynchronous results use the existing typed result/error channels. Avoid adding
+new API variations beyond those needed for these native replacements.
+
+Use SDK-compatible activity options and context option helpers when expanding
+the provisional timeout-only activity API. Preserve existing worker/client
+registration behavior and ordinary workflow support. Continue delegating history
+processing and Temporal command semantics to the host Go SDK; the isolate byte
+protocol carries the corresponding operations and structured outcomes.
+
 ## Milestones and gates
 
 | Order | Owner | Deliverable | Exit gate |
