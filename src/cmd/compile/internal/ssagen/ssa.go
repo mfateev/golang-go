@@ -5543,7 +5543,11 @@ func (s *state) getClosureAndRcvr(fn *ir.SelectorExpr) (*ssa.Value, *ssa.Value) 
 	// Ownership instrumentation passes the derived method-table address to
 	// a call. Use the checked value so scheduling cannot leave nil+offset
 	// live as a pointer across an earlier call that can grow or shrink stacks.
-	itab = s.nilCheck(itab)
+	checked := s.nilCheck(itab)
+	// Uninstrumented calls retain the itab shape used by SSA devirtualization.
+	if s.isolateHeapEnabled() {
+		itab = checked
+	}
 	itabidx := fn.Offset() + rttype.ITab.OffsetOf("Fun")
 	closure := s.newValue1I(ssaop.OpOffPtr, s.f.Config.Types.UintptrPtr, itabidx, itab)
 	rcvr := s.newValue1(ssaop.OpIData, s.f.Config.Types.BytePtr, i)
