@@ -169,7 +169,9 @@ func testIsolateMetadataRevocation(t *testing.T, deterministic bool) {
 				runtime.IsolateMetadataScopeForTest(func() {
 					// A nested scope must not process Kill before the outer lock is released.
 					defer serviceDone.Store(true)
-					ready.Store(true)
+					if primitive != "Cond" {
+						ready.Store(true)
+					}
 					switch primitive {
 					case "Mutex":
 						mu.Lock()
@@ -180,6 +182,10 @@ func testIsolateMetadataRevocation(t *testing.T, deterministic bool) {
 					case "Cond":
 						mu.Lock()
 						defer mu.Unlock()
+						// Publish readiness under the notification mutex. The host
+						// cannot Signal until Wait registers its ticket and unlocks.
+						// A parked G alone may only be waiting for GC or stack growth.
+						ready.Store(true)
 						cond.Wait()
 					case "Once":
 						once.Do(func() { t.Error("Once initializer ran twice") })
