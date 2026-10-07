@@ -91,10 +91,16 @@ and fatal cross-owner error reporting. Full `src/all.bash`, cached-instance
 reclamation stress, SDK/sample suites and all four native Linux/macOS arm64/amd64
 jobs passed on 2026-10-06. See the acceptance evidence in
 [Memory ownership](./MEMORY_OWNERSHIP_PLAN.md).
-Feature 3 (frozen-heap GC) is deferred at the user's request. The next feature is
-**4 (enforced effect restrictions)**. Custom converter support retains its
-separate feature 8 gate. The validated determinism contract still excludes its
-documented unsupported operations.
+Feature 3 (frozen-heap GC) is deferred at the user's request. Feature 4
+(enforced effect restrictions) is complete: compulsory dependency-wide effect
+checks, worker-configured replay-aware logging and fatal Workflow Task failure
+reporting. Full `src/all.bash`, compiler integration, race/lock-ranking stress,
+SDK/sample tests, live-server failure-history checks and all four native
+Linux/macOS arm64/amd64 jobs passed on 2026-10-07. See the acceptance evidence in
+[Effect restrictions](./EFFECT_RESTRICTIONS_PLAN.md).
+The next feature is **5 (reliable lifecycle)**. Custom converter support retains
+its separate feature 8 gate. The validated determinism contract still excludes
+its documented unsupported operations.
 
 See [Native isolate determinism](./NATIVE_DETERMINISM_PLAN.md) for the supported
 operations and reproducibility contract. Unsupported map key kinds and
@@ -121,10 +127,10 @@ All five policy decisions are agreed. A forbidden operation must be rejected
 before its effect occurs; revocation and trusted cleanup must preserve the
 memory-ownership and lifecycle guarantees established by feature 2.
 
-Dependency auditing and runtime hooks, including finalizers and cleanup
-callbacks, need investigation to ensure they cannot perform effects outside
-deterministic dispatch. Feature 4 implementation is now in progress; see the
-[operation matrix and acceptance plan](./EFFECT_RESTRICTIONS_PLAN.md).
+Dependency auditing and runtime hooks now enforce the supported operation
+matrix, including application finalizers, cleanup callbacks and unaudited
+native/unsafe entry points. Feature 4 is complete; see its
+[operation matrix, audit boundaries and acceptance evidence](./EFFECT_RESTRICTIONS_PLAN.md).
 
 ## Milestones and gates
 

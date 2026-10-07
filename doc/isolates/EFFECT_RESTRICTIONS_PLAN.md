@@ -1,6 +1,6 @@
 # Effect restrictions: productization feature 4
 
-Status: implementation and acceptance validation in progress (2026-10-07).
+Status: complete; implementation and acceptance gates passed (2026-10-07).
 Features 1 and 2 are complete. Feature 3, cached-heap GC optimization, is deferred.
 
 ## Agreed contract
@@ -60,9 +60,9 @@ Go synchronization and local context cancellation remain deterministic.
 - Full `src/all.bash`, ownership/effect stress under race detection and static
   lock ranking, and native Linux/macOS arm64/amd64 CI pass before closure.
 
-Detailed exemptions and measured validation results will be recorded as the
-implementation and audit complete. Hostile native-code containment, custom
-converters and frozen-heap GC keep their separate productization gates.
+The exemptions and validation results below define the supported contract.
+Hostile native-code containment, custom converters and frozen-heap GC keep
+their separate productization gates.
 
 ## Enforcement and audit boundaries
 
@@ -99,6 +99,12 @@ before application execution is discarded. Diagnostics are copied into host
 storage, with the offending goroutine's stack bounded to 64 KiB. Retaining a
 reported error does not retain the private instance heap.
 
+Stack capture allocates its diagnostic buffer before saving the offending
+goroutine's stack pointer. Allocation can move the stack; retaining a numeric
+pointer across that allocation caused an unwinder crash in the first native
+acceptance run. The regression test forces stack movement during effect
+reporting, and concurrent fault/kill tests exercise the reporting race.
+
 Metadata registry mutation and unaudited service callbacks use the same fatal
 effect reporting path. Nested isolate creation is a host operation, checked
 before allocating another group or advancing its process identity counter.
@@ -132,10 +138,32 @@ Local acceptance passed on Linux arm64 on 2026-10-07:
 | Compiler integration | All seven scenarios passed, including mandatory enforcement, native/alias/reflection rejection, logging and isolate-only exit. |
 | Runtime stress | Ownership, effect faults, deterministic dispatch, reflection registries and cached eviction passed with race detection and static lock ranking, each repeated five times. |
 | SDK | Package tests and recorded-history replay passed. File and metadata-operation faults never invoked workflow execution completion. |
+| Samples and SDK driver | All tracked sample packages passed. Serial/concurrent paths passed normally, with race detection, and under `GOGC=1` with `GOMAXPROCS=1,2,8`. Metadata rejection cases expect fatal revocation and cannot invoke their application callbacks. |
+| Fresh-process replay | Six variants (`GOMAXPROCS=1,2,8`, default/disabled CPU features) reproduced the same 195 observations and SHA-256 `12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`. |
 | Live Temporal Server 1.32.0 | Logging completed; file and metadata violations produced actual Workflow Task failure history events carrying operation and isolate stack, with no Workflow Execution failure/completion. Test executions were terminated after inspection. |
 
-The SDK implementation is committed as `4d4c13d` in `mfateev/sdk-go-poc`.
-Native Linux/macOS arm64/amd64 acceptance and final sample/driver checks remain
-pending before feature closure. Full test output is captured separately for
-failure review. The native workflow uploads logs and the exact three repository
-revisions used by every runner.
+The final reporting regression passed with forced stack movement; concurrent
+fault stress also passed twenty repetitions under both race detection and
+static lock ranking. The final full suite was rerun after that fix.
+
+Native acceptance uses these repository revisions:
+
+| Repository | Revision |
+|---|---|
+| `mfateev/golang-go` | `40c683eeac61b606869ddf84c855f4e64dd477c2` |
+| `mfateev/sdk-go-poc` | `c0116cf55c3841b8ec3f922c4f84bf10009dfae1` |
+| `mfateev/samples-go-poc` | `a2f364746f75cb42dd0381c46597b5e8c782b94d` |
+
+All four native Linux/macOS arm64/amd64 jobs passed in
+[run 37557501679](https://github.com/mfateev/golang-go/actions/runs/37557501679).
+Each runner passed runtime/compiler conformance, repeated race and static lock
+ranking stress, all seven compiler integration scenarios, SDK/sample tests,
+serial/concurrent drivers and six fresh-process replay variants. The downloaded
+artifacts confirmed the exact revisions above and the same observation hash
+across all 24 native replay executions.
+
+Full test output is captured separately for failure review. The native workflow
+uploads logs and the exact three repository revisions used by every runner.
+Local final-suite output is in `/tmp/feature4-all-final.log`; downloaded native
+artifacts are in `/tmp/feature4-native-final/`. These local paths are temporary;
+the linked CI run is the retained acceptance record.
