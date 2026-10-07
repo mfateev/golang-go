@@ -1,0 +1,87 @@
+# Method-table address computation must follow its nil check. Ownership probes
+# make that derived address live across calls; nil+offset is not a GC pointer.
+# Force stack growth and GC in an earlier call, then verify ordinary nil panic
+# ordering and nonnil dispatch in both instrumentation levels and with race.
+[short] skip
+go build -gcflags=example.org/nilinterface=-d=isolateheap=1 -o check.exe .
+exec ./check.exe
+stdout '^nil-interface stack ordering passed$'
+go build -gcflags=example.org/nilinterface=-d=isolateheap=2 -o check.exe .
+exec ./check.exe
+stdout '^nil-interface stack ordering passed$'
+[race] go build -race -gcflags=example.org/nilinterface=-d=isolateheap=2 -o check.exe .
+[race] exec ./check.exe
+[race] stdout '^nil-interface stack ordering passed$'
+
+-- go.mod --
+module example.org/nilinterface
+go 1.26
+-- main.go --
+package main
+
+import (
+	"fmt"
+	"runtime"
+	"sync"
+)
+
+type message interface{ Descriptor() any }
+type value struct{}
+func (value) Descriptor() any { return "descriptor" }
+type registry struct{ count int }
+var global registry
+var mu sync.Mutex
+var preparations int
+
+//go:noinline
+func prepare(string) {
+	preparations++
+	grow(32)
+	runtime.GC()
+}
+
+//go:noinline
+func grow(depth int) {
+	var pad [4096]byte
+	if depth > 0 {
+		grow(depth - 1)
+	}
+	runtime.KeepAlive(&pad)
+}
+
+//go:noinline
+func (r *registry) register(_ string, descriptor any, _ message) error {
+	if descriptor != "descriptor" { panic("wrong descriptor") }
+	return nil
+}
+
+//go:noinline
+func (r *registry) RegisterMessage(mt message) error {
+	prepare("registration")
+	md := mt.Descriptor()
+	if r == &global {
+		mu.Lock()
+		defer mu.Unlock()
+	}
+	if err := r.register("message", md, mt); err != nil {
+		return err
+	}
+	r.count++
+	return nil
+}
+
+func main() {
+	for i := 0; i < 100; i++ {
+		func() {
+			defer func() {
+				if recover() == nil { panic("nil interface did not panic") }
+			}()
+			global.RegisterMessage(nil)
+		}()
+		if err := global.RegisterMessage(value{}); err != nil { panic(err) }
+	}
+	if preparations != 200 || global.count != 100 {
+		panic("preparation or dispatch ordering changed")
+	}
+	fmt.Println("nil-interface stack ordering passed")
+}

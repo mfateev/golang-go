@@ -5540,7 +5540,10 @@ func (s *state) maybeNilCheckClosure(closure *ssa.Value, k callKind) {
 func (s *state) getClosureAndRcvr(fn *ir.SelectorExpr) (*ssa.Value, *ssa.Value) {
 	i := s.expr(fn.X)
 	itab := s.newValue1(ssaop.OpITab, types.Types[types.TUINTPTR], i)
-	s.nilCheck(itab)
+	// Ownership instrumentation passes the derived method-table address to
+	// a call. Use the checked value so scheduling cannot leave nil+offset
+	// live as a pointer across an earlier call that can grow or shrink stacks.
+	itab = s.nilCheck(itab)
 	itabidx := fn.Offset() + rttype.ITab.OffsetOf("Fun")
 	closure := s.newValue1I(ssaop.OpOffPtr, s.f.Config.Types.UintptrPtr, itabidx, itab)
 	rcvr := s.newValue1(ssaop.OpIData, s.f.Config.Types.BytePtr, i)
