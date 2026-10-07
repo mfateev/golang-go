@@ -11,6 +11,9 @@ func isolateActive() bool
 
 func rejectIsolateRegistry(name string) {
 	if isolateActive() {
-		panic("expvar." + name + " is unavailable in an isolate")
+		isolateRejectEffect("expvar." + name)
 	}
 }
+
+//go:linkname isolateRejectEffect runtime.isolateRejectEffect
+func isolateRejectEffect(string)

@@ -93,7 +93,7 @@ type handlerWriter struct {
 
 func (w *handlerWriter) Write(buf []byte) (int, error) {
 	if w.processDefault {
-		rejectIsolateDefaultObject("bridge")
+		w.rejectIsolateDefault()
 	}
 	level := w.level.Level()
 	if !w.h.Enabled(context.Background(), level) {

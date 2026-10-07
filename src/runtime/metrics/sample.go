@@ -44,10 +44,13 @@ func runtime_readMetrics(unsafe.Pointer, int, int)
 // as KindBad to indicate that the name is unknown.
 func Read(m []Sample) {
 	if isolateActive() {
-		panic("runtime/metrics.Read is unavailable in an isolate")
+		isolateRejectEffect("runtime/metrics.Read")
 	}
 	if len(m) == 0 {
 		return
 	}
 	runtime_readMetrics(unsafe.Pointer(&m[0]), len(m), cap(m))
 }
+
+//go:linkname isolateRejectEffect runtime.isolateRejectEffect
+func isolateRejectEffect(string)

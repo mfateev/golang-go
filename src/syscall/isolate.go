@@ -11,12 +11,15 @@ func isolateActive() bool
 
 func rejectIsolateProcessControl(name string) {
 	if isolateActive() {
-		panic("syscall." + name + " is unavailable in an isolate")
+		isolateRejectEffect("syscall." + name)
 	}
 }
 
 func rejectIsolateEnvironment(name string) {
 	if isolateActive() {
-		panic("syscall." + name + " is unavailable in an isolate")
+		isolateRejectEffect("syscall." + name)
 	}
 }
+
+//go:linkname isolateRejectEffect runtime.isolateRejectEffect
+func isolateRejectEffect(string)

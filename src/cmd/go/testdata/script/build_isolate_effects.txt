@@ -1,0 +1,191 @@
+# Effects are rejected before execution; logs use copied-byte host calls.
+[short] skip
+[compiler:gccgo] skip
+[!GOARCH:amd64] [!GOARCH:arm64] skip
+
+go build -gcflags=all=-d=isolateeffects=0 -o effect-test$GOEXE ./host
+exec ./effect-test$GOEXE
+stdout 'effect matrix passed$'
+stdout '^logging passed$'
+stdout '^host alive$'
+
+[race] go build -race -o effects-race$GOEXE ./host
+[race] exec ./effects-race$GOEXE
+[race] stdout 'effect matrix passed$'
+[race] stdout '^logging passed$'
+
+! go build -o bad-test$GOEXE ./badhost
+stderr 'isolate: forbidden operation os.ReadFile in entry'
+! go build -o bad-unsafe-test$GOEXE ./badunsafehost
+stderr 'isolate: forbidden unsafe operation in entry'
+
+-- go.mod --
+module example.org/isolateeffects
+
+go 1.26
+-- badhost/main.go --
+package main
+import _ "example.org/isolateeffects/bad"
+func main() {}
+-- badunsafehost/main.go --
+package main
+import _ "example.org/isolateeffects/badunsafe"
+func main() {}
+-- bad/bad.go --
+package bad
+import "os"
+//go:isolate
+func Work() { _, _ = os.ReadFile("sentinel") }
+-- badunsafe/bad.go --
+package badunsafe
+import "unsafe"
+//go:isolate
+func Work() { _ = unsafe.String((*byte)(nil), 0) }
+-- jobs/jobs.go --
+package jobs
+import (
+ "fmt"
+ "isolate"
+ "log"
+ "log/slog"
+ "strings"
+ "example.org/isolateeffects/effects"
+)
+func init() { fmt.Print("initializer") }
+
+//go:isolate
+func Work(mode string) {
+ defer func() {
+  if recover() != nil { _, _ = isolate.Call(3, nil) }
+  _, _ = isolate.Call(2, nil)
+ }()
+ if mode == "log" {
+  n, err := fmt.Printf("value=%d", 7)
+  if n != 7 || err != nil { panic("printf count/error") }
+  log.SetFlags(0)
+  log.Print("standard")
+  slog.Info("structured", "count", 7)
+  println(strings.Repeat("x", 100000), 42)
+ } else {
+  effects.Run(mode)
+ }
+ _, _ = isolate.Call(4, nil)
+}
+-- effects/effects.go --
+package effects
+import (
+ "crypto/rand"
+ "net"
+ "os"
+ "reflect"
+ "runtime"
+ "time"
+ "unsafe"
+ "weak"
+ "isolate"
+)
+func native()
+func unsafeAccess() { p := new(int); _ = *(*int)(unsafe.Pointer(uintptr(unsafe.Pointer(p)))) }
+func environ() { _ = os.Getenv("HOME") }
+func writeFile() { _ = os.WriteFile("sentinel", []byte("changed"), 0600) }
+func alias() { _, _ = isolate.Call(9, nil); bypass() }
+//go:linkname bypass runtime.nanotime
+func bypass() int64
+func Run(mode string) {
+ switch mode {
+ case "nested": _, _ = isolate.New(isolate.Config{})
+ case "environment": environ()
+ case "file": writeFile()
+ case "network": _, _ = net.Dial("tcp", "127.0.0.1:1")
+ case "entropy": _, _ = rand.Read(make([]byte, 1))
+ case "gc": runtime.GC()
+ case "zone": _, _ = time.LoadLocation("America/Los_Angeles")
+ case "weak": _ = weak.Make(new(int))
+ case "unsafe": unsafeAccess()
+ case "native": native()
+ case "reflect-unsafe": reflect.ValueOf(reflect.ValueOf(new(int))).MethodByName("UnsafePointer").Call(nil)
+ case "alias": alias()
+ case "reflect": reflect.ValueOf(os.Getenv).Call([]reflect.Value{reflect.ValueOf("HOME")})
+ case "go": blocked := make(chan struct{}); go func() { environ(); close(blocked) }(); <-blocked
+ case "defer": defer environ()
+ }
+}
+-- effects/native_amd64.s --
+#include "textflag.h"
+TEXT ·native(SB),NOSPLIT,$0-0
+ RET
+-- effects/native_arm64.s --
+#include "textflag.h"
+TEXT ·native(SB),NOSPLIT,$0-0
+ RET
+-- host/main.go --
+package main
+import (
+ "context"
+ "errors"
+ "fmt"
+ "isolate"
+ "os"
+ "strings"
+ "time"
+ "example.org/isolateeffects/jobs"
+)
+func main() {
+ if err := os.WriteFile("sentinel", []byte("host"), 0600); err != nil { panic(err) }
+ handle, ok := isolate.LookupFunction(jobs.Work); if !ok { panic("missing handle") }
+ program := handle.ProgramWithHandle(func(h isolate.Handle) {
+  input, err := isolate.Call(1, nil); if err != nil { panic(err) }
+  err = h.Invoke(func(v ...isolate.Value) error { *v[0].Pointer.(*string) = string(input); return nil }, func(...isolate.Value) error { return nil })
+  if err != nil { panic(err) }
+ })
+ now := time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)
+ for _, deterministic := range []bool{false, true} {
+  for _, mode := range []string{"nested", "environment", "file", "network", "entropy", "gc", "zone", "weak", "unsafe", "native", "alias", "reflect", "reflect-unsafe", "go", "defer", "log"} {
+   var logs []isolate.LogRecord
+   i, err := isolate.New(isolate.Config{Program: program, Deterministic: deterministic, InitialTime: &now, TimerOp: 10, LogHandler: func(r isolate.LogRecord) { logs = append(logs, r) }})
+   if err != nil { panic(fmt.Sprintf("new %s: %v", mode, err)) }
+   if len(logs) != 1 || logs[0].Message != "initializer" { panic(fmt.Sprintf("initializer logs: %v", logs)) }
+   if err := i.Start(); err != nil { panic(err) }
+   succeeded := false
+  running:
+   for {
+    select {
+    case c := <-i.Commands():
+     switch c.Op {
+     case 1: c.Reply([]byte(mode), nil)
+     case isolate.LogOp:
+      r, err := isolate.DecodeLog(c.Payload); if err != nil { panic(err) }
+      logs = append(logs, r); c.Reply(nil, nil)
+     case 4:
+      if mode != "log" { panic("effect returned: "+mode) }
+      succeeded = true; c.Reply(nil, nil)
+     case 2:
+      if mode != "log" { panic("application defer ran: "+mode) }
+      c.Reply(nil, nil)
+     case 8: c.Reply(nil, nil) // child violation may happen after this handshake
+     default: panic(fmt.Sprintf("application recovery/alias ran: %s op %d", mode, c.Op))
+     }
+    case <-i.Done(): break running
+    case <-time.After(10*time.Second): panic("timeout: "+mode)
+    }
+   }
+   err = i.Wait()
+   if mode == "log" {
+    if err != nil || !succeeded { panic(fmt.Sprintf("logging: %v", err)) }
+    if len(logs) != 5 || logs[1].Source != "fmt" || logs[2].Source != "log" || logs[3].Source != "slog" || logs[4].Source != "builtin" || logs[4].Message != strings.Repeat("x", 100000)+" 42\n" { panic(fmt.Sprintf("logging sources/counts: %d", len(logs))) }
+   } else {
+    expected := map[string]string{"nested":"isolate.New", "environment":"os.Getenv", "file":"os.WriteFile", "network":"net.Dial", "entropy":"crypto/rand.Read", "gc":"runtime.GC", "zone":"time.LoadLocation", "weak":"weak.Make", "unsafe":"unsafe operation", "native":"effects.native", "alias":"go:linkname runtime.nanotime", "reflect":"os.Getenv", "reflect-unsafe":"reflect.(*Value).UnsafePointer", "go":"os.Getenv", "defer":"os.Getenv"}
+    var effect *isolate.EffectError
+    if !errors.As(err, &effect) || !strings.Contains(effect.Operation, expected[mode]) || !strings.Contains(effect.Stack, "example.org/isolateeffects/") { panic(fmt.Sprintf("wrong %s fault: %v", mode, err)) }
+    if err := i.Resume(); err == nil { panic("faulted instance resumed") }
+    if err := i.Start(); err == nil { panic("faulted instance restarted") }
+   }
+   ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+   err = i.Kill(ctx); cancel(); if err != nil { panic(err) }
+   data, err := os.ReadFile("sentinel"); if err != nil || string(data) != "host" { panic("external file changed") }
+  }
+ }
+ fmt.Println("effect matrix passed")
+ fmt.Println("logging passed")
+ fmt.Println("host alive")
+}

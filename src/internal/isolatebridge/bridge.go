@@ -55,13 +55,15 @@ type response struct {
 
 // New creates a boundary for one instance.
 func New() *Boundary {
+	// Check host-only creation before advancing the process identity counter.
+	group := newGroup()
 	owner := nextOwner.Add(1)
 	if owner == 0 {
 		panic("isolate: owner ID exhausted")
 	}
 	b := &Boundary{
 		owner: owner,
-		group: newGroup(),
+		group: group,
 		calls: make(chan *Command),
 		halt:  make(chan struct{}),
 	}
@@ -120,6 +122,9 @@ func enableDeterminism(unsafe.Pointer) bool
 func (b *Boundary) ConfigureTime(unixNano int64, timerOp uint32) error {
 	if timerOp == 0 {
 		return errors.New("isolate: timer operation is required for a host clock")
+	}
+	if timerOp == LogOp {
+		return errors.New("isolate: timer operation collides with reserved logging operation")
 	}
 	if !setTimerSleep(b.group, b.TimerSleep) {
 		return errors.New("isolate: host clock must be configured once before program initialization")
@@ -195,6 +200,12 @@ func (b *Boundary) OwnershipFaultReason() string { return ownershipFaultReason(b
 
 //go:linkname ownershipFaultReason runtime.isolateOwnershipFaultReason
 func ownershipFaultReason(unsafe.Pointer) string
+
+// EffectFaultDetails returns host-owned diagnostics from the first fatal fault.
+func (b *Boundary) EffectFaultDetails() (operation, stack string) { return effectFaultDetails(b.group) }
+
+//go:linkname effectFaultDetails runtime.isolateEffectFaultDetails
+func effectFaultDetails(unsafe.Pointer) (string, string)
 
 func (b *Boundary) ownershipFault(reason string) {
 	b.BeginStop()

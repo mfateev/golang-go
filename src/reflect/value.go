@@ -954,6 +954,7 @@ func callMethod(ctxt *methodValue, frame unsafe.Pointer, retValid *bool, regs *a
 	rcvr := ctxt.rcvr
 	rcvrType, valueFuncType, methodFn := methodReceiver("call", rcvr, ctxt.method)
 	isolateCheckMetadataCall(*(*uintptr)(methodFn))
+	isolateCheckReflectEffectCall(*(*uintptr)(methodFn))
 
 	// There are two ABIs at play here.
 	//

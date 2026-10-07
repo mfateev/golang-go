@@ -123,8 +123,8 @@ memory-ownership and lifecycle guarantees established by feature 2.
 
 Dependency auditing and runtime hooks, including finalizers and cleanup
 callbacks, need investigation to ensure they cannot perform effects outside
-deterministic dispatch. The detailed operation matrix and implementation remain
-pending.
+deterministic dispatch. Feature 4 implementation is now in progress; see the
+[operation matrix and acceptance plan](./EFFECT_RESTRICTIONS_PLAN.md).
 
 ## Milestones and gates
 

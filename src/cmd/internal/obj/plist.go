@@ -245,6 +245,9 @@ func (ctxt *Link) toFuncFlag(flag int) abi.FuncFlag {
 	}
 	if ctxt.IsAsm {
 		out |= abi.FuncFlagAsm
+		if ctxt.Std {
+			out |= abi.FuncFlagIsolateEffectAudited
+		}
 	}
 	return out
 }

@@ -9,7 +9,9 @@ import "unsafe"
 // The record is allocated under the process owner and published once. Runtime
 // probes without a managed host handler retain their diagnostic panic behavior.
 type isolateOwnershipFault struct {
-	reason string
+	reason    string
+	operation string // Nonempty for a forbidden effect.
+	stack     string
 }
 
 //go:linkname isolateSetOwnershipFaultHandler
@@ -23,6 +25,10 @@ func isolateSetOwnershipFaultHandler(p unsafe.Pointer, handler func(string)) {
 
 //go:linkname isolateOwnershipViolation
 func isolateOwnershipViolation(reason string) {
+	isolateReportFault(reason, "")
+}
+
+func isolateReportFault(reason, operation string) {
 	gp := getg()
 	group := gp.isolateGroup
 	if group == nil || group.ownershipHandler == nil {
@@ -50,7 +56,12 @@ func isolateOwnershipViolation(reason string) {
 	gp.isolateOwner = 0
 	text, data := rawstring(len(reason))
 	copy(data, reason)
-	fault := &isolateOwnershipFault{reason: text}
+	fault := &isolateOwnershipFault{reason: text, stack: isolateEffectStack()}
+	if operation != "" {
+		name, nameBytes := rawstring(len(operation))
+		copy(nameBytes, operation)
+		fault.operation = name
+	}
 	first := group.ownershipFault.CompareAndSwap(nil, fault)
 	group.markRevoked()
 	if first {

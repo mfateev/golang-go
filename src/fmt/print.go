@@ -222,7 +222,9 @@ func Fprintf(w io.Writer, format string, a ...any) (n int, err error) {
 // Printf formats according to a format specifier and writes to standard output.
 // It returns the number of bytes written and any write error encountered.
 func Printf(format string, a ...any) (n int, err error) {
-	rejectIsolateStandardIO()
+	if isolateActive() {
+		return writeIsolateLog(0, Appendf(nil, format, a...))
+	}
 	return Fprintf(os.Stdout, format, a...)
 }
 
@@ -262,7 +264,9 @@ func Fprint(w io.Writer, a ...any) (n int, err error) {
 // Spaces are added between operands when neither is a string.
 // It returns the number of bytes written and any write error encountered.
 func Print(a ...any) (n int, err error) {
-	rejectIsolateStandardIO()
+	if isolateActive() {
+		return writeIsolateLog(0, Append(nil, a...))
+	}
 	return Fprint(os.Stdout, a...)
 }
 
@@ -306,7 +310,9 @@ func Fprintln(w io.Writer, a ...any) (n int, err error) {
 // Spaces are always added between operands and a newline is appended.
 // It returns the number of bytes written and any write error encountered.
 func Println(a ...any) (n int, err error) {
-	rejectIsolateStandardIO()
+	if isolateActive() {
+		return writeIsolateLog(0, Appendln(nil, a...))
+	}
 	return Fprintln(os.Stdout, a...)
 }
 

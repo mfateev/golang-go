@@ -14,7 +14,7 @@ var originalCommandLine *FlagSet
 
 func rejectIsolateCommandLine() {
 	if isolateActive() {
-		panic("flag.CommandLine is unavailable in an isolate")
+		isolateRejectEffect("flag.CommandLine")
 	}
 }
 
@@ -25,6 +25,9 @@ func defaultFlagSet() *FlagSet {
 
 func (f *FlagSet) rejectIsolateCommandLine() {
 	if isolateActive() && (f == CommandLine || f == originalCommandLine) {
-		panic("flag.CommandLine is unavailable in an isolate")
+		isolateRejectEffect("flag.CommandLine")
 	}
 }
+
+//go:linkname isolateRejectEffect runtime.isolateRejectEffect
+func isolateRejectEffect(string)

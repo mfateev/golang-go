@@ -85,13 +85,11 @@ func (l *Logger) SetOutput(w io.Writer) {
 	l.isDiscard.Store(w == io.Discard)
 }
 
-var std = New(os.Stderr, "", LstdFlags)
+var std = newStandardLogger()
 
 // Default returns the standard logger used by the package-level output functions.
 func Default() *Logger {
-	if isolateActive() {
-		panic("log.Default is unavailable in an isolate")
-	}
+	std.rejectIsolateStandard("Default")
 	return std
 }
 

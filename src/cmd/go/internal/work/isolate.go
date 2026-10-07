@@ -76,6 +76,11 @@ var isolateOwnedStandardPackages = map[string]bool{
 	"unicode/utf16":                    true,
 	"io":                               true,
 	"fmt":                              true,
+	"log":                              true,
+	"log/internal":                     true,
+	"log/slog":                         true,
+	"log/slog/internal":                true,
+	"log/slog/internal/buffer":         true,
 	"strconv":                          true,
 	"bytes":                            true,
 	"strings":                          true,
@@ -166,6 +171,19 @@ func runBuildIsolates(ctx context.Context, args []string) {
 // buildStaticIsolates shares state selection and entry generation between
 // legacy directory programs and compiler-discovered function entries.
 func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, host *load.Package, programs []isolatecfg.Program, loaded []*load.Package, functions []isolateFunction) {
+	// Effect checks are compulsory throughout the linked graph, including
+	// host-initialized dependencies. Host execution returns through each guard.
+	forcedGcflags = append(forcedGcflags, "-d=isolateeffects=1")
+	var effectEntries []string
+	for _, fn := range functions {
+		effectEntries = append(effectEntries, fn.fullName())
+	}
+	if len(functions) == 0 {
+		for _, p := range loaded {
+			effectEntries = append(effectEntries, p.ImportPath+".main")
+		}
+	}
+	forcedGcflags = append(forcedGcflags, "-d=isolateeffectentries="+strings.Join(effectEntries, ":"))
 	implicit := load.PackagesAndErrors(ld, ctx, load.PackageOpts{}, []string{"unsafe", "runtime", "internal/isolatebridge", "internal/isolateproto"})
 	load.CheckPackageErrors(implicit)
 	if len(functions) != 0 {
@@ -380,6 +398,17 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 
 	buildInfo := host.Internal.BuildInfo
 	var entryGcflags []string
+	entryAliases := []string{host.ImportPath + ".main"}
+	if len(functions) == 0 {
+		for _, p := range loaded {
+			entryAliases = append(entryAliases, p.ImportPath+".main")
+		}
+	} else {
+		for _, fn := range functions {
+			entryAliases = append(entryAliases, fn.Package.ImportPath+"."+fn.valueName(), fn.Package.ImportPath+"."+fn.invokeName())
+		}
+	}
+	entryGcflags = append(entryGcflags, "-d=isolateentryaliases="+strings.Join(entryAliases, ":"))
 	if len(startupSkip) != 0 {
 		entryGcflags = append(entryGcflags, "-d=isolateentryskip="+strings.Join(startupSkip, ":"))
 	}
@@ -494,7 +523,7 @@ func isolateTrustedRuntimePackage(path string) bool {
 	case "runtime/cgo", "runtime/race", "runtime/asan", "runtime/msan",
 		"internal/abi", "internal/goarch", "internal/goos", "internal/cpu", "internal/bytealg",
 		"internal/race", "internal/asan", "internal/msan", "internal/coverage/rtcov",
-		"internal/isolatebridge", "internal/isolateproto", "isolate":
+		"internal/isolatebridge", "internal/isolateproto", "internal/isolatepolicy", "isolate":
 		return true
 	}
 	return false

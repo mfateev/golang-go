@@ -36,7 +36,7 @@ var testingOnlyFailRead bool
 // should not be used directly by algorithm implementations.
 func Read(b []byte) {
 	if isolateActive() {
-		panic("crypto/internal/sysrand.Read is unavailable in an isolate")
+		isolateRejectEffect("crypto/internal/sysrand.Read")
 	}
 	if firstUse.CompareAndSwap(false, true) {
 		// First use of randomness. Start timer to warn about

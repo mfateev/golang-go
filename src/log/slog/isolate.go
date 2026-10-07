@@ -4,26 +4,36 @@
 
 package slog
 
-import _ "unsafe" // for go:linkname
+import "unsafe"
 
 //go:linkname isolateActive runtime.isolateActive
 func isolateActive() bool
 
+//go:linkname isolateCheckHeapAccess runtime.isolateCheckHeapAccess
+//go:noescape
+func isolateCheckHeapAccess(unsafe.Pointer, uintptr, bool)
+
 func rejectIsolateProcess(name string) {
 	if isolateActive() {
-		panic("log/slog." + name + " is unavailable in an isolate")
+		l := defaultLogger.Load()
+		isolateCheckHeapAccess(unsafe.Pointer(l), unsafe.Sizeof(*l), false)
 	}
 }
 
-func rejectIsolateDefaultObject(name string) {
+func (h *defaultHandler) rejectIsolateDefault() {
 	if isolateActive() {
-		panic("log/slog default " + name + " is unavailable in an isolate")
+		isolateCheckHeapAccess(unsafe.Pointer(h), unsafe.Sizeof(*h), false)
+	}
+}
+func (w *handlerWriter) rejectIsolateDefault() {
+	if isolateActive() {
+		isolateCheckHeapAccess(unsafe.Pointer(w), unsafe.Sizeof(*w), false)
 	}
 }
 
 func (l *Logger) rejectIsolateDefault() {
-	if l.processRoot().processDefault.Load() && isolateActive() {
-		panic("log/slog default Logger is unavailable in an isolate")
+	if isolateActive() {
+		isolateCheckHeapAccess(unsafe.Pointer(l), unsafe.Sizeof(*l), false)
 	}
 }
 
@@ -33,3 +43,6 @@ func (l *Logger) processRoot() *Logger {
 	}
 	return l
 }
+
+//go:linkname isolateWriteLog runtime.isolateWriteLog
+func isolateWriteLog(byte, []byte)

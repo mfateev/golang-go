@@ -569,7 +569,7 @@ func NewClosureFunc(fpos, cpos src.XPos, why Op, typ *types.Type, outerfn *Func,
 
 	fn := NewFunc(fpos, fpos, closureName(outerfn, cpos, why, gen), typ)
 	fn.SetDupok(outerfn.Dupok()) // if the outer function is dupok, so is the closure
-	fn.Pragma |= outerfn.Pragma & IsolateMetadataTrusted
+	fn.Pragma |= outerfn.Pragma & (IsolateMetadataTrusted | IsolateEffectAudited)
 
 	fn.Linksym().Set(obj.AttrContentAddressable, true)
 

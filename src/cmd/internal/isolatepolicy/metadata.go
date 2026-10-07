@@ -105,6 +105,11 @@ func MetadataGlobal(symbol string) bool {
 // allocate, grow a stack, or consult application ownership while retiring the
 // process pool lists. Private Put/Get never join those lists.
 func RuntimeHook(pkg, function string) bool {
+	// Pure manifest queries run from the runtime probes themselves. Adding
+	// probes to them would recursively invoke the effect/ownership checker.
+	if pkg == "internal/isolatepolicy" {
+		return true
+	}
 	// Metrics descriptions are explicitly copied into the caller's owner.
 	if pkg == "runtime/metrics" && function == "All" {
 		return true
@@ -150,7 +155,8 @@ func MetadataLifecycleCallback(pkg, function string) bool {
 	switch function {
 	case "(*Isolate).complete.func1", "(*Isolate).completeExit.func1",
 		"(*Isolate).complete.deferwrap1", "(*Isolate).completeExit.deferwrap1",
-		"New.func2", "New.func1.1":
+		"(*initializerCompletion).exit", "(*initializerCompletion).exit-fm",
+		"(*initializerCompletion).close.func1":
 		return true
 	}
 	return false

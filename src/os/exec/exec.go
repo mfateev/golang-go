@@ -105,6 +105,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	_ "unsafe" // for go:linkname
 )
 
 // Error is returned by [LookPath] when it fails to classify a file as an
@@ -651,7 +652,7 @@ func (c *Cmd) Run() error {
 // order to release associated system resources.
 func (c *Cmd) Start() error {
 	if isolateActive() {
-		panic("os/exec.Cmd.Start is unavailable in an isolate")
+		isolateRejectEffect("os/exec.Cmd.Start")
 	}
 	// Check for doubled Start calls before we defer failure cleanup. If the prior
 	// call to Start succeeded, we don't want to spuriously close its pipes.
@@ -1363,3 +1364,6 @@ func validateLookPath(s string) error {
 	}
 	return nil
 }
+
+//go:linkname isolateRejectEffect runtime.isolateRejectEffect
+func isolateRejectEffect(string)

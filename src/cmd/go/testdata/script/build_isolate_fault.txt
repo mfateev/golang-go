@@ -1,6 +1,6 @@
-# Managed instances must terminate on real compiler-generated ownership checks.
-# Only the small assembly fixture injects foreign pointers into typed slots;
-# normal SDK dispatch transfers bytes instead.
+# Application assembly must be rejected before it can inject foreign pointers.
+# Runtime diagnostic tests cover typed read/write/publication ownership checks;
+# the production build permits no injection exemption.
 [short] skip
 [compiler:gccgo] skip
 [!GOARCH:amd64] [!GOARCH:arm64] skip
@@ -96,6 +96,7 @@ import (
     "encoding/binary"
     "unsafe"
     "errors"
+    "strings"
     "fmt"
     "isolate"
     "time"
@@ -114,7 +115,6 @@ func main() {
     foreign := allocate()
     *foreign = 7
     names := []string{"read", "write", "publication"}
-    reasons := []string{"isolate: read from foreign heap", "isolate: write to foreign heap", "isolate: foreign heap reference publication"}
     for _, deterministic := range []bool{false, true} {
         for mode, name := range names {
             i, err := isolate.New(isolate.Config{Program: dispatch.Program(handle), Deterministic: deterministic, InitialTime: &now, TimerOp: 1})
@@ -127,8 +127,8 @@ func main() {
             case command := <-i.Commands(): command.Reply(request, nil)
             case <-i.Done(): panic(i.Wait())
             }
-            var fault *isolate.OwnershipError
-            if err := i.Wait(); !errors.As(err, &fault) || fault.Reason != reasons[mode] { panic(fmt.Sprintf("wrong fault: %v", err)) }
+            var fault *isolate.EffectError
+            if err := i.Wait(); !errors.As(err, &fault) || !strings.Contains(fault.Operation, "dispatch.inject") { panic(fmt.Sprintf("wrong fault: %v", err)) }
             ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
             err = i.Kill(ctx)
             cancel()

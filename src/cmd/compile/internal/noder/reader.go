@@ -1428,6 +1428,7 @@ func (r *reader) funcBody(fn *ir.Func) {
 	})
 
 	r.marker.WriteTo(fn)
+	typecheck.ScopeIsolateEffectsInBody(fn, fn)
 }
 
 // syntheticBody adds a synthetic body to r.curfn if appropriate, and
@@ -3853,6 +3854,8 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 			r.curfn.Endlineno = r.pos()
 		}
 
+		typecheck.ScopeIsolateEffectsInBody(r.curfn, fn)
+
 		// TODO(mdempsky): This shouldn't be necessary. Inlining might
 		// read in new function/method declarations, which could
 		// potentially be recursively inlined themselves; but we shouldn't
@@ -3942,6 +3945,7 @@ func expandInline(fn *ir.Func, pri pkgReaderIndex) {
 
 	tmpfn := ir.NewFunc(fn.Pos(), fn.Nname.Pos(), fn.Sym(), fn.Type())
 	tmpfn.ClosureVars = fn.ClosureVars
+	tmpfn.Pragma = fn.Pragma
 
 	{
 		r := pri.asReader(pkgbits.SectionBody, pkgbits.SyncFuncBody)

@@ -11,6 +11,9 @@ func isolateActive() bool
 
 func rejectIsolate(name string) {
 	if isolateActive() {
-		panic("os/signal." + name + " is unavailable in an isolate")
+		isolateRejectEffect("os/signal." + name)
 	}
 }
+
+//go:linkname isolateRejectEffect runtime.isolateRejectEffect
+func isolateRejectEffect(string)

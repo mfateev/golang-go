@@ -431,7 +431,7 @@ func blockUntilEmptyFinalizerQueue(timeout int64) bool {
 // to avoid read-write races.
 func SetFinalizer(obj any, finalizer any) {
 	if isolateActive() {
-		panic("runtime.SetFinalizer is unavailable in an isolate")
+		isolateRejectEffect("runtime.SetFinalizer")
 	}
 	setFinalizer(obj, finalizer, sys.GetCallerPC())
 }

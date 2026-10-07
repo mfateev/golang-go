@@ -14,12 +14,15 @@ func runtime_isolateExit(int)
 
 func rejectIsolateProcessStart() {
 	if runtime_isolateActive() {
-		panic("os.StartProcess is unavailable in an isolate")
+		isolateRejectEffect("os.StartProcess")
 	}
 }
 
 func rejectIsolateEnvironment(name string) {
 	if runtime_isolateActive() {
-		panic("os." + name + " is unavailable in an isolate")
+		isolateRejectEffect("os." + name)
 	}
 }
+
+//go:linkname isolateRejectEffect runtime.isolateRejectEffect
+func isolateRejectEffect(string)

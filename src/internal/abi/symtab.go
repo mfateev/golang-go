@@ -62,6 +62,13 @@ const (
 	// for callbacks invoked by an audited process metadata service. A package
 	// name alone cannot grant this privilege.
 	FuncFlagIsolateMetadataTrusted
+
+	// External ABI wrappers cannot make application assembly or foreign code
+	// callable from an isolate through a function value or reflection.
+	FuncFlagIsolateEffectForbidden
+
+	// Verified standard-library/native implementation; grants no metadata scope.
+	FuncFlagIsolateEffectAudited
 )
 
 // A FuncID identifies particular functions that need to be treated

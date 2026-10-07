@@ -204,7 +204,7 @@ func main() {
    }()
    leave(owner)
    message,ok := failure.(string)
-   if !ok || !strings.HasPrefix(message,"isolate: unaudited metadata callback internal/fake/callback.") { panic("untrusted callback accepted") }
+   if !ok || !strings.HasPrefix(message,"isolate: forbidden operation unaudited metadata callback internal/fake/callback.") { panic("untrusted callback accepted") }
   }()
   if callback.Called { panic("untrusted callback executed in service") }
  }

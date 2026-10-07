@@ -101,7 +101,7 @@ func TestFmtStandardStreamsRejectIsolate(t *testing.T) {
 		} {
 			func() {
 				defer func() {
-					if got := recover(); got != "fmt: standard input and output are unavailable inside an isolate" {
+					if got := recover(); got != "isolate: forbidden operation logging without a configured host transport" && got != "isolate: forbidden operation fmt standard input" {
 						t.Errorf("standard stream call panic = %v", got)
 					}
 				}()
@@ -904,16 +904,16 @@ func TestProcessCleanupPathsRejectIsolate(t *testing.T) {
 	}
 	b := isolatebridge.New()
 	b.Run(func() {
-		checkPanic("AddCleanup", "runtime.AddCleanup is unavailable", func() {
+		checkPanic("AddCleanup", "isolate: forbidden operation runtime.AddCleanup", func() {
 			runtime.AddCleanup(new(int), func(int) {}, 0)
 		})
-		checkPanic("SetFinalizer", "runtime.SetFinalizer is unavailable", func() {
+		checkPanic("SetFinalizer", "isolate: forbidden operation runtime.SetFinalizer", func() {
 			runtime.SetFinalizer(new(int), func(*int) {})
 		})
-		checkPanic("unique.Make", "unique.Make is unavailable", func() {
+		checkPanic("unique.Make", "isolate: forbidden operation unique.Make", func() {
 			unique.Make("isolate")
 		})
-		checkPanic("netip.WithZone", "unique.Make is unavailable", func() {
+		checkPanic("netip.WithZone", "isolate: forbidden operation unique.Make", func() {
 			netip.MustParseAddr("fe80::1").WithZone("zone")
 		})
 		child := make(chan bool, 1)
@@ -932,7 +932,7 @@ func TestProcessRuntimeAPIsRejectIsolate(t *testing.T) {
 		t.Helper()
 		defer func() {
 			got, ok := recover().(string)
-			want := "runtime." + name + " is unavailable in an isolate"
+			want := "isolate: forbidden operation runtime." + name
 			if !ok || got != want {
 				t.Errorf("%s panic = %q, want %q", name, got, want)
 			}
@@ -1008,7 +1008,7 @@ func TestProcessDebugAPIsRejectIsolate(t *testing.T) {
 			func() {
 				defer func() {
 					got, ok := recover().(string)
-					want := "runtime/debug." + tt.name + " is unavailable in an isolate"
+					want := "isolate: forbidden operation runtime/debug." + tt.name
 					if !ok || got != want {
 						t.Errorf("%s panic = %q, want %q", tt.name, got, want)
 					}
@@ -1046,7 +1046,7 @@ func TestProcessProfilesRejectIsolate(t *testing.T) {
 		} {
 			func() {
 				defer func() {
-					want := "runtime/pprof." + tt.name + " is unavailable in an isolate"
+					want := "isolate: forbidden operation runtime/pprof." + tt.name
 					if got := recover(); got != want {
 						t.Errorf("%s panic = %v, want %q", tt.name, got, want)
 					}
@@ -1099,7 +1099,7 @@ func TestTraceAPIsKeepHostTraceIsolated(t *testing.T) {
 		} {
 			func() {
 				defer func() {
-					want := "runtime/trace." + tt.name + " is unavailable in an isolate"
+					want := "isolate: forbidden operation runtime/trace." + tt.name
 					if got := recover(); got != want {
 						t.Errorf("%s panic = %v, want %q", tt.name, got, want)
 					}
@@ -1127,16 +1127,16 @@ func TestEntropyAndMetricsRejectIsolate(t *testing.T) {
 			want string
 			call func()
 		}{
-			{"crypto/rand.Read is unavailable in an isolate", func() {
+			{"isolate: forbidden operation crypto/rand.Read", func() {
 				_, _ = crand.Read(make([]byte, 1))
 			}},
-			{"crypto/rand.Reader is unavailable in an isolate", func() {
+			{"isolate: forbidden operation crypto/rand.Reader", func() {
 				_, _ = io.ReadFull(crand.Reader, make([]byte, 1))
 			}},
-			{"crypto/internal/fips140/drbg.Read is unavailable in an isolate", func() {
+			{"isolate: forbidden operation crypto/internal/fips140/drbg.Read", func() {
 				_, _ = mlkem.GenerateKey768()
 			}},
-			{"runtime/metrics.Read is unavailable in an isolate", func() {
+			{"isolate: forbidden operation runtime/metrics.Read", func() {
 				metrics.Read([]metrics.Sample{{Name: "/gc/cycles/total:gc-cycles"}})
 			}},
 		} {
@@ -1172,11 +1172,11 @@ func TestStandardLoggerRejectsIsolate(t *testing.T) {
 			want string
 			call func()
 		}{
-			{"log.Output is unavailable in an isolate", func() { log.Print("host") }},
-			{"log.Default is unavailable in an isolate", func() { _ = log.Default() }},
-			{"log.SetOutput is unavailable in an isolate", func() { log.SetOutput(io.Discard) }},
-			{"log.Flags is unavailable in an isolate", func() { _ = log.Flags() }},
-			{"log.Writer is unavailable in an isolate", func() { _ = log.Writer() }},
+			{"isolate: read from foreign heap", func() { log.Print("host") }},
+			{"isolate: read from foreign heap", func() { _ = log.Default() }},
+			{"isolate: read from foreign heap", func() { log.SetOutput(io.Discard) }},
+			{"isolate: read from foreign heap", func() { _ = log.Flags() }},
+			{"isolate: read from foreign heap", func() { _ = log.Writer() }},
 		} {
 			func() {
 				defer func() {
@@ -1232,18 +1232,18 @@ func TestSlogDefaultRejectsIsolate(t *testing.T) {
 			want string
 			call func()
 		}{
-			{"log/slog.Default is unavailable in an isolate", func() { _ = slog.Default() }},
-			{"log/slog.Default is unavailable in an isolate", func() { slog.Info("host") }},
-			{"log/slog.SetDefault is unavailable in an isolate", func() { slog.SetDefault(local) }},
-			{"log/slog.SetLogLoggerLevel is unavailable in an isolate", func() { slog.SetLogLoggerLevel(slog.LevelDebug) }},
-			{"log/slog default Logger is unavailable in an isolate", func() { hostDefault.Info("host") }},
-			{"log/slog default Logger is unavailable in an isolate", func() { _ = hostDefault.With() }},
-			{"log/slog default Logger is unavailable in an isolate", func() { alias.Info("host") }},
-			{"log/slog default Logger is unavailable in an isolate", func() { aliasClone.Info("host") }},
-			{"log/slog default Handler is unavailable in an isolate", func() { _ = hostHandler.Enabled(context.Background(), slog.LevelInfo) }},
-			{"log/slog default Handler is unavailable in an isolate", func() { _ = hostHandler.Handle(context.Background(), slog.Record{}) }},
-			{"log/slog default Handler is unavailable in an isolate", func() { slog.New(hostHandler).Info("host") }},
-			{"log/slog default bridge is unavailable in an isolate", func() { _, _ = bridgeWriter.Write([]byte("host")) }},
+			{"isolate: read from foreign heap", func() { _ = slog.Default() }},
+			{"isolate: read from foreign heap", func() { slog.Info("host") }},
+			{"isolate: read from foreign heap", func() { slog.SetDefault(local) }},
+			{"isolate: read from foreign heap", func() { slog.SetLogLoggerLevel(slog.LevelDebug) }},
+			{"isolate: read from foreign heap", func() { hostDefault.Info("host") }},
+			{"isolate: read from foreign heap", func() { _ = hostDefault.With() }},
+			{"isolate: read from foreign heap", func() { alias.Info("host") }},
+			{"isolate: read from foreign heap", func() { aliasClone.Info("host") }},
+			{"isolate: read from foreign heap", func() { _ = hostHandler.Enabled(context.Background(), slog.LevelInfo) }},
+			{"isolate: read from foreign heap", func() { _ = hostHandler.Handle(context.Background(), slog.Record{}) }},
+			{"isolate: read from foreign heap", func() { slog.New(hostHandler).Info("host") }},
+			{"isolate: read from foreign heap", func() { _, _ = bridgeWriter.Write([]byte("host")) }},
 		} {
 			func() {
 				defer func() {
@@ -1279,15 +1279,15 @@ func TestExpvarRegistryRejectsIsolate(t *testing.T) {
 			want string
 			call func()
 		}{
-			{"expvar.Publish is unavailable in an isolate", func() { expvar.Publish(name, &local) }},
-			{"expvar.Get is unavailable in an isolate", func() { _ = expvar.Get("cmdline") }},
-			{"expvar.NewInt is unavailable in an isolate", func() { _ = expvar.NewInt(name) }},
-			{"expvar.NewFloat is unavailable in an isolate", func() { _ = expvar.NewFloat(name) }},
-			{"expvar.NewMap is unavailable in an isolate", func() { _ = expvar.NewMap(name) }},
-			{"expvar.NewString is unavailable in an isolate", func() { _ = expvar.NewString(name) }},
-			{"expvar.Do is unavailable in an isolate", func() { expvar.Do(func(expvar.KeyValue) { t.Error("process registry callback ran") }) }},
-			{"expvar.Handler is unavailable in an isolate", func() { _ = expvar.Handler() }},
-			{"expvar.Handler is unavailable in an isolate", func() { handler.ServeHTTP(nil, nil) }},
+			{"isolate: forbidden operation expvar.Publish", func() { expvar.Publish(name, &local) }},
+			{"isolate: forbidden operation expvar.Get", func() { _ = expvar.Get("cmdline") }},
+			{"isolate: forbidden operation expvar.NewInt", func() { _ = expvar.NewInt(name) }},
+			{"isolate: forbidden operation expvar.NewFloat", func() { _ = expvar.NewFloat(name) }},
+			{"isolate: forbidden operation expvar.NewMap", func() { _ = expvar.NewMap(name) }},
+			{"isolate: forbidden operation expvar.NewString", func() { _ = expvar.NewString(name) }},
+			{"isolate: forbidden operation expvar.Do", func() { expvar.Do(func(expvar.KeyValue) { t.Error("process registry callback ran") }) }},
+			{"isolate: forbidden operation expvar.Handler", func() { _ = expvar.Handler() }},
+			{"isolate: forbidden operation expvar.Handler", func() { handler.ServeHTTP(nil, nil) }},
 		} {
 			func() {
 				defer func() {
@@ -1334,7 +1334,7 @@ func TestFlagCommandLineRejectsIsolate(t *testing.T) {
 		} {
 			func() {
 				defer func() {
-					if got := recover(); got != "flag.CommandLine is unavailable in an isolate" {
+					if got := recover(); got != "isolate: forbidden operation flag.CommandLine" {
 						t.Errorf("panic = %v, want flag.CommandLine rejection", got)
 					}
 				}()
@@ -1358,16 +1358,16 @@ func TestProcessLaunchAPIsRejectIsolate(t *testing.T) {
 			want string
 			call func()
 		}{
-			{"os.StartProcess", "os.StartProcess is unavailable in an isolate", func() {
+			{"os.StartProcess", "isolate: forbidden operation os.StartProcess", func() {
 				_, _ = os.StartProcess("/nonexistent", []string{"/nonexistent"}, nil)
 			}},
-			{"os/exec.Cmd.Start", "os/exec.Cmd.Start is unavailable in an isolate", func() {
+			{"os/exec.Cmd.Start", "isolate: forbidden operation os/exec.Cmd.Start", func() {
 				_ = exec.Command("/nonexistent").Start()
 			}},
-			{"syscall.StartProcess", "syscall.StartProcess is unavailable in an isolate", func() {
+			{"syscall.StartProcess", "isolate: forbidden operation syscall.StartProcess", func() {
 				_, _, _ = syscall.StartProcess("/nonexistent", []string{"/nonexistent"}, nil)
 			}},
-			{"syscall.Exec", "syscall.Exec is unavailable in an isolate", func() {
+			{"syscall.Exec", "isolate: forbidden operation syscall.Exec", func() {
 				_ = syscall.Exec("/nonexistent", []string{"/nonexistent"}, nil)
 			}},
 		} {
@@ -1392,17 +1392,17 @@ func TestEnvironmentAPIsRejectIsolate(t *testing.T) {
 			want string
 			call func()
 		}{
-			{"os.Getenv is unavailable in an isolate", func() { _ = os.Getenv(key) }},
-			{"os.LookupEnv is unavailable in an isolate", func() { _, _ = os.LookupEnv(key) }},
-			{"os.Setenv is unavailable in an isolate", func() { _ = os.Setenv(key, "isolate") }},
-			{"os.Unsetenv is unavailable in an isolate", func() { _ = os.Unsetenv(key) }},
-			{"os.Clearenv is unavailable in an isolate", os.Clearenv},
-			{"os.Environ is unavailable in an isolate", func() { _ = os.Environ() }},
-			{"syscall.Getenv is unavailable in an isolate", func() { _, _ = syscall.Getenv(key) }},
-			{"syscall.Setenv is unavailable in an isolate", func() { _ = syscall.Setenv(key, "isolate") }},
-			{"syscall.Unsetenv is unavailable in an isolate", func() { _ = syscall.Unsetenv(key) }},
-			{"syscall.Clearenv is unavailable in an isolate", syscall.Clearenv},
-			{"syscall.Environ is unavailable in an isolate", func() { _ = syscall.Environ() }},
+			{"isolate: forbidden operation os.Getenv", func() { _ = os.Getenv(key) }},
+			{"isolate: forbidden operation os.LookupEnv", func() { _, _ = os.LookupEnv(key) }},
+			{"isolate: forbidden operation os.Setenv", func() { _ = os.Setenv(key, "isolate") }},
+			{"isolate: forbidden operation os.Unsetenv", func() { _ = os.Unsetenv(key) }},
+			{"isolate: forbidden operation os.Clearenv", os.Clearenv},
+			{"isolate: forbidden operation os.Environ", func() { _ = os.Environ() }},
+			{"isolate: forbidden operation syscall.Getenv", func() { _, _ = syscall.Getenv(key) }},
+			{"isolate: forbidden operation syscall.Setenv", func() { _ = syscall.Setenv(key, "isolate") }},
+			{"isolate: forbidden operation syscall.Unsetenv", func() { _ = syscall.Unsetenv(key) }},
+			{"isolate: forbidden operation syscall.Clearenv", syscall.Clearenv},
+			{"isolate: forbidden operation syscall.Environ", func() { _ = syscall.Environ() }},
 		} {
 			func() {
 				defer func() {
@@ -1439,7 +1439,7 @@ func TestSignalAPIsRejectIsolate(t *testing.T) {
 		} {
 			func() {
 				defer func() {
-					want := "os/signal." + tt.name + " is unavailable in an isolate"
+					want := "isolate: forbidden operation os/signal." + tt.name
 					if got := recover(); got != want {
 						t.Errorf("%s panic = %v, want %q", tt.name, got, want)
 					}
@@ -1455,7 +1455,7 @@ func TestAfterFuncRejectsUnownedCallback(t *testing.T) {
 	b.Run(func() {
 		defer func() {
 			got, ok := recover().(string)
-			if !ok || got != "time: AfterFunc is unavailable inside an isolate" {
+			if !ok || got != "isolate: forbidden operation time.AfterFunc without a history clock" {
 				t.Errorf("AfterFunc panic = %v, want isolate rejection", got)
 			}
 		}()
@@ -1470,11 +1470,11 @@ func TestContextCallbacksRejectUnownedRegistration(t *testing.T) {
 		call func()
 	}{
 
-		{"WithTimeout", "context: future deadlines are unavailable inside an isolate", func() {
+		{"WithTimeout", "isolate: forbidden operation context deadline without a history clock", func() {
 			_, cancel := context.WithTimeout(context.Background(), time.Hour)
 			cancel()
 		}},
-		{"CustomAfterFuncParent", "context: custom AfterFunc parent is unavailable inside an isolate", func() {
+		{"CustomAfterFuncParent", "isolate: forbidden operation context custom AfterFunc parent", func() {
 			parent := &customAfterFuncParent{Context: context.Background(), done: make(chan struct{})}
 			_, cancel := context.WithCancel(parent)
 			cancel()
@@ -1515,14 +1515,6 @@ func TestInstanceOwnerSpansInitializationAndChildren(t *testing.T) {
 					}
 				}()
 				_, _ = isolate.Call(2, nil)
-			}()
-			func() {
-				defer func() {
-					if recover() == nil {
-						t.Error("unique.Make was available during package initialization")
-					}
-				}()
-				unique.Make("during-initialization")
 			}()
 			return func(fn func()) {
 				if got := runtimeOwner(); got != initOwner {

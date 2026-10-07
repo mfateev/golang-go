@@ -31,15 +31,16 @@ type isolateRevocationGroup struct {
 	exit             func(int)    // Trusted host callback, installed before instance execution.
 	ownershipHandler func(string) // Trusted process reporter, installed by the managed host.
 	ownershipFault   atomic.Pointer[isolateOwnershipFault]
-	wakeStarted      atomic.Uint32     // One waiter scan even when fault fencing precedes host notification.
-	clockSet         atomic.Bool       // Host-injected workflow time is available.
-	clockNS          atomic.Int64      // Unix nanoseconds; runtime scheduler time stays real.
-	timerSleep       func(int64) error // Trusted durable-timer transport, installed before entry.
-	selectSeq        atomic.Uint64     // Reproducible select shuffle, independent of the M.
-	randSeq          atomic.Uint64     // math/rand/v2 stream, separate from select polling.
-	randLegacy       unsafe.Pointer    // Lazily created isolate-owned math/rand generator.
-	deterministic    bool              // Set before any group member is attached.
-	dispatchLock     mutex             // Leaf lock: only non-allocating queue/token operations.
+	wakeStarted      atomic.Uint32      // One waiter scan even when fault fencing precedes host notification.
+	clockSet         atomic.Bool        // Host-injected workflow time is available.
+	clockNS          atomic.Int64       // Unix nanoseconds; runtime scheduler time stays real.
+	timerSleep       func(int64) error  // Trusted durable-timer transport, installed before entry.
+	writeLog         func(byte, []byte) // Trusted copied-byte Call transport, installed before entry.
+	selectSeq        atomic.Uint64      // Reproducible select shuffle, independent of the M.
+	randSeq          atomic.Uint64      // math/rand/v2 stream, separate from select polling.
+	randLegacy       unsafe.Pointer     // Lazily created isolate-owned math/rand generator.
+	deterministic    bool               // Set before any group member is attached.
+	dispatchLock     mutex              // Leaf lock: only non-allocating queue/token operations.
 	dispatchToken    guintptr
 	dispatchQueue    gQueue
 	dispatchPaused   bool
@@ -584,6 +585,7 @@ type g struct {
 	ditWanted             bool // set if g wants to be executed with DIT enabled
 	syncSafePoint         bool // set if g is stopped at a synchronous safe point.
 	runningCleanups       atomic.Bool
+	isolatePrinting       bool // collecting one compiler-lowered print statement
 	sig                   uint32
 	secret                int32 // current nesting of runtime/secret.Do calls.
 	writebuf              []byte

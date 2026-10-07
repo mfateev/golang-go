@@ -9,10 +9,21 @@ import _ "unsafe" // for go:linkname
 //go:linkname isolateActive runtime.isolateActive
 func isolateActive() bool
 
-// The implicit standard streams are process resources. Explicit readers and
-// writers remain the caller's responsibility until an effect policy exists.
+//go:linkname isolateRejectEffect runtime.isolateRejectEffect
+func isolateRejectEffect(string)
+
+// The implicit standard input is a process resource. Explicit reader and
+// writer calls also obey the compiler/runtime effect policy.
 func rejectIsolateStandardIO() {
 	if isolateActive() {
-		panic("fmt: standard input and output are unavailable inside an isolate")
+		isolateRejectEffect("fmt standard input")
 	}
+}
+
+//go:linkname isolateWriteLog runtime.isolateWriteLog
+func isolateWriteLog(byte, []byte)
+
+func writeIsolateLog(source byte, p []byte) (int, error) {
+	isolateWriteLog(source, p)
+	return len(p), nil
 }

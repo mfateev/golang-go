@@ -4,19 +4,37 @@
 
 package log
 
-import _ "unsafe" // for go:linkname
+import (
+	"os"
+	"unsafe"
+)
 
 //go:linkname isolateActive runtime.isolateActive
 func isolateActive() bool
 
-var standardLogger *Logger
+//go:linkname isolateCheckHeapAccess runtime.isolateCheckHeapAccess
+//go:noescape
+func isolateCheckHeapAccess(unsafe.Pointer, uintptr, bool)
 
-func init() {
-	standardLogger = std
+type isolateLogWriter struct{}
+
+//go:linkname isolateWriteLog runtime.isolateWriteLog
+func isolateWriteLog(byte, []byte)
+
+func (isolateLogWriter) Write(p []byte) (int, error) {
+	isolateWriteLog(1, p)
+	return len(p), nil
+}
+
+func newStandardLogger() *Logger {
+	if isolateActive() {
+		return New(isolateLogWriter{}, "", LstdFlags|LUTC)
+	}
+	return New(os.Stderr, "", LstdFlags)
 }
 
 func (l *Logger) rejectIsolateStandard(name string) {
-	if l == standardLogger && isolateActive() {
-		panic("log." + name + " is unavailable in an isolate")
+	if isolateActive() {
+		isolateCheckHeapAccess(unsafe.Pointer(l), unsafe.Sizeof(*l), false)
 	}
 }

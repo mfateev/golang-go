@@ -242,6 +242,11 @@ func MakeTask() {
 // can run for the host and an isolate, so these writes cannot be allowed to
 // silently modify the process copy during isolate execution.
 func checkIsolateGlobalWrites(fn *ir.Func) {
+	// Guarded helpers remain ordinary host functions. Their body cannot run
+	// privately, including instantiated standard-library generic helpers.
+	if fn.Pragma&ir.IsolateEffectGuarded != 0 || ir.IsolateEscapeHelper(fn) {
+		return
+	}
 	check := func(lhs, stmt ir.Node) {
 		name := isolateGlobalRoot(lhs)
 		if name == nil || name.Class != ir.PEXTERN {

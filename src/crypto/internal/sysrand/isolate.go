@@ -8,3 +8,6 @@ import _ "unsafe" // for go:linkname
 
 //go:linkname isolateActive runtime.isolateActive
 func isolateActive() bool
+
+//go:linkname isolateRejectEffect runtime.isolateRejectEffect
+func isolateRejectEffect(string)

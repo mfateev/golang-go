@@ -430,7 +430,7 @@ func (s *NameSet) Add(n *Name) {
 	(*s)[n] = struct{}{}
 }
 
-type PragmaFlag uint16
+type PragmaFlag uint32
 
 const (
 	// Func pragmas.
@@ -459,6 +459,11 @@ const (
 	// Compiler-only source provenance, serialized with generic function bodies.
 	// No source directive can set this bit.
 	IsolateMetadataTrusted
+	// Source-verified standard-library provenance for effect enforcement.
+	// This grants no metadata service scope or allocation privilege.
+	IsolateEffectAudited
+	// Private execution is rejected unconditionally at function entry.
+	IsolateEffectGuarded
 )
 
 var BlankNode *Name

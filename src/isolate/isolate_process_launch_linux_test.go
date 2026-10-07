@@ -14,7 +14,7 @@ func TestForkExecRejectsIsolate(t *testing.T) {
 	b := isolatebridge.New()
 	b.Run(func() {
 		defer func() {
-			const want = "syscall.ForkExec is unavailable in an isolate"
+			const want = "isolate: forbidden operation syscall.ForkExec"
 			if got := recover(); got != want {
 				t.Errorf("ForkExec panic = %v, want %q", got, want)
 			}

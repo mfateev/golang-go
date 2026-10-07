@@ -662,7 +662,22 @@ func (w *walkState) walkPrint(nn *ir.CallExpr, init *ir.Nodes) ir.Node {
 	}
 	nn.Args = t
 
-	calls := []ir.Node{w.mkcall("printlock", nil, init)}
+	begin, end := "printlock", "printunlock"
+	var beginArgs []ir.Node
+	if base.Debug.IsolateEffects != 0 && !base.Flag.CompilingRuntime {
+		begin, end = "isolatePrintBegin", "isolatePrintEnd"
+		// Every non-string builtin representation fits within 128 bytes.
+		// Include the full length of each string before entering the printer;
+		// gwrite is also used by GC and must remain allocation-free.
+		var size ir.Node = ir.NewInt(base.Pos, int64(len(nn.Args)*128+1))
+		for _, arg := range nn.Args {
+			if arg.Type().IsString() {
+				size = ir.NewBinaryExpr(base.Pos, ir.OADD, size, ir.NewUnaryExpr(base.Pos, ir.OLEN, arg))
+			}
+		}
+		beginArgs = append(beginArgs, typecheck.Expr(size))
+	}
+	calls := []ir.Node{w.mkcall(begin, nil, init, beginArgs...)}
 	for i, n := range nn.Args {
 		if n.Op() == ir.OLITERAL {
 			if n.Type() == types.UntypedRune {
@@ -759,7 +774,7 @@ func (w *walkState) walkPrint(nn *ir.CallExpr, init *ir.Nodes) ir.Node {
 		calls = append(calls, r)
 	}
 
-	calls = append(calls, w.mkcall("printunlock", nil, init))
+	calls = append(calls, w.mkcall(end, nil, init))
 
 	typecheck.Stmts(calls)
 	w.walkExprList(calls, init)

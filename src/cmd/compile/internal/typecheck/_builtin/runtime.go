@@ -15,6 +15,12 @@ package runtime
 
 import "unsafe"
 
+func isolateRejectEffect(string)
+func isolateCheckEffectCall(uintptr)
+func isolateCheckEffectClosure(*byte)
+func isolatePrintBegin(int)
+func isolatePrintEnd()
+
 func newobject(typ *byte) *any
 func mallocgc(size uintptr, typ *byte, needszero bool) unsafe.Pointer
 func panicdivide()

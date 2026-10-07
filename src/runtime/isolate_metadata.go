@@ -72,7 +72,7 @@ func isolateLeaveMetadata(owner uintptr) {
 // descriptor builders. Host implementations retain their original behavior.
 func isolateRejectMetadataAPI(name string) {
 	if isolateActive() {
-		panic("isolate: unaudited metadata operation " + name)
+		isolateRejectEffect("unaudited metadata operation " + name)
 	}
 }
 
@@ -105,7 +105,7 @@ func isolateCheckMetadataDescriptor(value any) {
 		typ = (*ptrtype)(unsafe.Pointer(typ)).Elem
 	}
 	if toRType(typ).pkgpath() != "google.golang.org/protobuf/internal/filedesc" {
-		panic("isolate: unaudited metadata descriptor implementation")
+		isolateRejectEffect("unaudited metadata descriptor implementation")
 	}
 	isolateCheckMetadataReceiver(e.data)
 }
@@ -125,7 +125,7 @@ func isolateCheckMetadataCall(pc uintptr) {
 		return
 	}
 	name := funcname(fn)
-	panic("isolate: unaudited metadata callback " + name)
+	isolateRejectEffect("unaudited metadata callback " + name)
 }
 
 // Defer registration must preserve Go's nil-function behavior: a nil function

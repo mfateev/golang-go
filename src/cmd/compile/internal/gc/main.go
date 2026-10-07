@@ -258,6 +258,7 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	bloop.Walk(typecheck.Target)
 
 	typecheck.ScopeIsolateMetadata()
+	typecheck.ScopeIsolateEffects()
 
 	// Interleaved devirtualization and inlining.
 	base.Timer.Start("fe", "devirtualize-and-inline")

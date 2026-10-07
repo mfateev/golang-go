@@ -15,7 +15,7 @@ import (
 //go:linkname isolateGetBoundary
 func isolateGetBoundary() unsafe.Pointer {
 	if getg().isolateMetadataDepth != 0 {
-		panic("isolate: metadata services cannot call the host")
+		isolateRejectEffect("host call from a metadata service")
 	}
 	return getg().isolateBoundary
 }
@@ -29,6 +29,7 @@ func isolateSetBoundary(p unsafe.Pointer) unsafe.Pointer {
 }
 
 //go:linkname isolateActive
+//go:nosplit
 func isolateActive() bool {
 	gp := getg()
 	return gp.isolateOwner != 0 || gp.isolateGroup != nil || gp.isolateBoundary != nil || gp.isolateE4Bases != nil
@@ -36,7 +37,7 @@ func isolateActive() bool {
 
 func isolateRejectProcessAPI(name string) {
 	if isolateActive() {
-		panic("runtime." + name + " is unavailable in an isolate")
+		isolateRejectEffect("runtime." + name)
 	}
 }
 
@@ -70,7 +71,7 @@ func isolateSetOwner(id uintptr) uintptr {
 //go:linkname isolateNewGroup
 func isolateNewGroup() unsafe.Pointer {
 	if isolateActive() {
-		panic("isolate: cannot create a runtime group inside an isolate")
+		isolateRejectEffect("nested isolate creation")
 	}
 	return unsafe.Pointer(&isolateRevocationGroup{alloc: newIsolateAllocHandle()})
 }

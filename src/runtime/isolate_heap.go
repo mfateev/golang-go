@@ -254,6 +254,11 @@ func isolateCheckHeapReferenceTo(dst, value unsafe.Pointer, stack bool) {
 		if isolateReadOnlyItabRange(addr, addr) {
 			return
 		}
+		// reflect.Type.Method constructs a function value from its immutable
+		// entry address. This permits code references, never code reads/writes.
+		if fn := findfunc(addr); fn.valid() && fn.entry() == addr {
+			return
+		}
 		isolateCheckNonHeapAccess(addr, addr, false)
 		return
 	}

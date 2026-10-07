@@ -126,6 +126,7 @@ func main() {
 package main
 
 import (
+ "os"
 	"encoding/base32"
 	"encoding/base64"
 	jsonv2 "encoding/json/v2"
@@ -146,7 +147,7 @@ func run(name string) uintptr {
 	if !ok {
 		panic("missing program " + name)
 	}
-	instance, err := isolate.New(isolate.Config{Program: program})
+	instance, err := isolate.New(isolate.Config{Program: program, LogHandler: func(r isolate.LogRecord) { fmt.Fprint(os.Stderr, r.Message) }})
 	if err != nil {
 		panic(err)
 	}
@@ -205,6 +206,7 @@ func main() {
 package main
 
 import (
+ "os"
     "example.org/isolatebuildtest/shared"
     "fmt"
     "isolate"
@@ -215,7 +217,7 @@ func main() {
     fmt.Println("host before", shared.Next())
     program, ok := isolate.LookupProgram("orders")
     if !ok { panic("missing orders") }
-    instance, err := isolate.New(isolate.Config{Program: program})
+    instance, err := isolate.New(isolate.Config{Program: program, LogHandler: func(r isolate.LogRecord) { fmt.Fprint(os.Stderr, r.Message) }})
     if err != nil { panic(err) }
     if err := instance.Start(); err != nil { panic(err) }
     inputCommand := <-instance.Commands()
@@ -234,6 +236,7 @@ func main() {
 package main
 
 import (
+ "os"
     "context"
     "errors"
     "fmt"
@@ -243,7 +246,7 @@ import (
 func main() {
     program, ok := isolate.LookupProgram("exitprog")
     if !ok { panic("missing exit program") }
-    instance, err := isolate.New(isolate.Config{Program: program})
+    instance, err := isolate.New(isolate.Config{Program: program, LogHandler: func(r isolate.LogRecord) { fmt.Fprint(os.Stderr, r.Message) }})
     if err != nil { panic(err) }
     if err := instance.Start(); err != nil { panic(err) }
     var exitErr *isolate.ExitError
@@ -390,7 +393,7 @@ func main() {
 	args := os.Args
 	if len(args) != 0 { args[0] = "bad" }
 	out := os.Stdout
-	_, _ = out.Write([]byte("bad"))
+	if out == nil { panic("missing stdout") }
 	flags := flag.CommandLine
 	_ = flags.Set("bad", "value")
 }

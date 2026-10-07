@@ -38,6 +38,9 @@ type Config struct {
 	Deterministic bool       // FIFO native goroutines and deterministic select/map iteration.
 	InitialTime   *time.Time // Enables the host clock before package initialization.
 	TimerOp       uint32     // Call operation used for durable timer waits.
+	// LogHandler enables LogOp and services printing during initialization.
+	// After Start, logging commands arrive on Commands with other host calls.
+	LogHandler func(LogRecord)
 }
 
 // Command is one host request made by Call. Reply must be called once.
@@ -61,6 +64,7 @@ type Isolate struct {
 	exitErr            ExitError
 	ownershipRequested atomic.Bool
 	ownershipErr       *OwnershipError
+	effectErr          *EffectError
 	err                error // published by closing done
 }
 
@@ -82,9 +86,17 @@ func (e *ExitError) Error() string {
 // OwnershipError reports a permanently revoked instance after a memory owner
 // violation. Application recover and defers cannot resume the instance. Kill
 // waits for the remaining runtime/service cleanup fence.
-type OwnershipError struct{ Reason string }
+type OwnershipError struct{ Reason, Stack string }
 
-func (e *OwnershipError) Error() string { return e.Reason }
+func (e *OwnershipError) Error() string { return e.Reason + "\n" + e.Stack }
+
+// EffectError reports a forbidden operation attempted before its effect occurred.
+// The isolate is permanently revoked; workflow recover and defers cannot run.
+type EffectError struct{ Operation, Stack string }
+
+func (e *EffectError) Error() string {
+	return "isolate: forbidden operation " + e.Operation + "\n" + e.Stack
+}
 
 // KillPendingError reports goroutines still attached to a revoked instance.
 // Running includes goroutines in syscalls; no stack sample is available yet.
@@ -100,12 +112,43 @@ func (e *KillPendingError) Error() string {
 	return "isolate: kill pending: " + strconv.FormatInt(int64(e.LiveGoroutines), 10) + " goroutines remain"
 }
 
+// Named lifecycle handlers keep their audited identity independent of the
+// anonymous-function numbering in New. They execute no application callbacks.
+type initializerCompletion struct {
+	instance *Isolate
+	done     chan struct{}
+	once     sync.Once
+}
+
+func (c *initializerCompletion) close() {
+	c.once.Do(func() { close(c.done) })
+}
+
+func (c *initializerCompletion) exit(code int) {
+	c.instance.completeExit(code)
+	c.close()
+}
+
+func (c *initializerCompletion) fault(reason string) {
+	c.instance.completeOwnershipFault(reason)
+	c.close()
+}
+
 // New prepares an instance. Its program can request initial input with Call.
 func New(cfg Config) (*Isolate, error) {
 	if cfg.Program.entry.Main == nil || cfg.Program.entry.NewState == nil {
 		return nil, errors.New("isolate: unknown program")
 	}
 	boundary := isolatebridge.New()
+	prepared := false
+	defer func() {
+		if !prepared {
+			boundary.Stop()
+		}
+	}()
+	if cfg.LogHandler != nil && !boundary.ConfigureLogging() {
+		return nil, errors.New("isolate: cannot configure logging")
+	}
 	if cfg.Deterministic {
 		if err := boundary.EnableDeterminism(); err != nil {
 			return nil, err
@@ -127,24 +170,17 @@ func New(cfg Config) (*Isolate, error) {
 		// Allocate separately on the host: retaining a reported error must
 		// not keep its instance, boundary, or allocator cache alive.
 		ownershipErr: new(OwnershipError),
+		effectErr:    new(EffectError),
 	}
 	var runState func(func())
 	var err error
 	// Initializers can call runtime.Goexit. Run them on a dedicated goroutine
 	// so that doing so does not terminate the host goroutine calling New.
-	done := make(chan struct{})
-	var doneOnce sync.Once
-	closeDone := func() { doneOnce.Do(func() { close(done) }) }
-	boundary.SetExitHandler(func(code int) {
-		i.completeExit(code)
-		closeDone()
-	})
-	boundary.SetOwnershipFaultHandler(func(reason string) {
-		i.completeOwnershipFault(reason)
-		closeDone()
-	})
+	completion := &initializerCompletion{instance: i, done: make(chan struct{})}
+	boundary.SetExitHandler(completion.exit)
+	boundary.SetOwnershipFaultHandler(completion.fault)
 	go func() {
-		defer closeDone()
+		defer completion.close()
 		boundary.RunOwner(func() {
 			returned := false
 			defer func() {
@@ -163,13 +199,33 @@ func New(cfg Config) (*Isolate, error) {
 			returned = true
 		})
 	}()
-	<-done
+	// New has not returned an instance yet. Service only the reserved logging
+	// operation so initializers can print through the same copied-byte Call.
+initialize:
+	for {
+		select {
+		case <-completion.done:
+			break initialize
+		case command := <-boundary.Commands():
+			if command.Op != LogOp || cfg.LogHandler == nil {
+				boundary.Stop()
+				return nil, errors.New("isolate: initializer attempted an unsupported host call")
+			}
+			record, cause := DecodeLog(command.Payload)
+			if cause != nil {
+				boundary.Stop()
+				return nil, cause
+			}
+			cfg.LogHandler(record)
+			command.Reply(nil, nil)
+		}
+	}
 	if reason := boundary.OwnershipFaultReason(); reason != "" {
 		i.completeOwnershipFault(reason)
 	}
 	if i.ownershipRequested.Load() {
 		boundary.Stop()
-		return nil, i.ownershipErr
+		return nil, i.err
 	}
 	if i.exitRequested.Load() {
 		boundary.Stop()
@@ -184,6 +240,7 @@ func New(cfg Config) (*Isolate, error) {
 		return nil, errors.New("isolate: program has no state runner")
 	}
 	i.runState = runState
+	prepared = true
 	return i, nil
 }
 
@@ -286,9 +343,14 @@ func (i *Isolate) recordOwnershipFault() bool {
 	if reason == "" {
 		return false
 	}
-	i.ownershipErr.Reason = reason
+	_, stack := i.boundary.EffectFaultDetails()
+	i.ownershipErr.Reason, i.ownershipErr.Stack = reason, stack
 	i.ownershipRequested.Store(true)
 	i.err = i.ownershipErr
+	if operation, stack := i.boundary.EffectFaultDetails(); operation != "" {
+		i.effectErr.Operation, i.effectErr.Stack = operation, stack
+		i.err = i.effectErr
+	}
 	return true
 }
 
@@ -323,7 +385,7 @@ func (i *Isolate) Suspend() error {
 	}
 	err := i.boundary.Suspend()
 	if reason := i.boundary.OwnershipFaultReason(); reason != "" {
-		return &OwnershipError{Reason: reason}
+		return i.faultError(reason)
 	}
 	return err
 }
@@ -335,9 +397,17 @@ func (i *Isolate) Resume() error {
 	}
 	err := i.boundary.Resume()
 	if reason := i.boundary.OwnershipFaultReason(); reason != "" {
-		return &OwnershipError{Reason: reason}
+		return i.faultError(reason)
 	}
 	return err
+}
+
+func (i *Isolate) faultError(reason string) error {
+	if operation, stack := i.boundary.EffectFaultDetails(); operation != "" {
+		return &EffectError{Operation: operation, Stack: stack}
+	}
+	_, stack := i.boundary.EffectFaultDetails()
+	return &OwnershipError{Reason: reason, Stack: stack}
 }
 
 // PendingCalls counts outstanding host operations. Inspect after Suspend;

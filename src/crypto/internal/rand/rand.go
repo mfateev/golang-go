@@ -21,7 +21,7 @@ type reader struct{ defaultReader }
 
 func (r reader) Read(b []byte) (n int, err error) {
 	if isolateActive() {
-		panic("crypto/rand.Reader is unavailable in an isolate")
+		isolateRejectEffect("crypto/rand.Reader")
 	}
 	if boring.Enabled {
 		if _, err := boring.RandReader.Read(b); err != nil {

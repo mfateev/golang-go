@@ -13,6 +13,7 @@ import (
 	"html"
 	"internal/buildcfg"
 	"internal/goexperiment"
+	effectpolicy "internal/isolatepolicy"
 	"internal/runtime/gc"
 	"os"
 	"path/filepath"
@@ -4953,6 +4954,11 @@ func (s *state) openDeferRecord(n *ir.CallExpr) {
 	if base.Debug.IsolateMetadata != 0 && !base.Flag.CompilingRuntime {
 		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckMetadataClosure"), true, nil, closureVal)
 	}
+	if s.isolateEffectsEnabled() {
+		previous := s.prevCall
+		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckEffectClosure"), true, nil, closureVal)
+		s.prevCall = previous
+	}
 	closure := s.openDeferSave(fn.Type(), closureVal)
 	opendefer.closureNode = closure.Aux.(*ir.Name)
 	if !(fn.Op() == ir.ONAME && fn.(*ir.Name).Class == ir.PFUNC) {
@@ -5382,6 +5388,26 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 			if codeptr != nil {
 				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckMetadataCall"), true, nil, codeptr)
 			}
+		}
+		if s.isolateEffectsEnabled() {
+			previous := s.prevCall
+			if closure != nil {
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckEffectClosure"), true, nil, closure)
+			} else if codeptr != nil {
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckEffectCall"), true, nil, codeptr)
+			} else if n.Fun.Op() == ir.ONAME {
+				target := n.Fun.(*ir.Name)
+				sym := target.Sym()
+				if sym.Pkg != nil && effectpolicy.Forbidden(sym.Pkg.Path, sym.Name) {
+					s.rtcall(typecheck.LookupRuntimeFunc("isolateRejectEffect"), true, nil, s.expr(typecheck.DefaultLit(ir.NewString(n.Pos(), sym.Pkg.Path+"."+sym.Name), types.Types[types.TSTRING])))
+				} else if sym.Pkg != nil && effectpolicy.UnsafeReflection(sym.Pkg.Path, sym.Name) || target.Func != nil && target.Func.ABI == obj.ABI0 {
+					// Native declarations use ABI0; the ABIInternal wrapper is
+					// classified at runtime. Ordinary Go callees carry body guards.
+					pc := s.entryNewValue1A(ssaop.OpAddr, types.Types[types.TUINTPTR], callTargetLSym(target), s.sb)
+					s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckEffectCall"), true, nil, pc)
+				}
+			}
+			s.prevCall = previous
 		}
 		if s.isolateHeapEnabled() && (k == callNormal || k == callTail) &&
 			(closure != nil || codeptr != nil) && len(callArgs) != 0 &&
@@ -8574,6 +8600,11 @@ func isStructNotSIMD(t *types.Type) bool {
 var BoundsCheckFunc [ssa.BoundsKindCount]*obj.LSym
 
 func (s *state) isolateHeapEnabled() bool {
-	return base.Debug.IsolateHeap != 0 && !base.Flag.CompilingRuntime &&
+	return base.Debug.IsolateHeap != 0 && !base.Flag.CompilingRuntime && !ir.IsolateEscapeHelper(s.curfn) &&
 		!(base.Flag.Std && isolatepolicy.RuntimeHook(base.Ctxt.Pkgpath, ir.FuncName(s.curfn)))
+}
+
+func (s *state) isolateEffectsEnabled() bool {
+	return base.Debug.IsolateEffects != 0 && !base.Flag.CompilingRuntime &&
+		!(base.Flag.Std && (s.curfn.ABIWrapper() || isolatepolicy.RuntimeHook(base.Ctxt.Pkgpath, ir.FuncName(s.curfn))))
 }

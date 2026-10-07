@@ -66,7 +66,7 @@ jobs:
         run: |
           set -euo pipefail
           cd golang-go
-          if ! ./bin/go test -short runtime isolate internal/isolatebridge go/build internal/trace context time sync iter reflect internal/runtime/maps math/rand math/rand/v2 > "$POC_LOG_DIR/runtime.log" 2>&1; then
+          if ! ./bin/go test -short runtime isolate internal/isolatebridge internal/isolatepolicy go/build internal/trace context time sync iter reflect internal/runtime/maps math/rand math/rand/v2 > "$POC_LOG_DIR/runtime.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/runtime.log"
             exit 1
           fi
@@ -74,15 +74,15 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/cpu-disabled.log"
             exit 1
           fi
-          if ! ./bin/go test -race runtime isolate internal/isolatebridge -run 'TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/race.log" 2>&1; then
+          if ! ./bin/go test -race runtime isolate internal/isolatebridge -run 'TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestEffectFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/race.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/race.log"
             exit 1
           fi
-          if ! GOEXPERIMENT=staticlockranking ./bin/go test -short runtime isolate internal/isolatebridge -run 'TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/lockranking.log" 2>&1; then
+          if ! GOEXPERIMENT=staticlockranking ./bin/go test -short runtime isolate internal/isolatebridge -run 'TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestEffectFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/lockranking.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/lockranking.log"
             exit 1
           fi
-          if ! ./bin/go test cmd/go -run 'TestScript/build_isolate_(functions|programs|metadata|heap|fault|ownership)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
+          if ! ./bin/go test cmd/go -run 'TestScript/build_isolate_(functions|programs|metadata|heap|fault|ownership|effects)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/compiler.log"
             exit 1
           fi

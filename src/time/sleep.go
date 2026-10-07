@@ -298,7 +298,7 @@ func AfterFunc(d Duration, f func()) *Timer {
 	if runtime_isolateActive() {
 		// The timer fires on a runtime goroutine. Its go statement would
 		// start f without the isolate that registered it.
-		panic("time: AfterFunc is unavailable inside an isolate")
+		runtime_isolateRejectEffect("time.AfterFunc without a history clock")
 	}
 	return newTimer(when(d), 0, goFunc, f, nil)
 }
@@ -321,3 +321,6 @@ func runtime_isolateTimerSleep(int64) error
 func goFunc(arg any, seq uintptr, delta int64) {
 	go arg.(func())()
 }
+
+//go:linkname runtime_isolateRejectEffect runtime.isolateRejectEffect
+func runtime_isolateRejectEffect(string)

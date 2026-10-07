@@ -545,7 +545,7 @@ func (c *cancelCtx) propagateCancel(parent Context, child canceler) {
 		if runtime_isolateActive() {
 			// A custom parent may invoke the callback from outside this
 			// isolate after the child has been registered.
-			panic("context: custom AfterFunc parent is unavailable inside an isolate")
+			runtime_isolateRejectEffect("context custom AfterFunc parent")
 		}
 		c.mu.Lock()
 		stop := a.AfterFunc(func() {
@@ -690,7 +690,7 @@ func WithDeadlineCause(parent Context, d time.Time, cause error) (Context, Cance
 	}
 	if runtime_isolateActive() && !runtime_isolateClockEnabled() && time.Until(d) > 0 {
 		// An isolate deadline requires the host-controlled clock and timer bridge.
-		panic("context: future deadlines are unavailable inside an isolate")
+		runtime_isolateRejectEffect("context deadline without a history clock")
 	}
 	c := &timerCtx{
 		deadline: d,
@@ -862,3 +862,6 @@ func value(c Context, key any) any {
 
 //go:linkname runtime_isolateClockEnabled runtime.isolateClockEnabled
 func runtime_isolateClockEnabled() bool
+
+//go:linkname runtime_isolateRejectEffect runtime.isolateRejectEffect
+func runtime_isolateRejectEffect(string)

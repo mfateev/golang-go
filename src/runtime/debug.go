@@ -69,7 +69,7 @@ import (
 // [default]: https://go.dev/doc/godebug#default
 func GOMAXPROCS(n int) int {
 	if isolateActive() {
-		panic("runtime.GOMAXPROCS is unavailable in an isolate")
+		isolateRejectEffect("runtime.GOMAXPROCS")
 	}
 	if GOARCH == "wasm" && n > 1 {
 		n = 1 // WebAssembly has no threads yet, so only one CPU is possible.
@@ -119,7 +119,7 @@ func GOMAXPROCS(n int) int {
 // affinity mask or cgroup quota.
 func SetDefaultGOMAXPROCS() {
 	if isolateActive() {
-		panic("runtime.SetDefaultGOMAXPROCS is unavailable in an isolate")
+		isolateRejectEffect("runtime.SetDefaultGOMAXPROCS")
 	}
 	// SetDefaultGOMAXPROCS conceptually means "[re]do what the runtime
 	// would do at startup if the GOMAXPROCS environment variable were
@@ -159,7 +159,7 @@ func SetDefaultGOMAXPROCS() {
 // process startup are not reflected.
 func NumCPU() int {
 	if isolateActive() {
-		panic("runtime.NumCPU is unavailable in an isolate")
+		isolateRejectEffect("runtime.NumCPU")
 	}
 	return int(numCPUStartup)
 }
@@ -167,7 +167,7 @@ func NumCPU() int {
 // NumCgoCall returns the number of cgo calls made by the current process.
 func NumCgoCall() int64 {
 	if isolateActive() {
-		panic("runtime.NumCgoCall is unavailable in an isolate")
+		isolateRejectEffect("runtime.NumCgoCall")
 	}
 	var n = int64(atomic.Load64(&ncgocall))
 	for mp := (*m)(atomic.Loadp(unsafe.Pointer(&allm))); mp != nil; mp = mp.alllink {
@@ -190,7 +190,7 @@ func totalMutexWaitTimeNanos() int64 {
 // NumGoroutine returns the number of goroutines that currently exist.
 func NumGoroutine() int {
 	if isolateActive() {
-		panic("runtime.NumGoroutine is unavailable in an isolate")
+		isolateRejectEffect("runtime.NumGoroutine")
 	}
 	return int(gcount(false))
 }

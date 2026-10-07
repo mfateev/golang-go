@@ -32,7 +32,7 @@ var drbgPool = sync.Pool{
 // Otherwise, it uses the operating system's random number generator.
 func Read(b []byte) {
 	if isolateActive() {
-		panic("crypto/internal/fips140/drbg.Read is unavailable in an isolate")
+		isolateRejectEffect("crypto/internal/fips140/drbg.Read")
 	}
 	if testingReader != nil {
 		fips140.RecordNonApproved()

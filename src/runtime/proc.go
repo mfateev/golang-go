@@ -4603,6 +4603,7 @@ func gdestroy(gp *g) {
 	gp._defer = nil // should be true already but just in case.
 	gp._panic = nil // non-nil for Goexit during panic. points at stack-allocated data.
 	gp.writebuf = nil
+	gp.isolatePrinting = false
 	gp.waitreason = waitReasonZero
 	gp.param = nil
 	gp.labels = nil
@@ -5490,6 +5491,7 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	newg.isolateE4Bases = nil
 	newg.isolateOwner = 0
 	newg.isolateMetadataDepth = 0
+	newg.isolatePrinting = false
 	newg.isolateBoundary = nil
 	newg.isolateGroup = nil
 	newg.isolateStarted = false
@@ -5785,7 +5787,7 @@ func dolockOSThread() {
 //go:nosplit
 func LockOSThread() {
 	if isolateActive() {
-		panic("runtime.LockOSThread is unavailable in an isolate")
+		isolateRejectEffect("runtime.LockOSThread")
 	}
 	if atomic.Load(&newmHandoff.haveTemplateThread) == 0 && GOOS != "plan9" {
 		// If we need to start a new thread from the locked
@@ -5841,7 +5843,7 @@ func dounlockOSThread() {
 //go:nosplit
 func UnlockOSThread() {
 	if isolateActive() {
-		panic("runtime.UnlockOSThread is unavailable in an isolate")
+		isolateRejectEffect("runtime.UnlockOSThread")
 	}
 	gp := getg()
 	if gp.m.lockedExt == 0 {

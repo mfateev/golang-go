@@ -35,6 +35,9 @@ func isolateCopyMetadataString(string) string
 //go:linkname isolateCheckMetadataCall runtime.isolateCheckMetadataCall
 func isolateCheckMetadataCall(uintptr)
 
+//go:linkname isolateCheckReflectEffectCall runtime.isolateCheckReflectEffectCall
+func isolateCheckReflectEffectCall(uintptr)
+
 //go:linkname isolateCheckHeapAtomicCall runtime.isolateCheckHeapAtomicCall
 //go:noescape
 func isolateCheckHeapAtomicCall(uintptr, unsafe.Pointer, unsafe.Pointer, unsafe.Pointer)
@@ -47,6 +50,7 @@ func isolateCheckReflectCall(fn unsafe.Pointer, in []Value) {
 	isolateCheckHeapAccess(fn, unsafe.Sizeof(uintptr(0)), false)
 	pc := *(*uintptr)(fn)
 	isolateCheckMetadataCall(pc)
+	isolateCheckReflectEffectCall(pc)
 	if len(in) == 0 || in[0].Kind() != Pointer && in[0].Kind() != UnsafePointer {
 		return
 	}

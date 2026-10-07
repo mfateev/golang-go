@@ -20,6 +20,7 @@ func InitIsolatePackageSelection() {
 		// private code; package exclusion grants no memory access privilege.
 		Debug.IsolateHeap = 2
 		Debug.IsolateMetadata = 1
+		Debug.IsolateEffects = 1
 		isolateSelectedPackages = make(map[string]bool)
 		for _, path := range strings.Split(Debug.IsolatePackages, ":") {
 			if path == "" {

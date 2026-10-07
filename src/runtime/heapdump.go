@@ -21,7 +21,7 @@ import (
 //go:linkname runtime_debug_WriteHeapDump runtime/debug.WriteHeapDump
 func runtime_debug_WriteHeapDump(fd uintptr) {
 	if isolateActive() {
-		panic("runtime/debug.WriteHeapDump is unavailable in an isolate")
+		isolateRejectEffect("runtime/debug.WriteHeapDump")
 	}
 	stw := stopTheWorld(stwWriteHeapDump)
 

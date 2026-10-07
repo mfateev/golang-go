@@ -104,8 +104,8 @@ func newDefaultHandler(output func(uintptr, []byte) error) *defaultHandler {
 	}
 }
 
-func (*defaultHandler) Enabled(_ context.Context, l Level) bool {
-	rejectIsolateDefaultObject("Handler")
+func (h *defaultHandler) Enabled(_ context.Context, l Level) bool {
+	h.rejectIsolateDefault()
 	return l >= logLoggerLevel.Level()
 }
 
@@ -113,7 +113,7 @@ func (*defaultHandler) Enabled(_ context.Context, l Level) bool {
 // write it with the default log.Logger.
 // Let the log.Logger handle time and file/line.
 func (h *defaultHandler) Handle(ctx context.Context, r Record) error {
-	rejectIsolateDefaultObject("Handler")
+	h.rejectIsolateDefault()
 	buf := buffer.New()
 	buf.WriteString(r.Level.String())
 	buf.WriteByte(' ')
@@ -121,16 +121,20 @@ func (h *defaultHandler) Handle(ctx context.Context, r Record) error {
 	state := h.ch.newHandleState(buf, true, " ")
 	defer state.free()
 	state.appendNonBuiltIns(r)
+	if isolateActive() {
+		isolateWriteLog(2, *buf)
+		return nil
+	}
 	return h.output(r.PC, *buf)
 }
 
 func (h *defaultHandler) WithAttrs(as []Attr) Handler {
-	rejectIsolateDefaultObject("Handler")
+	h.rejectIsolateDefault()
 	return &defaultHandler{h.ch.withAttrs(as), h.output}
 }
 
 func (h *defaultHandler) WithGroup(name string) Handler {
-	rejectIsolateDefaultObject("Handler")
+	h.rejectIsolateDefault()
 	return &defaultHandler{h.ch.withGroup(name), h.output}
 }
 

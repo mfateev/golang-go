@@ -10,6 +10,7 @@ import (
 	"go/token"
 	"go/version"
 	"internal/buildcfg"
+	"internal/isolatepolicy"
 	"internal/pkgbits"
 	"log"
 	"os"
@@ -1152,6 +1153,12 @@ func (w *writer) funcExt(obj *types2.Func) {
 	// least.
 
 	pragma := asPragmaFlag(decl.Pragma)
+	if base.Flag.Std {
+		pragma |= ir.IsolateEffectAudited
+	}
+	if base.Debug.IsolateEffects != 0 && isolatepolicy.Forbidden(obj.Pkg().Path(), obj.Name()) {
+		pragma |= ir.Noinline
+	}
 	if ir.IsolateMetadataSourceTrusted(base.Ctxt.Pkgpath, obj.Name()) {
 		pragma |= ir.IsolateMetadataTrusted
 	}

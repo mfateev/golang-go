@@ -78,6 +78,12 @@ func setupTextLSym(f *Func, flag int) {
 	}
 
 	base.Ctxt.InitTextSym(f.LSym, flag, f.Pos())
+	if base.Flag.Std || f.Pragma&IsolateEffectAudited != 0 {
+		f.LSym.Func().FuncFlag |= abi.FuncFlagIsolateEffectAudited
+	}
+	if f.ABIWrapper() && !base.Flag.Std {
+		f.LSym.Func().FuncFlag |= abi.FuncFlagIsolateEffectForbidden
+	}
 	// Record source provenance before names or linkname aliases reach the linker.
 	// Standard callbacks are trusted only when compiled from GOROOT. Module
 	// callbacks require the source-pinned metadata build selected by cmd/go.
@@ -103,4 +109,12 @@ func IsolateMetadataSourceTrusted(pkg, name string) bool {
 		return true
 	}
 	return base.Debug.IsolateMetadata != 0 && (strings.HasPrefix(pkg, isolatepolicy.ProtobufModule+"/") || strings.HasPrefix(pkg, isolatepolicy.TemporalAPIModule+"/"))
+}
+
+// IsolateEscapeHelper identifies the standard compiler escape-analysis stub.
+// Its sole store is under internal/abi.alwaysFalse, which is never changed.
+// Imported generic instantiations retain verified standard-library provenance.
+// This permits no caller callback or process allocation service.
+func IsolateEscapeHelper(fn *Func) bool {
+	return fn.Pragma&IsolateEffectAudited != 0 && fn.Sym().Pkg.Path == "internal/abi" && strings.HasPrefix(fn.Sym().Name, "Escape[")
 }

@@ -75,7 +75,7 @@ import (
 //go:nocheckptr
 func AddCleanup[T, S any](ptr *T, cleanup func(S), arg S) Cleanup {
 	if isolateActive() {
-		panic("runtime.AddCleanup is unavailable in an isolate")
+		isolateRejectEffect("runtime.AddCleanup")
 	}
 	// This is marked nocheckptr because checkptr doesn't understand the
 	// pointer manipulation done when looking at closure pointers.

@@ -37,7 +37,7 @@ func Make[T comparable](value T) Handle[T] {
 	if runtime_isolateActive() {
 		// The process-wide map and cleanup callback cannot retain or run
 		// isolate-owned state until callbacks have an owner-aware scheduler.
-		panic("unique.Make is unavailable in an isolate")
+		isolateRejectEffect("unique.Make")
 	}
 	// Find the map for type T.
 	typ := abi.TypeFor[T]()
@@ -75,3 +75,6 @@ type uniqueMap[T comparable] struct {
 	*canonMap[T]
 	cloneSeq
 }
+
+//go:linkname isolateRejectEffect runtime.isolateRejectEffect
+func isolateRejectEffect(string)

@@ -11,6 +11,9 @@ func isolateActive() bool
 
 func rejectIsolate(name string) {
 	if isolateActive() {
-		panic("runtime/trace." + name + " is unavailable in an isolate")
+		isolateRejectEffect("runtime/trace." + name)
 	}
 }
+
+//go:linkname isolateRejectEffect runtime.isolateRejectEffect
+func isolateRejectEffect(string)

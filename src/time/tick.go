@@ -45,7 +45,7 @@ func (t *Ticker) checkValid(meth string) {
 // (Code may of course still want to call Stop to stop the ticker for other reasons.)
 func NewTicker(d Duration) *Ticker {
 	if runtime_isolateActive() {
-		panic("time: Ticker is unavailable inside an isolate")
+		runtime_isolateRejectEffect("time.NewTicker")
 	}
 	if d <= 0 {
 		panic("non-positive interval for NewTicker")
