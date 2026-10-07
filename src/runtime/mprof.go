@@ -440,7 +440,19 @@ func mProf_Malloc(mp *m, p unsafe.Pointer, size uintptr) {
 	}
 	// Only use the part of mp.profStack we need and ignore the extra space
 	// reserved for delayed inline expansion with frame pointer unwinding.
-	nstk := callers(3, mp.profStack[:debug.profstackdepth+2])
+	// mallocgcCommon is a transparent allocation implementation shared with
+	// compiler-specialized private entry points. Keep legacy profile stacks
+	// and their depth unchanged when that implementation adds a physical frame.
+	nstk := callers(3, mp.profStack[:debug.profstackdepth+3])
+	if nstk != 0 {
+		if f := findfunc(mp.profStack[0] - 1); f.valid() && funcname(f) == "runtime.mallocgcCommon" {
+			copy(mp.profStack, mp.profStack[1:nstk])
+			nstk--
+		}
+	}
+	if nstk > int(debug.profstackdepth)+2 {
+		nstk = int(debug.profstackdepth) + 2
+	}
 	index := (mProfCycle.read() + 2) % uint32(len(memRecord{}.future))
 
 	b := stkbucket(memProfile, size, mp.profStack[:nstk], true)

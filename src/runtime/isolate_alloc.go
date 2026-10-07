@@ -6,7 +6,7 @@ package runtime
 
 import (
 	"internal/runtime/sys"
-	_ "unsafe" // for go:linkname
+	"unsafe"
 )
 
 // An independent, acyclic lifetime handle lets GC retire the non-GC cache even
@@ -41,6 +41,7 @@ func newIsolateAllocHandle() *isolateAllocHandle {
 
 func retireIsolateAllocCache(handle *isolateAllocHandle) {
 	c := handle.cache
+	resources := c.isolateResources
 	systemstack(func() {
 		lockWithRank(&isolateAllocRegistry.lock, lockRankIsolateAllocRegistry)
 		link := &isolateAllocRegistry.head
@@ -58,6 +59,10 @@ func retireIsolateAllocCache(handle *isolateAllocHandle) {
 		unlock(&isolateAllocRegistry.lock)
 	})
 	handle.cache = nil
+	if resources != nil {
+		resources.removeMetadata(uint64(unsafe.Sizeof(mcache{})))
+		resources.release()
+	}
 }
 
 // The caller holds its M and drops the cache lock before releasing that M or

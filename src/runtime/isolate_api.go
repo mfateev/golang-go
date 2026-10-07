@@ -73,7 +73,13 @@ func isolateNewGroup() unsafe.Pointer {
 	if isolateActive() {
 		isolateRejectEffect("nested isolate creation")
 	}
-	return unsafe.Pointer(&isolateRevocationGroup{alloc: newIsolateAllocHandle()})
+	resources := newIsolateResources()
+	alloc := newIsolateAllocHandle()
+	alloc.cache.isolateResources = resources.account
+	resources.account.refs.Add(1)
+	resources.account.addMetadata(uint64(unsafe.Sizeof(mcache{})))
+	return unsafe.Pointer(&isolateRevocationGroup{alloc: alloc, resources: resources,
+		resourceFault: &isolateOwnershipFault{reason: "isolate: resource limit exceeded", kind: "resource"}})
 }
 
 //go:linkname isolateEnableDeterminism
@@ -182,6 +188,7 @@ func isolateAttachGroup(p unsafe.Pointer, ready chan struct{}) unsafe.Pointer {
 		panic("isolate: cannot nest different goroutine groups")
 	}
 	if old != nil {
+		isolateDetachResources(gp)
 		isolateDispatchLeave(gp)
 		old.running.Add(-1)
 		if raceenabled {
@@ -195,6 +202,14 @@ func isolateAttachGroup(p unsafe.Pointer, ready chan struct{}) unsafe.Pointer {
 	if next != nil {
 		next.live.Add(1)
 		next.running.Add(1)
+		isolateAttachResources(gp)
+		if next.ownershipFault.Load() == next.resourceFault {
+			if ready != nil {
+				close(ready)
+			}
+			isolateNotifyResourceViolation(next)
+			isolateDiscardIfRevoked()
+		}
 		isolateDispatchEnterReady(gp, ready)
 	}
 	return unsafe.Pointer(old)

@@ -34,10 +34,11 @@ func LookupProgram(name string) (Program, bool) {
 
 // Config selects one program.
 type Config struct {
-	Program       Program
-	Deterministic bool       // FIFO native goroutines and deterministic select/map iteration.
-	InitialTime   *time.Time // Enables the host clock before package initialization.
-	TimerOp       uint32     // Call operation used for durable timer waits.
+	Program        Program
+	Deterministic  bool       // FIFO native goroutines and deterministic select/map iteration.
+	InitialTime    *time.Time // Enables the host clock before package initialization.
+	TimerOp        uint32     // Call operation used for durable timer waits.
+	ResourceLimits ResourceLimits
 	// LogHandler enables LogOp and services printing during initialization.
 	// After Start, logging commands arrive on Commands with other host calls.
 	LogHandler func(LogRecord)
@@ -191,6 +192,9 @@ func NewContext(ctx context.Context, cfg Config) (*Isolate, error) {
 		return nil, errors.New("isolate: unknown program")
 	}
 	boundary := isolatebridge.New()
+	if err := boundary.ConfigureResources(cfg.ResourceLimits.MaxMemoryBytes, cfg.ResourceLimits.MaxGoroutines); err != nil {
+		return nil, err
+	}
 	if cfg.LogHandler != nil && !boundary.ConfigureLogging() {
 		return nil, errors.New("isolate: cannot configure logging")
 	}
@@ -479,6 +483,8 @@ func (i *Isolate) faultError(reason string) error {
 		return &PanicError{Phase: phase, Message: message, Stack: stack}
 	} else if kind == "Goexit" {
 		return &GoexitError{Phase: phase, Stack: stack}
+	} else if kind == "resource" {
+		return i.resourceFault(stack)
 	}
 	if operation, stack := i.boundary.EffectFaultDetails(); operation != "" {
 		return &EffectError{Operation: operation, Stack: stack}

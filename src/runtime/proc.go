@@ -540,7 +540,15 @@ func acquireSudog() *sudog {
 		unlock(&sched.sudoglock)
 		// If the central cache is empty, allocate a new one.
 		if len(pp.sudogcache) == 0 {
-			pp.sudogcache = append(pp.sudogcache, new(sudog))
+			var s *sudog
+			if getg().isolateGroup != nil {
+				// Pooled runtime records must not keep an old isolate's span
+				// owner when reused by another instance or the host.
+				systemstack(func() { s = new(sudog) })
+			} else {
+				s = new(sudog)
+			}
+			pp.sudogcache = append(pp.sudogcache, s)
 		}
 	}
 	n := len(pp.sudogcache)
@@ -550,12 +558,23 @@ func acquireSudog() *sudog {
 	if s.elem.get() != nil {
 		throw("acquireSudog: found s.elem != nil in cache")
 	}
+	if group := getg().isolateGroup; group != nil {
+		s.isolateResources = group.resources.account
+		s.isolateResources.refs.Add(1)
+		s.isolateResources.addMetadata(uint64(unsafe.Sizeof(sudog{})))
+		isolateCheckResourceMemory(group)
+	}
 	releasem(mp)
 	return s
 }
 
 //go:nosplit
 func releaseSudog(s *sudog) {
+	if r := s.isolateResources; r != nil {
+		s.isolateResources = nil
+		r.removeMetadata(uint64(unsafe.Sizeof(sudog{})))
+		r.release()
+	}
 	if s.elem.get() != nil {
 		throw("runtime: sudog with non-nil elem")
 	}
@@ -1355,6 +1374,19 @@ func casgstatus(gp *g, oldval, newval uint32) {
 	if group != nil && oldval == _Grunnable {
 		group.runnable.Add(-1)
 	}
+	if group != nil {
+		wasRunning := oldval == _Grunning || oldval == _Gsyscall
+		isRunning := newval == _Grunning || newval == _Gsyscall
+		if wasRunning && !isRunning {
+			isolateResourceRunStop(gp)
+		}
+		if isRunning && !wasRunning {
+			isolateResourceRunStart(gp)
+		}
+		if newval == _Gwaiting && (gp.waitreason.isChanWait() || gp.waitreason.isSyncWait() || gp.waitreason == waitReasonSleep || gp.waitreason == waitReasonSelectNoCases) || newval == _Grunnable && gp.isolateExplicitYield {
+			group.resources.account.progress.Add(1)
+		}
+	}
 
 	if gp.bubble != nil {
 		systemstack(func() {
@@ -1458,6 +1490,9 @@ func casGToPreemptScan(gp *g, old, new uint32) {
 	}
 	acquireLockRankAndM(lockRankGscan)
 	for !gp.atomicstatus.CompareAndSwap(_Grunning, _Gscan|_Gpreempted) {
+	}
+	if gp.isolateGroup != nil {
+		isolateResourceRunStop(gp)
 	}
 	// We never notify gp.bubble that the goroutine state has moved
 	// from _Grunning to _Gpreempted. We call bubble.changegstatus
@@ -4345,6 +4380,9 @@ func park_m(gp *g) {
 		mp.waitunlockf = nil
 		mp.waitlock = nil
 		if !ok {
+			if group := gp.isolateGroup; group != nil {
+				isolateNotifyResourceViolation(group)
+			}
 			if isolatePark {
 				isolateDispatchParkEnd(gp, false)
 			}
@@ -4366,6 +4404,9 @@ func park_m(gp *g) {
 	}
 	if isolatePark {
 		isolateDispatchParkEnd(gp, true)
+	}
+	if group := gp.isolateGroup; group != nil {
+		isolateNotifyResourceViolation(group)
 	}
 
 	schedule()
@@ -4635,6 +4676,7 @@ func gdestroy(gp *g) {
 	dropg()
 	if gp.isolateGroup != nil {
 		group := gp.isolateGroup
+		isolateDetachResources(gp)
 		isolateDispatchRelease(gp, false)
 		if gp.isolateAdmitted {
 			group.admission.Add(-1)
@@ -5439,6 +5481,9 @@ func newproc(fn *funcval) {
 		panic("isolate: metadata services cannot start goroutines")
 	}
 	pc := sys.GetCallerPC()
+	if gp.isolateGroup != nil && fn != nil && !isSystemGoroutinePC(fn.fn, nil, false) {
+		isolateAdmitResourceChild(gp.isolateGroup)
+	}
 	systemstack(func() {
 		newg := newproc1(fn, gp, pc, false, waitReasonZero)
 
@@ -5449,6 +5494,10 @@ func newproc(fn *funcval) {
 			wakep()
 		}
 	})
+	if gp.isolateGroup != nil && fn != nil && !isSystemGoroutinePC(fn.fn, nil, false) {
+		isolateNotifyResourceViolation(gp.isolateGroup)
+		isolateDiscardIfRevoked()
+	}
 }
 
 // Create a new g in state _Grunnable (or _Gwaiting if parked is true), starting at fn.
@@ -5506,6 +5555,8 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	newg.isolatePrinting = false
 	newg.isolateBoundary = nil
 	newg.isolateGroup = nil
+	newg.isolateResourceRunStart = 0
+	newg.isolateHeapReservation = 0
 	newg.isolateStarted = false
 	newg.isolateAdmitted = false
 	newg.isolateDispatchPark = false
@@ -5524,6 +5575,7 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 		newg.isolateGroup = callergp.isolateGroup
 		if newg.isolateGroup != nil {
 			newg.isolateGroup.live.Add(1)
+			isolateAttachChildResourceStack(newg)
 		}
 		if mp.curg != nil {
 			newg.labels = mp.curg.labels

@@ -88,8 +88,14 @@ func isolateDiscardIfRevoked() {
 		return
 	}
 	gp := getg()
-	// Discard skips the normal recovery/fatalpanic paths that release these
-	// counts. Every remaining non-Goexit panic still owns one increment.
+	isolateNotifyResourceViolation(group)
+	isolatePrepareDiscard(gp)
+	mcall(isolateDiscard0)
+}
+
+func isolatePrepareDiscard(gp *g) {
+	// Discard skips recovery/fatalpanic bookkeeping. Every remaining non-Goexit
+	// panic still owns one increment, including when discarding from newstack.
 	for p := gp._panic; p != nil; p = p.link {
 		if !p.goexit && !p.deferreturn {
 			runningPanicDefers.Add(-1)
@@ -107,7 +113,6 @@ func isolateDiscardIfRevoked() {
 		trace.GoEnd()
 		traceRelease(trace)
 	}
-	mcall(isolateDiscard0)
 }
 
 func isolateDiscard0(gp *g) {
@@ -165,4 +170,22 @@ func isolateTerminateBeforeStart(gp *g) {
 	gdestroy(gp)
 	schedule()
 	throw("isolate: schedule returned after pre-start termination")
+}
+
+// Stack growth also serves runtime paths that cannot use write barriers. This
+// terminal branch is admitted only for an application G with a running P and
+// no runtime lock, allocator critical section, metadata service or wait record.
+// Its P remains attached through notification and gdestroy, exactly as for
+// ordinary discard on g0. It never returns into the stack-growth caller.
+//
+//go:yeswritebarrierrec
+//go:systemstack
+func isolateDiscardResourceStack(gp *g) {
+	mp := getg().m
+	if mp.p == 0 || mp.p.ptr().status != _Prunning || !isolateResourceCanDiscard(gp) {
+		throw("isolate: unsafe resource discard during stack growth")
+	}
+	isolateNotifyResourceViolation(gp.isolateGroup)
+	isolatePrepareDiscard(gp)
+	isolateDiscard0(gp)
 }

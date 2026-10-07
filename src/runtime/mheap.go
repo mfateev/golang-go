@@ -514,6 +514,7 @@ type mspan struct {
 	userArenaChunkFree    addrRange     // interval for managing chunk allocation
 	largeType             *_type        // malloc header for large objects.
 	isolateAllocOwner     uintptr       // homogeneous heap span owner; zero is process context
+	isolateResources      *isolateResourceAccount
 }
 
 func (s *mspan) base() uintptr {
@@ -1721,6 +1722,7 @@ func (h *mheap) freeManual(s *mspan, typ spanAllocType) {
 
 func (h *mheap) freeSpanLocked(s *mspan, typ spanAllocType) {
 	assertLockHeld(&h.lock)
+	isolateReleaseSpanResources(s)
 
 	switch s.state.get() {
 	case mSpanManual:
@@ -1818,6 +1820,7 @@ func (span *mspan) init(base uintptr, npages uintptr) {
 	span.limit = base + npages*gc.PageSize // see go.dev/issue/74288; adjusted later for heap spans
 	span.allocCount = 0
 	span.isolateAllocOwner = 0
+	span.isolateResources = nil
 	span.spanclass = 0
 	span.elemsize = 0
 	span.speciallock.key = 0

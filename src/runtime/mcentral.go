@@ -79,7 +79,7 @@ func (c *mcentral) fullSwept(sweepgen uint32) *spanSet {
 }
 
 // Allocate a span to use in an mcache.
-func (c *mcentral) cacheSpan(owner uintptr) *mspan {
+func (c *mcentral) cacheSpan(owner uintptr, resources *isolateResourceAccount) *mspan {
 	// Deduct credit for this span allocation and sweep if necessary.
 	spanBytes := uintptr(gc.SizeClassToNPages[c.spanclass.sizeclass()]) * pageSize
 	deductSweepCredit(spanBytes, 0)
@@ -197,6 +197,7 @@ func (c *mcentral) cacheSpan(owner uintptr) *mspan {
 
 	// At this point s is a span that should have free slots.
 havespan:
+	isolateSpanResources(s, resources)
 	if s.isolateAllocOwner != owner {
 		if s.allocCount != 0 {
 			throw("isolate: retagging a live allocation span")

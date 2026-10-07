@@ -935,6 +935,7 @@ func copystack(gp *g, newsize uintptr) {
 		throw("nil stackbase")
 	}
 	used := old.hi - gp.sched.sp
+	isolateResizeResourceStack(gp, old.hi-old.lo, newsize)
 	// Add just the difference to gcController.addScannableStack.
 	// g0 stacks never move, so this will never account for them.
 	// It's also fine if we have no P, addScannableStack can deal with
@@ -1209,6 +1210,17 @@ func newstack() {
 
 	// The goroutine must be executing in order to call newstack,
 	// so it must be Grunning (or Gscanrunning).
+	if group := gp.isolateGroup; group != nil && isolateResourceCanDiscard(gp) {
+		r := group.resources.account
+		delta := uint64(newsize - (gp.stack.hi - gp.stack.lo))
+		usage := r.memory.Load()
+		if r.maxMemory != 0 && (usage > r.maxMemory || delta > r.maxMemory-usage) {
+			isolateResourceViolation(group, isolateResourceMemory, r.maxMemory, usage+delta)
+		}
+		if group.ownershipFault.Load() == group.resourceFault {
+			isolateDiscardResourceStack(gp)
+		}
+	}
 	casgstatus(gp, _Grunning, _Gcopystack)
 
 	// The concurrent GC will not scan the stack while we are doing the copy since
@@ -1218,6 +1230,9 @@ func newstack() {
 		print("stack grow done\n")
 	}
 	casgstatus(gp, _Gcopystack, _Grunning)
+	if group := gp.isolateGroup; group != nil && isolateResourceCanDiscard(gp) && group.ownershipFault.Load() == group.resourceFault {
+		isolateDiscardResourceStack(gp)
+	}
 	gogo(&gp.sched)
 }
 

@@ -24,6 +24,9 @@ import (
 // the resumed goroutine.
 type isolateRevocationGroup struct {
 	alloc            *isolateAllocHandle // GC-visible lifetime; registry keeps no group pointer.
+	resources        *isolateResourceHandle
+	resourceFault    *isolateOwnershipFault // Preallocated process record, publishable from g0.
+	resourceNotified atomic.Uint32
 	admission        atomic.Uint64
 	live             atomic.Int32
 	running          atomic.Int32 // Goroutines associated with an M, including syscalls.
@@ -446,7 +449,8 @@ type sudog struct {
 	// channel this sudog is blocking on. shrinkstack depends on
 	// this for sudogs involved in channel ops.
 
-	g *g
+	g                *g
+	isolateResources *isolateResourceAccount // Attributed only while this pooled waiter is attached.
 
 	next *sudog
 	prev *sudog
@@ -604,7 +608,9 @@ type g struct {
 	labels                     unsafe.Pointer // profiler labels
 	isolateE4Base              unsafe.Pointer // tagged Phase 0 global-base experiment
 	isolateE4Bases             unsafe.Pointer // tagged Phase 2B package-state table probe
-	isolateCallSelectNext      uint64         // Four poll draws reserved before a Call transport park.
+	isolateResourceRunStart    int64
+	isolateHeapReservation     uint64
+	isolateCallSelectNext      uint64 // Four poll draws reserved before a Call transport park.
 	isolateCallSelectRemaining uint32
 	isolateMetadataDepth       uint32                  // Audited process metadata service nesting; never inherited.
 	isolateOwner               uintptr                 // monotonic trusted instance ID for future heap ownership

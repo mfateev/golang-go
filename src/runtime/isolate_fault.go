@@ -101,6 +101,9 @@ func isolateReportFaultRecord(reason, operation, kind, phase string, value any) 
 // error, close Call, and scan wait queues from the process, outside service locks
 // and the deterministic token held by the failing application goroutine.
 func isolateReportOwnershipFault(group *isolateRevocationGroup, fault *isolateOwnershipFault) {
+	if raceenabled && fault == group.resourceFault {
+		raceacquire(unsafe.Pointer(&group.resourceNotified))
+	}
 	group.ownershipHandler(fault.reason)
 }
 

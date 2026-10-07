@@ -17,6 +17,7 @@ func newIsolateCoro(f func(*coro)) *coro {
 		isolateReply:   make(chan struct{}),
 	}
 	caller := getg()
+	isolateAdmitResourceChild(caller.isolateGroup)
 	pc := sys.GetCallerPC()
 	// Initialize every field before making the child runnable. In particular,
 	// the caller may invoke next before the child has received its first token.
@@ -28,6 +29,8 @@ func newIsolateCoro(f func(*coro)) *coro {
 		c.isolateRunner = gp
 		ready(gp, 0, false)
 	})
+	isolateNotifyResourceViolation(caller.isolateGroup)
+	isolateDiscardIfRevoked()
 	return c
 }
 

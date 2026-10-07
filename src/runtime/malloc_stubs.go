@@ -63,8 +63,10 @@ func mallocgcSlowPathStub(size uintptr, typ *_type, needzero bool, spc spanClass
 // WARNING: mallocStub does not do any work for sanitizers so callers need
 // to steer out of this codepath early if sanitizers are enabled.
 func mallocStub(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
-	if isTiny_ && getg().isolateOwner != 0 {
-		return mallocgcSmallNoScanSC2(size, typ, needzero)
+	// The compiler also calls these specialized allocators directly. Route
+	// private allocations through the common reservation and discard fences.
+	if getg().isolateOwner != 0 {
+		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
 		if gcphase == _GCmarktermination {

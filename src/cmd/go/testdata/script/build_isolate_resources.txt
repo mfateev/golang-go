@@ -1,0 +1,100 @@
+[short] skip
+[compiler:gccgo] skip
+
+go build -o resources$GOEXE ./host
+exec ./resources$GOEXE
+stdout '^compiled resource limits passed$'
+
+[cgo] [race] go build -race -o resources-race$GOEXE ./host
+[cgo] [race] exec ./resources-race$GOEXE
+[cgo] [race] stdout '^compiled resource limits passed$'
+
+-- go.mod --
+module example.org/resources
+go 1.26
+-- jobs/jobs.go --
+package jobs
+import "runtime"
+var state = make([]byte, 16<<10)
+
+//go:isolate
+func Work(mode byte) (byte, error) {
+    state[0]++
+    switch mode {
+    case 1: go func(){select{}}(); go func(){select{}}(); select{}
+    case 2: runtime.KeepAlive(make([]byte,64<<20))
+    case 3: recurse(10000)
+    case 4:
+        values:=make([]*uint64,4096)
+        for index:=range values {values[index]=new(uint64)}
+        runtime.KeepAlive(values)
+    }
+    return state[0],nil
+}
+//go:noinline
+func recurse(depth int) {
+    var frame [1024]byte
+    frame[depth%len(frame)]=byte(depth)
+    if depth!=0 {recurse(depth-1)}
+    runtime.KeepAlive(frame)
+}
+-- host/main.go --
+package main
+import (
+    "context"
+    "errors"
+    "fmt"
+    "isolate"
+    "runtime"
+    "strings"
+    "time"
+    "example.org/resources/jobs"
+)
+func program() isolate.Program {
+    handle,ok:=isolate.LookupFunction(jobs.Work)
+    if !ok {panic("missing handle")}
+    return handle.ProgramWithHandle(func(h isolate.Handle){
+        data,err:=isolate.Call(1,nil)
+        if err!=nil {panic(err)}
+        err=h.Invoke(func(values ...isolate.Value)error{
+            *values[0].Pointer.(*byte)=data[0];return nil
+        },func(values ...isolate.Value)error{
+            if values[0].Value.(byte)!=1 {panic("shared globals")};return nil
+        })
+        if err!=nil {panic(err)}
+    })
+}
+func run(mode byte,deterministic bool) {
+    limits:=isolate.ResourceLimits{MaxMemoryBytes:512<<10,MaxGoroutines:2}
+    if mode==4 {limits.MaxMemoryBytes=160<<10}
+    i,err:=isolate.New(isolate.Config{Program:program(),Deterministic:deterministic,ResourceLimits:limits})
+    if err!=nil {panic(err)}
+    if i.Resources().HeapBytes<16<<10 {panic("package globals not charged")}
+    if err:=i.Start();err!=nil {panic(err)}
+    (<-i.Commands()).Reply([]byte{mode},nil)
+    select{case <-i.Done():case <-time.After(5*time.Second):panic("limit failed to drain")}
+    err=i.Wait()
+    if mode==0 {if err!=nil {panic(err)}} else {
+        var failure *isolate.ResourceLimitError
+        if !errors.As(err,&failure)||failure.Stack=="" {panic(fmt.Sprintf("mode=%d error=%v",mode,err))}
+        if mode==1 {if failure.Resource!="goroutines"||failure.Usage!=3 {panic(err)}} else if failure.Resource!="memory" {panic(err)}
+        if !strings.Contains(failure.Stack,"jobs.Work")&&!strings.Contains(failure.Stack,"jobs.recurse") {panic("missing application diagnostic")}
+    }
+    if err:=i.Kill(context.Background());err!=nil {panic(err)}
+    deadline:=time.Now().Add(5*time.Second)
+    for {
+        runtime.GC()
+        s:=i.Resources()
+        if s.HeapBytes==0&&s.StackBytes==0&&s.ReservedHeapBytes==0&&s.LiveGoroutines==0 {break}
+        if time.Now().After(deadline) {panic(fmt.Sprintf("retained private resources: %+v",s))}
+    }
+}
+func main() {
+    for _,deterministic:=range []bool{false,true} {
+        for mode:=byte(0);mode<5;mode++ {run(mode,deterministic)}
+        instance,err:=isolate.New(isolate.Config{Program:program(),Deterministic:deterministic,ResourceLimits:isolate.ResourceLimits{MaxMemoryBytes:16<<10}})
+        var failure *isolate.ResourceLimitError
+        if instance!=nil||!errors.As(err,&failure)||failure.Resource!="memory" {panic("initializer admission did not fail")}
+    }
+    fmt.Println("compiled resource limits passed")
+}

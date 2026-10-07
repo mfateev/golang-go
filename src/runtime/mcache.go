@@ -67,9 +67,10 @@ type mcache struct {
 	// Instance caches are independent of P migration. Host caches keep their
 	// existing lock-free per-P fast path. These pointers refer only to non-GC
 	// allocator metadata; the registry must not retain the owning group.
-	isolateOwner uintptr
-	isolateLock  mutex
-	isolateNext  *mcache
+	isolateOwner     uintptr
+	isolateResources *isolateResourceAccount
+	isolateLock      mutex
+	isolateNext      *mcache
 }
 
 // A gclink is a node in a linked list of blocks, like mlink,
@@ -209,7 +210,7 @@ func (c *mcache) refill(spc spanClass) {
 	}
 
 	// Get a new cached span from the central lists.
-	s = mheap_.central[spc].mcentral.cacheSpan(c.isolateOwner)
+	s = mheap_.central[spc].mcentral.cacheSpan(c.isolateOwner, c.isolateResources)
 	if s == nil {
 		throw("out of memory")
 	}

@@ -692,6 +692,11 @@ func (sl *sweepLocked) sweep(preserve bool) bool {
 		throw("sweep increased allocation count")
 	}
 
+	if r := s.isolateResources; r != nil && nfreed != 0 {
+		bytes := uint64(nfreed) * uint64(s.elemsize)
+		r.heap.Add(-int64(bytes))
+		r.memory.Add(-int64(bytes))
+	}
 	s.allocCount = nalloc
 	s.freeindex = 0 // reset allocation index to start of span.
 	s.freeIndexForScan = 0

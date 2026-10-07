@@ -1073,18 +1073,14 @@ const runtimeFreegcEnabled = goexperiment.RuntimeFreegc && !asanenabled && !msan
 //
 //go:linkname mallocgc
 func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
-	if doubleCheckMalloc {
-		if gcphase == _GCmarktermination {
-			throw("mallocgc called with gcphase == _GCmarktermination")
-		}
+	if doubleCheckMalloc && gcphase == _GCmarktermination {
+		throw("mallocgc called with gcphase == _GCmarktermination")
 	}
-
-	// Short-circuit zero-sized allocation requests.
 	if size == 0 {
 		return unsafe.Pointer(&zerobase)
 	}
 
-	if sizeSpecializedMallocEnabled && size < uintptr(len(mallocNoScanTable)) {
+	if sizeSpecializedMallocEnabled && getg().isolateOwner == 0 && size < uintptr(len(mallocNoScanTable)) {
 		if typ == nil || !typ.Pointers() {
 			if size >= maxTinySize {
 				return mallocNoScanTable[size](size, typ, needzero)
@@ -1096,6 +1092,23 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 			}
 			return mallocScanTable[size](size, typ, needzero)
 		}
+	}
+
+	return mallocgcCommon(size, typ, needzero)
+}
+
+// The specialized entry points call this common private-allocation path.
+// Keeping table dispatch outside it also avoids table initialization cycles.
+func mallocgcCommon(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
+	if doubleCheckMalloc {
+		if gcphase == _GCmarktermination {
+			throw("mallocgc called with gcphase == _GCmarktermination")
+		}
+	}
+
+	// Short-circuit zero-sized allocation requests.
+	if size == 0 {
+		return unsafe.Pointer(&zerobase)
 	}
 
 	// It's possible for any malloc to trigger sweeping, which may in
@@ -1120,6 +1133,7 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
 	// Assist the GC if needed. (On the reuse path, we currently compensate for this;
 	// changes here might require changes there.)
+	isolateReserveHeap(size, typ)
 	if gcBlackenEnabled != 0 {
 		deductAssistCredit(size)
 	}
@@ -1206,6 +1220,7 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 	if debug.malloc {
 		postMallocgcDebug(x, elemsize, typ)
 	}
+	isolateCheckAllocationResources()
 	return x
 }
 
@@ -1281,6 +1296,7 @@ func mallocgcTiny(size uintptr, typ *_type) (unsafe.Pointer, uintptr) {
 		c.tinyoffset = off + size
 		c.tinyAllocs++
 		releaseIsolateAllocCache(c)
+		isolateCompleteHeapReservation()
 		mp.mallocing = 0
 		releasem(mp)
 		return x, 0
@@ -1343,6 +1359,7 @@ func mallocgcTiny(size uintptr, typ *_type) (unsafe.Pointer, uintptr) {
 		profilealloc(mp, c, x, span.elemsize)
 	}
 	releaseIsolateAllocCache(c)
+	isolateCompleteHeapReservation()
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1403,6 +1420,7 @@ func mallocgcSmallNoscan(size uintptr, typ *_type, needzero bool) (unsafe.Pointe
 		// We have a reusable object, use it.
 		x := mallocgcSmallNoscanReuse(c, span, spc, size, needzero)
 		releaseIsolateAllocCache(c)
+		isolateCompleteHeapReservation()
 		mp.mallocing = 0
 		releasem(mp)
 		return x, size
@@ -1457,6 +1475,7 @@ func mallocgcSmallNoscan(size uintptr, typ *_type, needzero bool) (unsafe.Pointe
 		profilealloc(mp, c, x, size)
 	}
 	releaseIsolateAllocCache(c)
+	isolateCompleteHeapReservation()
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1598,6 +1617,7 @@ func mallocgcSmallScanNoHeader(size uintptr, typ *_type) (unsafe.Pointer, uintpt
 		profilealloc(mp, c, x, size)
 	}
 	releaseIsolateAllocCache(c)
+	isolateCompleteHeapReservation()
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1692,6 +1712,7 @@ func mallocgcSmallScanHeader(size uintptr, typ *_type) (unsafe.Pointer, uintptr)
 		profilealloc(mp, c, x, size)
 	}
 	releaseIsolateAllocCache(c)
+	isolateCompleteHeapReservation()
 	mp.mallocing = 0
 	releasem(mp)
 
@@ -1721,6 +1742,7 @@ func mallocgcLarge(size uintptr, typ *_type, needzero bool) (unsafe.Pointer, uin
 	// bulk zeroing can be happen later in a preemptible context.
 	span := c.allocLarge(size, typ == nil || !typ.Pointers())
 	span.isolateAllocOwner = getg().isolateOwner
+	isolateSpanResources(span, c.isolateResources)
 	span.freeindex = 1
 	span.allocCount = 1
 	span.largeType = nil // Tell the GC not to look at this yet.
@@ -1768,6 +1790,7 @@ func mallocgcLarge(size uintptr, typ *_type, needzero bool) (unsafe.Pointer, uin
 		profilealloc(mp, c, x, size)
 	}
 	releaseIsolateAllocCache(c)
+	isolateCompleteHeapReservation()
 	mp.mallocing = 0
 	releasem(mp)
 
