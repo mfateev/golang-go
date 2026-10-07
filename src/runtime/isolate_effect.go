@@ -73,9 +73,11 @@ func isolateCheckEffectClosureSlow(fn unsafe.Pointer, caller uintptr) {
 // Capture only the offending goroutine, under the reporting allocation owner.
 // Calling public Stack here would itself be a forbidden workflow operation.
 func isolateEffectStack() string {
+	// Allocation may grow and move the caller's stack. Capture its numeric
+	// SP only after allocating, with no intervening allocation before g0.
+	buf := make([]byte, 64<<10)
 	gp := getg()
 	sp, pc := sys.GetCallerSP(), sys.GetCallerPC()
-	buf := make([]byte, 64<<10)
 	n := 0
 	systemstack(func() {
 		g0 := getg()

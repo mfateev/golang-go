@@ -14,6 +14,12 @@ stdout '^host alive$'
 [race] stdout 'effect matrix passed$'
 [race] stdout '^logging passed$'
 
+# Diagnostic stack capture must remain valid when allocation moves a stack.
+[cgo] [race] go build -race -gcflags=runtime=-d=maymorestack=runtime.mayMoreStackMove -o effects-move$GOEXE ./host
+[cgo] [race] exec ./effects-move$GOEXE
+[cgo] [race] stdout 'effect matrix passed$'
+[cgo] [race] stdout '^logging passed$'
+
 ! go build -o bad-test$GOEXE ./badhost
 stderr 'isolate: forbidden operation os.ReadFile in entry'
 ! go build -o bad-unsafe-test$GOEXE ./badunsafehost
