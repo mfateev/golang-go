@@ -155,6 +155,7 @@ func MetadataLifecycleCallback(pkg, function string) bool {
 	switch function {
 	case "(*Isolate).complete.func1", "(*Isolate).completeExit.func1",
 		"(*Isolate).complete.deferwrap1", "(*Isolate).completeExit.deferwrap1",
+		"(*Isolate).finishCleanup", "(*Isolate).finishCleanup-fm",
 		"(*initializerCompletion).exit", "(*initializerCompletion).exit-fm",
 		"(*initializerCompletion).close.func1":
 		return true

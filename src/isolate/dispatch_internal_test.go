@@ -97,7 +97,8 @@ func TestDeterministicInitializerCannotRequestTimer(t *testing.T) {
 		Main: func() {},
 	}}
 	instance, err := New(Config{Program: program, Deterministic: true, InitialTime: &clock, TimerOp: 77})
-	if instance != nil || err != errInitializerPanicked {
+	failure, ok := err.(*PanicError)
+	if instance != nil || !ok || failure.Phase != "initialization" || failure.Message != "isolate: Call outside an active isolate" {
 		t.Fatalf("New=(%v,%v)", instance, err)
 	}
 }

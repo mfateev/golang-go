@@ -392,7 +392,7 @@ func TestBoundaryRevokesUnstartedChildren(t *testing.T) {
 	var grandchildRan atomic.Bool
 	b.Run(func() {
 		go func() {
-			defer close(childExited)
+			defer func() { close(childExited) }()
 			close(ready)
 			for !release.Load() {
 			}
@@ -404,7 +404,6 @@ func TestBoundaryRevokesUnstartedChildren(t *testing.T) {
 	b.RevokeUnstarted()
 	b.RevokeUnstarted() // repeated revocation is harmless
 	release.Store(true)
-	<-childExited
 	deadline := time.Now().Add(time.Second)
 	for b.LiveGoroutines() != 0 && time.Now().Before(deadline) {
 		runtime.Gosched()
@@ -414,6 +413,11 @@ func TestBoundaryRevokesUnstartedChildren(t *testing.T) {
 	}
 	if !grandchildCreated.Load() {
 		t.Fatal("already running child did not create a grandchild")
+	}
+	select {
+	case <-childExited:
+		t.Fatal("revoked child ran application defer")
+	default:
 	}
 	if grandchildRan.Load() {
 		t.Fatal("revoked grandchild entered user code")
@@ -779,6 +783,7 @@ func TestRevokedGoschedLoopExits(t *testing.T) {
 
 func TestBoundaryCountsCoroutineSwitches(t *testing.T) {
 	b := isolatebridge.New()
+	b.EnableDeterminism()
 	b.Run(func() {
 		seq := iter.Seq[int](func(yield func(int) bool) {
 			if got := b.RunningGoroutines(); got != 1 {
@@ -804,6 +809,10 @@ func TestBoundaryCountsCoroutineSwitches(t *testing.T) {
 			t.Errorf("after stop, running goroutines = %d, want 1", got)
 		}
 	})
+	// Channel coroutines retire through ordinary goroutine destruction.
+	// Run returns the parent; the drain fence waits for the whole group.
+	b.Stop()
+	b.WaitDrained()
 	if got := b.LiveGoroutines(); got != 0 {
 		t.Errorf("after Run, live goroutines = %d, want 0", got)
 	}
@@ -1589,6 +1598,13 @@ func TestMainFailureReportedToHost(t *testing.T) {
 			}
 			<-instance.Done()
 			got := instance.Wait()
+			if tt.name == "panic" {
+				var failure *isolate.PanicError
+				if !errors.As(got, &failure) || failure.Phase != "main" || failure.Message != "boom" || failure.Stack == "" {
+					t.Fatalf("main panic = %v", got)
+				}
+				return
+			}
 			if tt.want == "" && got != nil || tt.want != "" && (got == nil || got.Error() != tt.want) {
 				t.Fatalf("Wait = %v, want %q", got, tt.want)
 			}
@@ -1614,6 +1630,13 @@ func TestInitializerFailureReportedToHost(t *testing.T) {
 				t.Fatal("missing test program")
 			}
 			instance, err := isolate.New(isolate.Config{Program: program})
+			if tt.name == "panic" {
+				var failure *isolate.PanicError
+				if instance != nil || !errors.As(err, &failure) || failure.Phase != "initialization" || failure.Message != "boom" || failure.Stack == "" {
+					t.Fatalf("initializer panic = %v", err)
+				}
+				return
+			}
 			if instance != nil || err == nil || err.Error() != tt.want {
 				t.Fatalf("New = %v, %v, want %q", instance, err, tt.want)
 			}

@@ -326,9 +326,11 @@ func TestOwnershipFaultKillWaitsForMetadataCleanup(t *testing.T) {
 	if err := i.Start(); err != nil {
 		t.Fatal(err)
 	}
-	var fault *OwnershipError
-	if err := i.Wait(); !errors.As(err, &fault) {
-		t.Fatalf("fault = %v", err)
+	<-i.terminal // The diagnostic is published before process-service cleanup.
+	select {
+	case <-i.Done():
+		t.Fatal("Done closed before the metadata service released its locks")
+	default:
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
 	err = i.Kill(ctx)
@@ -337,11 +339,18 @@ func TestOwnershipFaultKillWaitsForMetadataCleanup(t *testing.T) {
 	if !errors.As(err, &pending) {
 		t.Fatalf("Kill during cleanup = %v, want pending", err)
 	}
+	if pending.GoroutineID == 0 || pending.Stack == "" {
+		t.Fatalf("parked cleanup has no best-effort diagnostic: %+v", pending)
+	}
 	release.Unlock()
 	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := i.Kill(ctx); err != nil {
 		t.Fatal(err)
+	}
+	var fault *OwnershipError
+	if err := i.Wait(); !errors.As(err, &fault) {
+		t.Fatalf("fault = %v", err)
 	}
 	if !shared.TryLock() {
 		t.Fatal("cleanup did not release the process lock")

@@ -33,7 +33,7 @@ type coro struct {
 	lockedExt uint32 // mp's external LockOSThread counter at coro creation time.
 	lockedInt uint32 // mp's internal lockOSThread counter at coro creation time.
 
-	// Deterministic isolates use ordinary channel handshakes so coroutine
+	// Isolates use ordinary channel handshakes so coroutine
 	// parks, wakeups, suspension, and revocation all pass through dispatch.
 	isolateGroup   *isolateRevocationGroup
 	isolateRunner  *g
@@ -47,7 +47,10 @@ type coro struct {
 // goroutine blocked waiting to run f
 // and returns that coro.
 func newcoro(f func(*coro)) *coro {
-	if isolateDeterministic() {
+	if getg().isolateGroup != nil {
+		if getg().isolateMetadataDepth != 0 {
+			isolateRejectEffect("coroutine creation from a metadata service")
+		}
 		return newIsolateCoro(f)
 	}
 	c := new(coro)
@@ -103,11 +106,11 @@ func coroexit(c *coro) {
 // coroswitch switches to the goroutine blocked on c
 // and then blocks the current goroutine on c.
 func coroswitch(c *coro) {
-	if isolateDeterministic() {
+	if c.isolateGroup != nil {
 		isolateCoroSwitch(c)
 		return
 	}
-	if c.isolateGroup != nil {
+	if getg().isolateGroup != nil {
 		isolateOwnershipViolation("isolate: coroutine crosses owner boundary")
 	}
 	gp := getg()

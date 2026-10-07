@@ -98,7 +98,8 @@ reporting. Full `src/all.bash`, compiler integration, race/lock-ranking stress,
 SDK/sample tests, live-server failure-history checks and all four native
 Linux/macOS arm64/amd64 jobs passed on 2026-10-07. See the acceptance evidence in
 [Effect restrictions](./EFFECT_RESTRICTIONS_PLAN.md).
-The next feature is **5 (reliable lifecycle)**. Custom converter support retains
+Feature **5 (reliable lifecycle)** is in implementation and acceptance validation.
+See [Reliable lifecycle](./LIFECYCLE_PLAN.md) for its contract and release gates. Custom converter support retains
 its separate feature 8 gate. The validated determinism contract still excludes
 its documented unsupported operations.
 

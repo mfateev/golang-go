@@ -18,8 +18,15 @@ func isolateDispatchReady(gp *g) bool {
 		return true
 	}
 	lock(&group.dispatchLock)
+	ready := isolateDispatchReadyLocked(gp)
+	unlock(&group.dispatchLock)
+	return ready
+}
+
+// Caller holds dispatchLock, including when publishing a counted join.
+func isolateDispatchReadyLocked(gp *g) bool {
+	group := gp.isolateGroup
 	if group.dispatchToken.ptr() == gp && !gp.isolateDispatchPark {
-		unlock(&group.dispatchLock)
 		return true // Preemption/runtime suspension resumes the same token.
 	}
 	if gp.isolateDispatchQueued {
@@ -27,27 +34,39 @@ func isolateDispatchReady(gp *g) bool {
 	}
 	if group.dispatchToken == 0 && !group.dispatchPaused {
 		group.dispatchToken.set(gp)
-		unlock(&group.dispatchLock)
 		return true
 	}
 	gp.isolateDispatchQueued = true
 	group.dispatchQueue.pushBack(gp)
-	unlock(&group.dispatchLock)
 	return false
 }
 
-func isolateDispatchEnter(gp *g) {
+func isolateDispatchEnter(gp *g) { isolateDispatchEnterReady(gp, nil) }
+
+// Notify only after holding a token or counting the pending join. The latter
+// lets Start return while a child is busy without exposing false host idleness.
+func isolateDispatchEnterReady(gp *g, ready chan struct{}) {
 	group := gp.isolateGroup
 	if !group.deterministic {
+		if ready != nil {
+			close(ready)
+		}
 		return
 	}
 	lock(&group.dispatchLock)
 	if group.dispatchToken == 0 && !group.dispatchPaused {
 		group.dispatchToken.set(gp)
 		unlock(&group.dispatchLock)
+		if ready != nil {
+			close(ready)
+		}
 		return
 	}
+	group.dispatchJoining++
 	unlock(&group.dispatchLock)
+	if ready != nil {
+		close(ready)
+	}
 	gopark(isolateDispatchJoin, unsafe.Pointer(group), waitReasonZero, traceBlockGeneric, 1)
 }
 
@@ -56,6 +75,7 @@ func isolateDispatchJoin(gp *g, p unsafe.Pointer) bool {
 	lock(&group.dispatchLock)
 	if group.dispatchToken == 0 && !group.dispatchPaused {
 		group.dispatchToken.set(gp)
+		group.dispatchJoining--
 		unlock(&group.dispatchLock)
 		return false
 	}
@@ -68,7 +88,11 @@ func isolateDispatchJoin(gp *g, p unsafe.Pointer) bool {
 		trace.GoUnpark(gp, 0)
 		traceRelease(trace)
 	}
-	if isolateDispatchReady(gp) {
+	lock(&group.dispatchLock)
+	group.dispatchJoining--
+	ready := isolateDispatchReadyLocked(gp)
+	unlock(&group.dispatchLock)
+	if ready {
 		runqput(getg().m.p.ptr(), gp, false)
 		wakep()
 	}
@@ -109,7 +133,7 @@ func isolateDispatchRelease(gp *g, requeue bool) {
 		if next != nil {
 			next.isolateDispatchQueued = false
 			group.dispatchToken.set(next)
-		} else if group.dispatchWaiter != 0 {
+		} else if group.dispatchWaiter != 0 && group.dispatchJoining == 0 {
 			group.dispatchPaused = true
 			waiter = group.dispatchWaiter.ptr()
 			group.dispatchWaiter = 0
@@ -182,7 +206,7 @@ func isolateSuspendCommit(gp *g, p unsafe.Pointer) bool {
 	if group.dispatchWaiter != 0 {
 		throw("isolate: concurrent suspension waiters")
 	}
-	if group.dispatchToken == 0 && group.dispatchQueue.empty() {
+	if group.dispatchToken == 0 && group.dispatchQueue.empty() && group.dispatchJoining == 0 {
 		group.dispatchPaused = true
 		unlock(&group.dispatchLock)
 		return false

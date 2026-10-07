@@ -5,6 +5,7 @@ isolates branch. The current implementation is a Phase 1 reference model in
 `src/internal/isolateproto` plus tagged runtime experiments. The ordinary-Go
 runtime implementation is not complete.
 
+- [Reliable lifecycle](./LIFECYCLE_PLAN.md) — whole-group termination and SDK cleanup
 - [Task status](./TASK_STATUS.md) — current progress and open work
 - [Implementation plan](./IMPLEMENTATION_PLAN.md) — phase gates and acceptance
 - [Design definition](./ISOLATES_DESIGN.md) — goals and decisions

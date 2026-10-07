@@ -232,23 +232,40 @@ itself only sees bytes and an opaque operation number. The logical program
 name belongs in persisted instance metadata, while a separate build artifact
 identity identifies the exact code and dependencies needed for replay.
 
-The source-level `isolate` package now implements `Call` through
-a trusted, per-goroutine [boundary probe](../../src/internal/isolatebridge/bridge.go).
-The static build generates the program selector, and the current host API
-provides `New`, `Start`, `Commands`, `Done`, and `Wait`. `Wait` reports a panic
-or `Goexit` from the program's `main` goroutine without terminating the host.
-`os.Exit` and `syscall.Exit` revoke the instance without running user defers;
-status zero completes successfully and nonzero status returns `ExitError`.
-`New` returns an error for a package initializer panic or explicit exit.
-Native child panics remain outside this provisional lifecycle. The probe copies byte
-payloads and correlates concurrent calls, including calls from native child
-goroutines. The build now gives each configured program, its reachable
-non-standard packages, and selected standard packages separate initialized
-global layouts per instance. Unselected standard-library packages still have
-process-wide state. The transport uses
-ordinary Go channels and the shared heap; native isolate ownership,
-deterministic scheduling, and the final host command queue remain to be
-implemented.
+The source-level `isolate` package implements copied-byte `Call` through a
+per-goroutine boundary. `//go:isolate` functions are the current entry mechanism;
+the directory/configuration form above remains available for runtime probes.
+Marked builds make ownership and effect checks mandatory across dependencies.
+The runtime uses owner-specific allocations under the shared Go collector and
+supports deterministic native goroutine dispatch and host-controlled time.
+
+The host API provides `New`, `NewContext`, `Start`, `Commands`, `Suspend`, `Resume`,
+`AdvanceTime`, `Kill`, `Done`, and `Wait`. Returning from the entry terminates its
+remaining goroutines. `Done` closes and `Wait` publishes the outcome only after
+all attached goroutines detach and supported waiter cleanup finishes. A nil
+`Kill(ctx)` establishes the same permanent fence: no later wakeup can execute
+instance code. A deadline leaves revocation in force and returns
+`KillPendingError`, including counts and a bounded best-effort stack/thread sample.
+
+Recovered panics and child `runtime.Goexit` keep Go semantics. Unrecovered entry,
+initializer, or child panics return `PanicError` with copied phase/message/stack;
+they never terminate the host. Diagnostics do not retain arbitrary private panic
+values or invoke their formatting methods. Root `Goexit` returns `GoexitError`.
+`os.Exit` and `syscall.Exit` revoke the instance without application defers;
+zero completes `Wait` successfully and nonzero returns `ExitError`.
+
+`NewContext(ctx, cfg)` bounds startup, including generated package initialization.
+Failure revokes initializer children. If bounded cleanup is still pending, it
+returns nil and an `InitializationError` carrying the cause, pending diagnostics,
+and a `Done` notification. Retaining that error does not retain a finished private
+heap. Completed host handles also release their private runner and allocator
+lifetime handle; ordinary GC reclaims the private objects.
+
+Workflow context cancellation stays cooperative. Eviction and terminal cleanup
+use permanent revocation. CPU loops without a supported execution fence and
+unsupported native waits may remain pending: no in-process hard kill of arbitrary
+code is promised. See [Reliable lifecycle](./LIFECYCLE_PLAN.md) for the contract
+and acceptance tests.
 
 ### What `internal/isolateproto` models
 

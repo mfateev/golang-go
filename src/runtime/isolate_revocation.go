@@ -88,10 +88,18 @@ func isolateDiscardIfRevoked() {
 		return
 	}
 	gp := getg()
+	// Discard skips the normal recovery/fatalpanic paths that release these
+	// counts. Every remaining non-Goexit panic still owns one increment.
+	for p := gp._panic; p != nil; p = p.link {
+		if !p.goexit && !p.deferreturn {
+			runningPanicDefers.Add(-1)
+		}
+	}
 	if raceenabled {
 		if gp.bubble != nil {
 			racereleasemergeg(gp, gp.bubble.raceaddr())
 		}
+		isolateRaceReleaseCleanup(gp)
 		racectxend(gp.racectx)
 	}
 	trace := traceAcquire()
@@ -146,6 +154,7 @@ func isolateTerminateBeforeStart(gp *g) {
 		if gp.bubble != nil {
 			racereleasemergeg(gp, gp.bubble.raceaddr())
 		}
+		isolateRaceReleaseCleanup(gp)
 		racectxend(gp.racectx)
 	}
 	trace := traceAcquire()

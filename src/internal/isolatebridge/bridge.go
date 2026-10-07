@@ -178,9 +178,13 @@ func (b *Boundary) SetExitHandler(fn func(int)) {
 func (b *Boundary) exit(code int) {
 	owner := EnterProcess()
 	defer LeaveProcess(owner)
-	b.Stop()
 	if b.onExit != nil {
+		// Publish the exit cause before waking dispatch. Managed cleanup scans
+		// wait queues asynchronously, so exit never waits on another member.
 		b.onExit(code)
+		b.BeginStop()
+	} else {
+		b.Stop()
 	}
 }
 
@@ -203,6 +207,51 @@ func ownershipFaultReason(unsafe.Pointer) string
 
 // EffectFaultDetails returns host-owned diagnostics from the first fatal fault.
 func (b *Boundary) EffectFaultDetails() (operation, stack string) { return effectFaultDetails(b.group) }
+
+// LifecycleFaultDetails returns immutable copied diagnostics from runtime.
+func (b *Boundary) LifecycleFaultDetails() (kind, phase, message string) {
+	return lifecycleFaultDetails(b.group)
+}
+
+// ReportPanic and ReportGoexit run only in the managed root's terminal defer,
+// before its group/owner binding is removed. They permanently end that G.
+func (b *Boundary) ReportPanic(value any, phase string) { reportPanic(value, phase) }
+func (b *Boundary) ReportGoexit(phase string)           { reportGoexit(phase) }
+
+// QueueCleanup moves trusted terminal bookkeeping to a process goroutine,
+// including when its caller still holds the isolate's execution token.
+func (b *Boundary) QueueCleanup(fn func()) { queueCleanup(fn) }
+
+// WaitDrained blocks a process caller until the revoked group's last member
+// has relinquished its wait records and group binding. It does not poll.
+func (b *Boundary) WaitDrained() { waitGroupDrained(b.group) }
+
+// ReleaseAllocation drops the private allocator lifetime after complete drain.
+func (b *Boundary) ReleaseAllocation() { releaseGroupAlloc(b.group) }
+
+// Snapshot samples without waiting for a running goroutine or stopping the world.
+func (b *Boundary) Snapshot() (uint64, int64, string) { return groupSnapshot(b.group) }
+
+//go:linkname lifecycleFaultDetails runtime.isolateLifecycleFaultDetails
+func lifecycleFaultDetails(unsafe.Pointer) (string, string, string)
+
+//go:linkname reportPanic runtime.isolateReportPanic
+func reportPanic(any, string)
+
+//go:linkname reportGoexit runtime.isolateReportGoexit
+func reportGoexit(string)
+
+//go:linkname queueCleanup runtime.isolateQueueCleanup
+func queueCleanup(func())
+
+//go:linkname waitGroupDrained runtime.isolateWaitGroupDrained
+func waitGroupDrained(unsafe.Pointer)
+
+//go:linkname releaseGroupAlloc runtime.isolateReleaseGroupAlloc
+func releaseGroupAlloc(unsafe.Pointer)
+
+//go:linkname groupSnapshot runtime.isolateGroupSnapshot
+func groupSnapshot(unsafe.Pointer) (uint64, int64, string)
 
 //go:linkname effectFaultDetails runtime.isolateEffectFaultDetails
 func effectFaultDetails(unsafe.Pointer) (string, string)
@@ -237,11 +286,15 @@ func (b *Boundary) Run(fn func()) {
 
 // RunOwner binds b's stable instance identity without enabling Call.
 // The generated state factory uses it while replaying package initializers.
-func (b *Boundary) RunOwner(fn func()) {
+func (b *Boundary) RunOwner(fn func()) { b.RunOwnerReady(fn, nil) }
+
+// RunOwnerReady announces membership before deterministic token acquisition.
+// Only the managed host uses ready; no application callback runs on admission.
+func (b *Boundary) RunOwnerReady(fn func(), ready chan struct{}) {
 	if b == nil || fn == nil {
 		panic("isolate: nil boundary or initializer")
 	}
-	oldGroup := setGroup(b.group)
+	oldGroup := setGroupReady(b.group, ready)
 	defer setGroup(oldGroup)
 	old := setOwner(b.owner)
 	defer func() {
@@ -345,6 +398,7 @@ func (b *Boundary) Call(op uint32, payload []byte) ([]byte, error) {
 		panic("isolate: command ID exhausted")
 	}
 	c := newHostCommand(id, op, payload)
+	callSelectBegin()
 	select {
 	case <-b.halt:
 		stopCall()
@@ -356,6 +410,7 @@ func (b *Boundary) Call(op uint32, payload []byte) ([]byte, error) {
 		stopCall()
 	case r = <-c.reply:
 	}
+	callSelectEnd()
 	b.stopIfRevoked()
 	if r.hasErr {
 		return copyBoundaryBytes(r.payload), errors.New(copyBoundaryString(r.errText))
@@ -429,6 +484,9 @@ func setOwnershipFaultHandler(unsafe.Pointer, func(string))
 //go:linkname setGroup runtime.isolateSetGroup
 func setGroup(unsafe.Pointer) unsafe.Pointer
 
+//go:linkname setGroupReady runtime.isolateSetGroupReady
+func setGroupReady(unsafe.Pointer, chan struct{}) unsafe.Pointer
+
 //go:linkname groupLive runtime.isolateGroupLive
 func groupLive(unsafe.Pointer) int32
 
@@ -461,3 +519,9 @@ func enterProcess() uintptr
 
 //go:linkname leaveProcess runtime.isolateLeaveMetadata
 func leaveProcess(uintptr)
+
+//go:linkname callSelectBegin runtime.isolateCallSelectBegin
+func callSelectBegin()
+
+//go:linkname callSelectEnd runtime.isolateCallSelectEnd
+func callSelectEnd()

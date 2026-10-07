@@ -15,7 +15,18 @@ func isolateSelectRandn(gp *g, n uint32) uint32 {
 	if group == nil || !group.deterministic {
 		return cheaprandn(n)
 	}
-	return uint32(isolateMix64(group.selectSeq.Add(1)) % uint64(n))
+	sequence := uint64(0)
+	if gp.isolateCallSelectNext != 0 {
+		if gp.isolateCallSelectRemaining == 0 {
+			throw("isolate: unexpected select in Call transport")
+		}
+		sequence = gp.isolateCallSelectNext
+		gp.isolateCallSelectNext++
+		gp.isolateCallSelectRemaining--
+	} else {
+		sequence = group.selectSeq.Add(1)
+	}
+	return uint32(isolateMix64(sequence) % uint64(n))
 }
 
 func isolateMix64(sequence uint64) uint64 {
@@ -66,4 +77,32 @@ func isolateSetRandLegacy(p unsafe.Pointer) {
 		racerelease(unsafe.Pointer(&group.randLegacy))
 	}
 	group.randLegacy = p
+}
+
+// Call has two two-case selects. Reserve both polls before its first park:
+// host receipt of the request must not consume workflow randomness later.
+//
+//go:linkname isolateCallSelectBegin
+func isolateCallSelectBegin() {
+	gp := getg()
+	if gp.isolateGroup == nil || !gp.isolateGroup.deterministic {
+		return
+	}
+	if gp.isolateCallSelectNext != 0 {
+		throw("isolate: nested Call transport")
+	}
+	gp.isolateCallSelectNext = gp.isolateGroup.selectSeq.Add(4) - 3
+	gp.isolateCallSelectRemaining = 4
+}
+
+//go:linkname isolateCallSelectEnd
+func isolateCallSelectEnd() {
+	gp := getg()
+	if gp.isolateCallSelectNext == 0 {
+		return
+	}
+	if gp.isolateCallSelectRemaining != 0 {
+		throw("isolate: incomplete Call select polls")
+	}
+	gp.isolateCallSelectNext = 0
 }

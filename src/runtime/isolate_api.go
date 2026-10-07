@@ -157,10 +157,25 @@ func isolateSetGroupExit(p unsafe.Pointer, fn func(int)) {
 
 //go:linkname isolateSetGroup
 func isolateSetGroup(p unsafe.Pointer) unsafe.Pointer {
+	return isolateAttachGroup(p, nil)
+}
+
+//go:linkname isolateSetGroupReady
+func isolateSetGroupReady(p unsafe.Pointer, ready chan struct{}) unsafe.Pointer {
+	return isolateAttachGroup(p, ready)
+}
+
+// Membership must become visible before a host waits on dispatch. Otherwise a
+// busy initializer child can leave Start holding the host lifecycle lock while
+// waiting for its token, preventing Kill from establishing revocation.
+func isolateAttachGroup(p unsafe.Pointer, ready chan struct{}) unsafe.Pointer {
 	gp := getg()
 	old := gp.isolateGroup
 	next := (*isolateRevocationGroup)(p)
 	if old == next {
+		if ready != nil {
+			close(ready)
+		}
 		return unsafe.Pointer(old)
 	}
 	if old != nil && next != nil {
@@ -169,13 +184,18 @@ func isolateSetGroup(p unsafe.Pointer) unsafe.Pointer {
 	if old != nil {
 		isolateDispatchLeave(gp)
 		old.running.Add(-1)
-		old.live.Add(-1)
+		if raceenabled {
+			racereleasemergeg(gp, unsafe.Pointer(old))
+		}
 	}
 	gp.isolateGroup = next
+	if old != nil {
+		old.releaseLive()
+	}
 	if next != nil {
 		next.live.Add(1)
 		next.running.Add(1)
-		isolateDispatchEnter(gp)
+		isolateDispatchEnterReady(gp, ready)
 	}
 	return unsafe.Pointer(old)
 }

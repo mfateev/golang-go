@@ -22,14 +22,14 @@ import (
 func TestMainExitRevokesUnstartedChildren(t *testing.T) {
 	var release atomic.Bool
 	ready := make(chan struct{})
-	childExited := make(chan struct{})
+	var childDeferred atomic.Bool
 	var grandchildCreated atomic.Bool
 	var grandchildRan atomic.Bool
 	program := Program{entry: isolatebridge.ProgramEntry{
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			go func() {
-				defer close(childExited)
+				defer childDeferred.Store(true)
 				close(ready)
 				for !release.Load() {
 				}
@@ -46,14 +46,16 @@ func TestMainExitRevokesUnstartedChildren(t *testing.T) {
 	if err := i.Start(); err != nil {
 		t.Fatal(err)
 	}
-	if err := i.Wait(); err != nil {
-		t.Fatal(err)
+	<-i.terminal
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	var pending *KillPendingError
+	if err := i.Kill(ctx); !errors.As(err, &pending) {
+		t.Fatalf("Kill while child is running = %v, want pending", err)
 	}
 	release.Store(true)
-	<-childExited
-	deadline := time.Now().Add(time.Second)
-	for i.boundary.LiveGoroutines() != 0 && time.Now().Before(deadline) {
-		runtime.Gosched()
+	if err := i.Wait(); err != nil {
+		t.Fatal(err)
 	}
 	if got := i.boundary.LiveGoroutines(); got != 0 {
 		t.Fatalf("after main exit, live goroutines = %d, want 0", got)
@@ -63,6 +65,9 @@ func TestMainExitRevokesUnstartedChildren(t *testing.T) {
 	}
 	if grandchildRan.Load() {
 		t.Fatal("grandchild started after main exit")
+	}
+	if childDeferred.Load() {
+		t.Fatal("revoked child ran an application defer")
 	}
 }
 

@@ -24,7 +24,7 @@ func Forbidden(pkg, name string) bool {
 	}
 	switch pkg {
 	case "isolate", "internal/isolatebridge":
-		return name == "New"
+		return name == "New" || name == "NewContext"
 	case "syscall", "golang.org/x/sys/unix", "golang.org/x/sys/windows":
 		switch name {
 		case "Exit", "ByteSliceFromString", "BytePtrFromString", "StringByteSlice", "StringBytePtr", "UTF16FromString", "UTF16PtrFromString", "UTF16ToString", "StringToUTF16", "StringToUTF16Ptr", "(*Errno).Error", "Errno.Error", "Errno.Is", "Errno.Timeout", "Errno.Temporary":

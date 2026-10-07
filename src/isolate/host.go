@@ -47,33 +47,66 @@ type Config struct {
 type Command = isolatebridge.Command
 
 // Isolate is a trusted instance of one statically linked program. This POC
-// uses the ordinary Go heap. Deterministic mode gates its native goroutines
-// through a FIFO execution token; it does not provide containment.
+// uses owner-specific allocations under the shared Go collector. Deterministic
+// mode gates native goroutines through a FIFO token. It is not a process sandbox.
 type Isolate struct {
-	entry              func()
-	runState           func(func())
-	boundary           *isolatebridge.Boundary
-	started            atomic.Bool
-	lifecycleMu        sync.Mutex
-	killed             bool
-	done               chan struct{}
-	completeOnce       sync.Once
-	watchOnce          sync.Once
-	scanOnce           sync.Once
-	exitRequested      atomic.Bool
-	exitErr            ExitError
-	ownershipRequested atomic.Bool
-	ownershipErr       *OwnershipError
-	effectErr          *EffectError
-	err                error // published by closing done
+	entry         func()
+	runState      func(func())
+	boundary      *isolatebridge.Boundary
+	started       atomic.Bool
+	lifecycleMu   sync.Mutex
+	killed        bool
+	done          chan struct{}
+	terminal      chan struct{}
+	completeOnce  sync.Once
+	exitRequested atomic.Bool
+	exitErr       *ExitError
+	cause         error // immutable after terminal closes
+	err           error // published by closing done
 }
 
-var errMainPanicked = errors.New("isolate: main panicked")
 var errMainExited = errors.New("isolate: main goroutine exited without returning")
 var errMainRevoked = errors.New("isolate: main goroutine revoked")
-var errInitializerPanicked = errors.New("isolate: package initializer panicked")
 var errInitializerExited = errors.New("isolate: package initializer goroutine exited without returning")
 var errInitializerFailed = errors.New("isolate: package initialization failed")
+
+// ErrRevoked is the outcome of host-requested termination before a program
+// publishes another terminal outcome. Revocation remains effective on timeout.
+var ErrRevoked = errMainRevoked
+
+// PanicError contains copied diagnostics for an unrecovered entry, child or
+// initializer panic. It never retains the original arbitrary panic value.
+type PanicError struct{ Phase, Message, Stack string }
+
+func (e *PanicError) Error() string {
+	return "isolate: unrecovered panic in " + e.Phase + ": " + e.Message + "\n" + e.Stack
+}
+
+// GoexitError reports a root goroutine that exited without completing its entry.
+// Child Goexit retains ordinary Go behavior and is not an isolate failure.
+type GoexitError struct{ Phase, Stack string }
+
+func (e *GoexitError) Error() string {
+	if e.Phase == "initialization" {
+		return errInitializerExited.Error()
+	}
+	return errMainExited.Error()
+}
+
+// InitializationError reports failed startup whose revoked goroutines remain
+// pending after bounded cleanup. Done closes when cleanup finishes. Retaining
+// the error or notification does not keep a completed instance's heap alive.
+type InitializationError struct {
+	Cause   error
+	Pending *KillPendingError
+	Done    <-chan struct{}
+}
+
+func (e *InitializationError) Error() string {
+	return "isolate: initialization failed with pending cleanup: " + e.Cause.Error() + ": " + e.Pending.Error()
+}
+
+func (e *InitializationError) Unwrap() error { return e.Cause }
 
 // ExitError reports a nonzero status from os.Exit or syscall.Exit inside a
 // program. Exit with status zero completes Wait successfully.
@@ -99,7 +132,8 @@ func (e *EffectError) Error() string {
 }
 
 // KillPendingError reports goroutines still attached to a revoked instance.
-// Running includes goroutines in syscalls; no stack sample is available yet.
+// Running includes goroutines in syscalls. Diagnostics are best effort: a busy
+// running stack is never suspended merely to produce a sample.
 type KillPendingError struct {
 	GoroutineID       uint64
 	ThreadID          int64
@@ -109,7 +143,9 @@ type KillPendingError struct {
 }
 
 func (e *KillPendingError) Error() string {
-	return "isolate: kill pending: " + strconv.FormatInt(int64(e.LiveGoroutines), 10) + " goroutines remain"
+	return "isolate: kill pending: " + strconv.FormatInt(int64(e.LiveGoroutines), 10) +
+		" goroutines remain (running=" + strconv.FormatInt(int64(e.RunningGoroutines), 10) +
+		", goroutine=" + strconv.FormatUint(e.GoroutineID, 10) + ", thread=" + strconv.FormatInt(e.ThreadID, 10) + ")"
 }
 
 // Named lifecycle handlers keep their audited identity independent of the
@@ -134,18 +170,27 @@ func (c *initializerCompletion) fault(reason string) {
 	c.close()
 }
 
-// New prepares an instance. Its program can request initial input with Call.
+// New prepares an instance using an unbounded initialization context. Use
+// NewContext to bound an initializer. Initializers may use configured logging;
+// application host calls require Start.
 func New(cfg Config) (*Isolate, error) {
+	return NewContext(context.Background(), cfg)
+}
+
+// NewContext prepares an instance while observing ctx's cancellation. Failed
+// startup revokes its children and attempts cleanup for at most 100 ms. If any
+// remain, InitializationError carries a cleanup notification and diagnostics.
+func NewContext(ctx context.Context, cfg Config) (*Isolate, error) {
+	if ctx == nil {
+		return nil, errors.New("isolate: nil initialization context")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if cfg.Program.entry.Main == nil || cfg.Program.entry.NewState == nil {
 		return nil, errors.New("isolate: unknown program")
 	}
 	boundary := isolatebridge.New()
-	prepared := false
-	defer func() {
-		if !prepared {
-			boundary.Stop()
-		}
-	}()
 	if cfg.LogHandler != nil && !boundary.ConfigureLogging() {
 		return nil, errors.New("isolate: cannot configure logging")
 	}
@@ -167,11 +212,24 @@ func New(cfg Config) (*Isolate, error) {
 		entry:    cfg.Program.entry.Main,
 		boundary: boundary,
 		done:     make(chan struct{}),
-		// Allocate separately on the host: retaining a reported error must
-		// not keep its instance, boundary, or allocator cache alive.
-		ownershipErr: new(OwnershipError),
-		effectErr:    new(EffectError),
+		terminal: make(chan struct{}),
+		// A retained exit error must not retain its instance or allocator cache.
+		exitErr: new(ExitError),
 	}
+	prepared := false
+	defer func() {
+		if !prepared {
+			select {
+			case <-i.terminal:
+				return // Failure already queued cleanup, possibly still pending.
+			default:
+			}
+			// Also release startup state if a host logging handler panics.
+			cleanup, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+			_ = i.Kill(cleanup)
+		}
+	}()
 	var runState func(func())
 	var err error
 	// Initializers can call runtime.Goexit. Run them on a dedicated goroutine
@@ -179,15 +237,16 @@ func New(cfg Config) (*Isolate, error) {
 	completion := &initializerCompletion{instance: i, done: make(chan struct{})}
 	boundary.SetExitHandler(completion.exit)
 	boundary.SetOwnershipFaultHandler(completion.fault)
+	ready := make(chan struct{})
 	go func() {
 		defer completion.close()
-		boundary.RunOwner(func() {
+		boundary.RunOwnerReady(func() {
 			returned := false
 			defer func() {
-				if recover() != nil {
-					err = errInitializerPanicked
+				if value := recover(); value != nil {
+					boundary.ReportPanic(value, "initialization")
 				} else if !returned {
-					err = errInitializerExited
+					boundary.ReportGoexit("initialization")
 				}
 			}()
 			runState, err = cfg.Program.entry.NewState()
@@ -197,8 +256,9 @@ func New(cfg Config) (*Isolate, error) {
 				err = errInitializerFailed
 			}
 			returned = true
-		})
+		}, ready)
 	}()
+	<-ready
 	// New has not returned an instance yet. Service only the reserved logging
 	// operation so initializers can print through the same copied-byte Call.
 initialize:
@@ -206,42 +266,56 @@ initialize:
 		select {
 		case <-completion.done:
 			break initialize
+		case <-ctx.Done():
+			return nil, i.initializationFailure(ctx.Err())
 		case command := <-boundary.Commands():
 			if command.Op != LogOp || cfg.LogHandler == nil {
-				boundary.Stop()
-				return nil, errors.New("isolate: initializer attempted an unsupported host call")
+				return nil, i.initializationFailure(errors.New("isolate: initializer attempted an unsupported host call"))
 			}
 			record, cause := DecodeLog(command.Payload)
 			if cause != nil {
-				boundary.Stop()
-				return nil, cause
+				return nil, i.initializationFailure(cause)
 			}
 			cfg.LogHandler(record)
 			command.Reply(nil, nil)
 		}
 	}
 	if reason := boundary.OwnershipFaultReason(); reason != "" {
-		i.completeOwnershipFault(reason)
-	}
-	if i.ownershipRequested.Load() {
-		boundary.Stop()
-		return nil, i.err
+		return nil, i.initializationFailure(i.faultError(reason))
 	}
 	if i.exitRequested.Load() {
-		boundary.Stop()
-		return nil, &i.exitErr
+		return nil, i.initializationFailure(i.exitErr)
 	}
 	if err != nil {
-		boundary.Stop()
-		return nil, err
+		return nil, i.initializationFailure(err)
 	}
 	if runState == nil {
-		boundary.Stop()
-		return nil, errors.New("isolate: program has no state runner")
+		return nil, i.initializationFailure(errors.New("isolate: program has no state runner"))
+	}
+	i.lifecycleMu.Lock()
+	if boundary.Stopped() {
+		i.lifecycleMu.Unlock()
+		return nil, i.initializationFailure(ErrRevoked)
 	}
 	i.runState = runState
 	prepared = true
+	i.lifecycleMu.Unlock()
 	return i, nil
+}
+
+func (i *Isolate) initializationFailure(cause error) error {
+	i.complete(cause)
+	cleanup, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	select {
+	case <-i.done:
+		if i.err != nil {
+			return i.err
+		}
+		return cause // Includes successful os.Exit(0), which still aborts startup.
+	case <-cleanup.Done():
+		return &InitializationError{Cause: cause, Pending: i.pendingError(), Done: i.done}
+	}
 }
 
 func isolateTimeNanos(t time.Time) (int64, error) {
@@ -275,22 +349,23 @@ func (i *Isolate) Start() error {
 	i.lifecycleMu.Lock()
 	defer i.lifecycleMu.Unlock()
 	if i.killed || i.exitRequested.Load() || i.boundary.Stopped() || !i.started.CompareAndSwap(false, true) {
+		if reason := i.boundary.OwnershipFaultReason(); reason != "" {
+			return i.faultError(reason)
+		}
 		return errors.New("isolate: instance already started or revoked")
 	}
 	ready := make(chan struct{})
 	go func() {
-		defer i.boundary.Stop()
-		i.boundary.RunOwner(func() {
-			close(ready) // group membership is visible before Start returns
+		i.boundary.RunOwnerReady(func() {
 			returned := false
 			defer func() {
-				if recover() != nil {
-					i.complete(errMainPanicked)
+				if value := recover(); value != nil {
+					i.boundary.ReportPanic(value, "main")
 				} else if !returned {
 					if i.boundary.Stopped() {
 						i.complete(errMainRevoked)
 					} else {
-						i.complete(errMainExited)
+						i.boundary.ReportGoexit("main")
 					}
 				} else {
 					i.complete(nil)
@@ -298,7 +373,7 @@ func (i *Isolate) Start() error {
 			}()
 			i.runState(func() { i.boundary.Run(i.entry) })
 			returned = true
-		})
+		}, ready)
 	}()
 	<-ready
 	return nil
@@ -308,68 +383,55 @@ func (i *Isolate) complete(err error) {
 	owner := isolatebridge.EnterProcess()
 	defer isolatebridge.LeaveProcess(owner)
 	i.completeOnce.Do(func() {
-		if !i.recordOwnershipFault() {
-			i.err = err
-		}
-		close(i.done)
+		i.beginCompletion(err)
 	})
 }
 
 func (i *Isolate) completeExit(code int) {
 	owner := isolatebridge.EnterProcess()
 	defer isolatebridge.LeaveProcess(owner)
-	i.exitRequested.Store(true)
 	i.completeOnce.Do(func() {
 		i.exitErr.Code = code
-		if !i.recordOwnershipFault() && code != 0 {
-			i.err = &i.exitErr
+		i.exitRequested.Store(true)
+		var err error
+		if code != 0 {
+			err = i.exitErr
 		}
-		close(i.done)
+		i.beginCompletion(err)
 	})
 }
 
-func (i *Isolate) completeOwnershipFault(_ string) {
-	i.completeOnce.Do(func() {
-		i.recordOwnershipFault()
-		close(i.done)
-	})
+func (i *Isolate) completeOwnershipFault(reason string) {
+	i.complete(i.faultError(reason))
 }
 
-// Called only by the winner of completeOnce, before publishing done. A fault
-// can revoke the main before the process reporter runs; preserve its cause in
-// that completion race instead of reporting a generic revocation.
-func (i *Isolate) recordOwnershipFault() bool {
-	reason := i.boundary.OwnershipFaultReason()
-	if reason == "" {
-		return false
+// Called only by the winner of completeOnce, inside a trusted process scope.
+func (i *Isolate) beginCompletion(cause error) {
+	if reason := i.boundary.OwnershipFaultReason(); reason != "" {
+		cause = i.faultError(reason)
 	}
-	_, stack := i.boundary.EffectFaultDetails()
-	i.ownershipErr.Reason, i.ownershipErr.Stack = reason, stack
-	i.ownershipRequested.Store(true)
-	i.err = i.ownershipErr
-	if operation, stack := i.boundary.EffectFaultDetails(); operation != "" {
-		i.effectErr.Operation, i.effectErr.Stack = operation, stack
-		i.err = i.effectErr
-	}
-	return true
+	i.cause = cause
+	close(i.terminal)
+	i.boundary.BeginStop()
+	i.boundary.QueueCleanup(i.finishCleanup)
 }
 
-// A revoked main may be discarded by the runtime without running Go defers.
-// Observe group destruction from the host so Wait and Done still complete.
-func (i *Isolate) watchRevokedCompletion() {
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
-	for {
-		if i.boundary.LiveGoroutines() == 0 {
-			i.complete(errMainRevoked)
-			return
-		}
-		select {
-		case <-i.done:
-			return
-		case <-ticker.C:
-		}
+// A runtime system G owns cleanup independently of application defers. Waiter
+// scanning finishes before the group-drain notification establishes zero.
+func (i *Isolate) finishCleanup() {
+	i.boundary.WakeStoppedWaiters()
+	i.boundary.WaitDrained()
+	i.boundary.ReleaseAllocation()
+	i.lifecycleMu.Lock()
+	i.entry, i.runState = nil, nil
+	i.err = i.cause
+	// A fatal fault may have been published after main return won completeOnce.
+	// All members are gone now, so the first immutable fault is final.
+	if reason := i.boundary.OwnershipFaultReason(); reason != "" {
+		i.err = i.faultError(reason)
 	}
+	close(i.done)
+	i.lifecycleMu.Unlock()
 }
 
 // Commands returns host requests from the program. The host must reply to
@@ -384,10 +446,7 @@ func (i *Isolate) Suspend() error {
 		return errors.New("isolate: instance not started")
 	}
 	err := i.boundary.Suspend()
-	if reason := i.boundary.OwnershipFaultReason(); reason != "" {
-		return i.faultError(reason)
-	}
-	return err
+	return i.executionError(err)
 }
 
 // Resume allows suspended instance work to run in FIFO order.
@@ -396,17 +455,34 @@ func (i *Isolate) Resume() error {
 		return errors.New("isolate: instance not started")
 	}
 	err := i.boundary.Resume()
+	return i.executionError(err)
+}
+
+// Dispatch can observe revocation before Done publishes complete cleanup.
+// Preserve its typed cause so an SDK never mistakes exit for a returned error.
+func (i *Isolate) executionError(err error) error {
 	if reason := i.boundary.OwnershipFaultReason(); reason != "" {
 		return i.faultError(reason)
+	}
+	if i.boundary.Stopped() {
+		if i.exitRequested.Load() && i.exitErr.Code != 0 {
+			return i.exitErr
+		}
+		return ErrRevoked
 	}
 	return err
 }
 
 func (i *Isolate) faultError(reason string) error {
+	_, stack := i.boundary.EffectFaultDetails()
+	if kind, phase, message := i.boundary.LifecycleFaultDetails(); kind == "panic" {
+		return &PanicError{Phase: phase, Message: message, Stack: stack}
+	} else if kind == "Goexit" {
+		return &GoexitError{Phase: phase, Stack: stack}
+	}
 	if operation, stack := i.boundary.EffectFaultDetails(); operation != "" {
 		return &EffectError{Operation: operation, Stack: stack}
 	}
-	_, stack := i.boundary.EffectFaultDetails()
 	return &OwnershipError{Reason: reason, Stack: stack}
 }
 
@@ -415,57 +491,56 @@ func (i *Isolate) faultError(reason string) error {
 // synchronization and is deadlocked under the trusted deterministic contract.
 func (i *Isolate) PendingCalls() int64 { return i.boundary.PendingCalls() }
 
-// Done is closed on main completion, exit, or a fatal ownership failure.
-// Kill must still establish the remaining goroutine/service cleanup fence.
+// Done closes after a terminal outcome and every attached goroutine's runtime
+// cleanup. No later wakeup can execute instance code after it closes.
 func (i *Isolate) Done() <-chan struct{} { return i.done }
 
-// Wait waits for main to return or terminate and reports its failure.
-// Ownership faults in children also terminate Wait. Other child failures are
-// not yet covered by this provisional lifecycle.
+// Wait waits for the whole instance to finish cleanup and reports its terminal
+// outcome, including unrecovered child panics. It can remain blocked on pending
+// termination; use Kill with a context to observe a deadline and diagnostics.
 func (i *Isolate) Wait() error {
-	if i == nil || !i.started.Load() {
+	if i == nil {
 		return errors.New("isolate: instance not started")
+	}
+	if !i.started.Load() {
+		select {
+		case <-i.terminal:
+		default:
+			return errors.New("isolate: instance not started")
+		}
 	}
 	<-i.done
 	return i.err
 }
 
-// Kill revokes unstarted children, wakes Call, registered network poll,
-// real time.Sleep, channel, select, Cond, and sync semaphore waiters, then
-// waits for every attached goroutine to exit.
-// Other runtime waits are not yet interrupted. If ctx expires while one
-// remains, Kill returns a pending error. This is a provisional lifecycle,
-// not safe heap teardown.
+// Kill permanently revokes execution and waits for the complete cleanup fence.
+// It wakes Calls and supported native waits. A nil result is stable: no later
+// event can resume instance code. If ctx expires, KillPendingError describes
+// remaining execution; a later Kill can wait for its cleanup without reviving it.
 func (i *Isolate) Kill(ctx context.Context) error {
 	if i == nil || ctx == nil {
 		return errors.New("isolate: nil instance or context")
 	}
 	i.lifecycleMu.Lock()
 	i.killed = true
-	// Publish the fence and wake Call before waiting on any runtime queue
-	// lock. The scan runs on a process goroutine, so a blocked scan cannot
-	// prevent this call from observing ctx's deadline.
-	i.boundary.BeginStop()
-	i.scanOnce.Do(func() { go i.boundary.WakeStoppedWaiters() })
-	if i.started.Load() {
-		i.watchOnce.Do(func() { go i.watchRevokedCompletion() })
-	}
+	i.complete(ErrRevoked)
 	i.lifecycleMu.Unlock()
 
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
-	for {
-		if i.boundary.LiveGoroutines() == 0 {
-			return nil
-		}
+	select {
+	case <-i.done:
+		return nil
+	case <-ctx.Done():
 		select {
-		case <-ctx.Done():
-			live := i.boundary.LiveGoroutines()
-			if live == 0 {
-				return nil
-			}
-			return &KillPendingError{LiveGoroutines: live, RunningGoroutines: i.boundary.RunningGoroutines()}
-		case <-ticker.C:
+		case <-i.done:
+			return nil
+		default:
+			return i.pendingError()
 		}
 	}
+}
+
+func (i *Isolate) pendingError() *KillPendingError {
+	id, thread, stack := i.boundary.Snapshot()
+	return &KillPendingError{GoroutineID: id, ThreadID: thread, Stack: stack,
+		LiveGoroutines: i.boundary.LiveGoroutines(), RunningGoroutines: i.boundary.RunningGoroutines()}
 }

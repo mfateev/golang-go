@@ -8,8 +8,8 @@
 // available for runtime probes.
 //
 // This trusted POC offers opt-in deterministic native dispatch and host
-// suspension through Config.Deterministic. It does not provide heap isolation
-// or general containment.
+// suspension through Config.Deterministic. Marked builds enforce memory and
+// effect restrictions; arbitrary native execution is not contained.
 package isolate
 
 import "internal/isolatebridge"

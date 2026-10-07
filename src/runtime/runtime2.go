@@ -43,8 +43,10 @@ type isolateRevocationGroup struct {
 	dispatchLock     mutex              // Leaf lock: only non-allocating queue/token operations.
 	dispatchToken    guintptr
 	dispatchQueue    gQueue
+	dispatchJoining  int32 // Pending host-group admission, protected by dispatchLock.
 	dispatchPaused   bool
 	dispatchWaiter   guintptr // Host waiting for exact idle suspension.
+	drainWaiters     gList    // Process goroutines waiting for revoked group cleanup; dispatchLock.
 	pollLock         mutex
 	pollWaits        *g
 	parkLock         mutex
@@ -573,59 +575,61 @@ type g struct {
 	inMarkAssist bool
 	coroexit     bool // argument to coroswitch_m
 
-	raceignore            int8  // ignore race detection events
-	nocgocallback         bool  // whether disable callback from C
-	tracking              bool  // whether we're tracking this G for sched latency statistics
-	trackingSeq           uint8 // used to decide whether to track this G
-	trackingStamp         int64 // timestamp of when the G last started being tracked
-	runnableTime          int64 // the amount of time spent runnable, cleared when running, only used when tracking
-	lockedm               muintptr
-	fipsIndicator         uint8
-	fipsOnlyBypass        bool
-	ditWanted             bool // set if g wants to be executed with DIT enabled
-	syncSafePoint         bool // set if g is stopped at a synchronous safe point.
-	runningCleanups       atomic.Bool
-	isolatePrinting       bool // collecting one compiler-lowered print statement
-	sig                   uint32
-	secret                int32 // current nesting of runtime/secret.Do calls.
-	writebuf              []byte
-	sigcode0              uintptr
-	sigcode1              uintptr
-	sigpc                 uintptr
-	parentGoid            uint64          // goid of goroutine that created this goroutine
-	gopc                  uintptr         // pc of go statement that created this goroutine
-	ancestors             *[]ancestorInfo // ancestor information goroutine(s) that created this goroutine (only used if debug.tracebackancestors)
-	startpc               uintptr         // pc of goroutine function
-	racectx               uintptr
-	waiting               *sudog                  // sudog structures this g is waiting on (that have a valid elem ptr); in lock order
-	cgoCtxt               []uintptr               // cgo traceback context
-	labels                unsafe.Pointer          // profiler labels
-	isolateE4Base         unsafe.Pointer          // tagged Phase 0 global-base experiment
-	isolateE4Bases        unsafe.Pointer          // tagged Phase 2B package-state table probe
-	isolateMetadataDepth  uint32                  // Audited process metadata service nesting; never inherited.
-	isolateOwner          uintptr                 // monotonic trusted instance ID for future heap ownership
-	isolateBoundary       unsafe.Pointer          // provisional host transport for Call
-	isolateGroup          *isolateRevocationGroup // Phase 2B live count and first-dispatch experiment
-	isolateDispatchPark   bool                    // Token transfer is pending until park commits.
-	isolateDispatchQueued bool                    // Owned by the group's dispatch lock.
-	isolateExplicitYield  bool
-	isolateRuntimeWait    bool // Runtime channel handshake must retain the dispatch token.
-	isolatePollPrev       *g
-	isolatePollNext       *g
-	isolatePollDesc       unsafe.Pointer // runtime-owned pollDesc while registered; FD reference keeps it alive
-	isolatePollMode       int32
-	isolateParkPrev       *g
-	isolateParkNext       *g
-	isolateParkChan       *hchan
-	isolateParkNotify     *notifyList
-	isolateParkSema       *uint32
-	isolateParkState      uint8
-	isolateStarted        bool
-	isolateAdmitted       bool
-	isolateSelectWake     atomic.Uint32 // 0 before park, 1 parked, 2 revoked
-	timer                 *timer        // cached timer for time.Sleep
-	sleepWhen             int64         // when to sleep until
-	selectDone            atomic.Uint32 // are we participating in a select and did someone win the race?
+	raceignore                 int8  // ignore race detection events
+	nocgocallback              bool  // whether disable callback from C
+	tracking                   bool  // whether we're tracking this G for sched latency statistics
+	trackingSeq                uint8 // used to decide whether to track this G
+	trackingStamp              int64 // timestamp of when the G last started being tracked
+	runnableTime               int64 // the amount of time spent runnable, cleared when running, only used when tracking
+	lockedm                    muintptr
+	fipsIndicator              uint8
+	fipsOnlyBypass             bool
+	ditWanted                  bool // set if g wants to be executed with DIT enabled
+	syncSafePoint              bool // set if g is stopped at a synchronous safe point.
+	runningCleanups            atomic.Bool
+	isolatePrinting            bool // collecting one compiler-lowered print statement
+	sig                        uint32
+	secret                     int32 // current nesting of runtime/secret.Do calls.
+	writebuf                   []byte
+	sigcode0                   uintptr
+	sigcode1                   uintptr
+	sigpc                      uintptr
+	parentGoid                 uint64          // goid of goroutine that created this goroutine
+	gopc                       uintptr         // pc of go statement that created this goroutine
+	ancestors                  *[]ancestorInfo // ancestor information goroutine(s) that created this goroutine (only used if debug.tracebackancestors)
+	startpc                    uintptr         // pc of goroutine function
+	racectx                    uintptr
+	waiting                    *sudog         // sudog structures this g is waiting on (that have a valid elem ptr); in lock order
+	cgoCtxt                    []uintptr      // cgo traceback context
+	labels                     unsafe.Pointer // profiler labels
+	isolateE4Base              unsafe.Pointer // tagged Phase 0 global-base experiment
+	isolateE4Bases             unsafe.Pointer // tagged Phase 2B package-state table probe
+	isolateCallSelectNext      uint64         // Four poll draws reserved before a Call transport park.
+	isolateCallSelectRemaining uint32
+	isolateMetadataDepth       uint32                  // Audited process metadata service nesting; never inherited.
+	isolateOwner               uintptr                 // monotonic trusted instance ID for future heap ownership
+	isolateBoundary            unsafe.Pointer          // provisional host transport for Call
+	isolateGroup               *isolateRevocationGroup // Phase 2B live count and first-dispatch experiment
+	isolateDispatchPark        bool                    // Token transfer is pending until park commits.
+	isolateDispatchQueued      bool                    // Owned by the group's dispatch lock.
+	isolateExplicitYield       bool
+	isolateRuntimeWait         bool // Runtime channel handshake must retain the dispatch token.
+	isolatePollPrev            *g
+	isolatePollNext            *g
+	isolatePollDesc            unsafe.Pointer // runtime-owned pollDesc while registered; FD reference keeps it alive
+	isolatePollMode            int32
+	isolateParkPrev            *g
+	isolateParkNext            *g
+	isolateParkChan            *hchan
+	isolateParkNotify          *notifyList
+	isolateParkSema            *uint32
+	isolateParkState           uint8
+	isolateStarted             bool
+	isolateAdmitted            bool
+	isolateSelectWake          atomic.Uint32 // 0 before park, 1 parked, 2 revoked
+	timer                      *timer        // cached timer for time.Sleep
+	sleepWhen                  int64         // when to sleep until
+	selectDone                 atomic.Uint32 // are we participating in a select and did someone win the race?
 
 	// goroutineProfiled indicates the status of this goroutine's stack for the
 	// current in-progress goroutine profile

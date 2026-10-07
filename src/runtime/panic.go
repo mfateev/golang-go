@@ -859,6 +859,17 @@ func gopanic(e any) {
 		fn()
 	}
 
+	// A managed isolate's unrecovered child panic must not freeze or terminate
+	// the worker process. Application recovery has already had its opportunity;
+	// reporting copies diagnostics without invoking Error/String methods.
+	if group := gp.isolateGroup; group != nil && group.ownershipHandler != nil {
+		phase := "goroutine"
+		if gp.isolateBoundary == nil {
+			phase = "initializer goroutine"
+		}
+		isolateReportPanic(p.arg, phase)
+	}
+
 	// If we're tracing, flush the current generation to make the trace more
 	// readable.
 	//

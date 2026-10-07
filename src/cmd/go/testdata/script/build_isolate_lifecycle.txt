@@ -1,0 +1,133 @@
+[short] skip
+[compiler:gccgo] skip
+
+go build -o lifecycle$GOEXE ./host
+exec ./lifecycle$GOEXE
+stdout '^compiled lifecycle passed$'
+
+# The same contract holds with instrumented entry closures and dependencies.
+[cgo] [race] go build -race -o lifecycle-race$GOEXE ./host
+[cgo] [race] exec ./lifecycle-race$GOEXE
+[cgo] [race] stdout '^compiled lifecycle passed$'
+
+# A generated state factory whose initializer never returns is cancellable.
+go build -isolate-dir=./blocked -o startup-worker$GOEXE ./startup
+exec ./startup-worker$GOEXE
+stdout '^compiled startup canceled$'
+
+-- go.mod --
+module example.org/lifecycle
+go 1.26
+-- jobs/jobs.go --
+package jobs
+import (
+    "iter"
+    "encoding/json"
+    "os"
+    "runtime"
+)
+var state = make([]byte, 1<<20)
+func Decode(data []byte, dst any) error { return json.Unmarshal(data, dst) }
+
+//go:isolate
+func Work(mode string) (string, error) {
+    state[0]++
+    switch mode {
+    case "panic": panic("root panic")
+    case "child": go func() { panic("child panic") }(); select {}
+    case "goexit": runtime.Goexit()
+    case "exit": os.Exit(17)
+    case "recover":
+        finished := make(chan struct{})
+        go func() { defer close(finished); runtime.Goexit() }()
+        <-finished
+        func() { defer func() { if recover() != "ordinary" { panic("lost recovery") } }(); panic("ordinary") }()
+    case "children":
+        entered := make(chan struct{})
+        for range 32 { go func() { entered <- struct{}{}; select {} }() }
+        for range 32 { <-entered }
+        _, stop := iter.Pull(func(yield func(int) bool) { yield(1) })
+        runtime.KeepAlive(stop)
+    }
+    if state[0] != 1 { panic("private package state shared") }
+    return "finished", nil
+}
+-- host/main.go --
+package main
+import (
+    "context"
+    "encoding/json"
+    "errors"
+    "fmt"
+    "isolate"
+    "strings"
+    "time"
+    "example.org/lifecycle/jobs"
+)
+func run(mode string, deterministic bool) {
+    handle, ok := isolate.LookupFunction(jobs.Work)
+    if !ok { panic("missing handle") }
+    program := handle.ProgramWithHandle(func(h isolate.Handle) {
+        data, err := isolate.Call(1, nil)
+        if err != nil { panic(err) }
+        err = h.Invoke(func(values ...isolate.Value) error { return jobs.Decode(data, values[0].Pointer) }, func(values ...isolate.Value) error {
+            if values[0].Value != "finished" { panic("invalid result") }
+            return nil
+        })
+        if err != nil { panic(err) }
+    })
+    clock := time.Unix(0, 0)
+    i, err := isolate.New(isolate.Config{Program: program, Deterministic: deterministic, InitialTime: &clock, TimerOp: 99})
+    if err != nil { panic(err) }
+    if err := i.Start(); err != nil { panic(err) }
+    data, _ := json.Marshal(mode)
+    (<-i.Commands()).Reply(data, nil)
+    select { case <-i.Done(): case <-time.After(5*time.Second): panic("group did not drain") }
+    err = i.Wait()
+    switch mode {
+    case "panic", "child":
+        var failure *isolate.PanicError
+        phase, message := "main", "root panic"
+        if mode == "child" { phase, message = "goroutine", "child panic" }
+        if !errors.As(err, &failure) || failure.Phase != phase || failure.Message != message || !strings.Contains(failure.Stack, "jobs.Work") { panic(err) }
+    case "goexit":
+        var failure *isolate.GoexitError
+        if !errors.As(err, &failure) || failure.Phase != "main" { panic(err) }
+    case "exit":
+        var failure *isolate.ExitError
+        if !errors.As(err, &failure) || failure.Code != 17 { panic(err) }
+    default: if err != nil { panic(err) }
+    }
+    if err := i.Kill(context.Background()); err != nil { panic(err) }
+    if err := i.Start(); err == nil { panic("revived completed isolate") }
+}
+func main() {
+    for _, deterministic := range []bool{false,true} {
+        for _, mode := range []string{"panic", "child", "goexit", "exit", "recover", "children"} { run(mode, deterministic) }
+    }
+    fmt.Println("compiled lifecycle passed")
+}
+-- blocked/isolate.json --
+{"name":"blocked"}
+-- blocked/main.go --
+package main
+func init() { select {} }
+func main() {}
+-- startup/main.go --
+package main
+import (
+    "context"
+    "errors"
+    "fmt"
+    "isolate"
+    "time"
+)
+func main() {
+    program, ok := isolate.LookupProgram("blocked")
+    if !ok { panic("missing startup program") }
+    ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+    defer cancel()
+    instance, err := isolate.NewContext(ctx, isolate.Config{Program:program, Deterministic:true})
+    if instance != nil || !errors.Is(err, context.DeadlineExceeded) { panic(err) }
+    fmt.Println("compiled startup canceled")
+}

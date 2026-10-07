@@ -12,6 +12,9 @@ type isolateOwnershipFault struct {
 	reason    string
 	operation string // Nonempty for a forbidden effect.
 	stack     string
+	kind      string // Nonempty for a lifecycle fault: panic or Goexit.
+	phase     string
+	message   string
 }
 
 //go:linkname isolateSetOwnershipFaultHandler
@@ -29,6 +32,14 @@ func isolateOwnershipViolation(reason string) {
 }
 
 func isolateReportFault(reason, operation string) {
+	isolateReportFaultRecord(reason, operation, "", "", nil)
+}
+
+func isolateReportLifecycleFault(reason, kind, phase string, value any) {
+	isolateReportFaultRecord(reason, "", kind, phase, value)
+}
+
+func isolateReportFaultRecord(reason, operation, kind, phase string, value any) {
 	gp := getg()
 	group := gp.isolateGroup
 	if group == nil || group.ownershipHandler == nil {
@@ -57,6 +68,15 @@ func isolateReportFault(reason, operation string) {
 	text, data := rawstring(len(reason))
 	copy(data, reason)
 	fault := &isolateOwnershipFault{reason: text, stack: isolateEffectStack()}
+	if kind != "" {
+		fault.kind = kind // Runtime constants, never an application string.
+		name, nameBytes := rawstring(len(phase))
+		copy(nameBytes, phase)
+		fault.phase = name
+		if kind == "panic" {
+			fault.message = isolatePanicMessage(value)
+		}
+	}
 	if operation != "" {
 		name, nameBytes := rawstring(len(operation))
 		copy(nameBytes, operation)

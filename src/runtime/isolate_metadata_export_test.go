@@ -206,3 +206,5 @@ func IsolateItabBoundsForTest(value interface{ Marker() }) (unsafe.Pointer, uint
 	iface := *(*iface)(unsafe.Pointer(&value))
 	return unsafe.Pointer(iface.tab), unsafe.Sizeof(itab{})
 }
+
+func IsolateRunningPanicDefersForTest() uint32 { return runningPanicDefers.Load() }

@@ -4547,6 +4547,7 @@ func goyield_m(gp *g) {
 // Finishes execution of the current goroutine.
 func goexit1() {
 	if raceenabled {
+		isolateRaceReleaseCleanup(getg())
 		if gp := getg(); gp.bubble != nil {
 			racereleasemergeg(gp, gp.bubble.raceaddr())
 		}
@@ -4610,9 +4611,13 @@ func gdestroy(gp *g) {
 	gp.isolateE4Base = nil
 	gp.isolateE4Bases = nil
 	gp.isolateOwner = 0
+	gp.isolateCallSelectNext = 0
+	gp.isolateCallSelectRemaining = 0
 	gp.isolateMetadataDepth = 0
 	gp.isolateBoundary = nil
 	gp.timer = nil
+	gp.coroarg = nil
+	gp.coroexit = false
 	gp.bubble = nil
 	gp.fipsOnlyBypass = false
 	gp.secret = 0
@@ -4629,12 +4634,13 @@ func gdestroy(gp *g) {
 
 	dropg()
 	if gp.isolateGroup != nil {
+		group := gp.isolateGroup
 		isolateDispatchRelease(gp, false)
 		if gp.isolateAdmitted {
-			gp.isolateGroup.admission.Add(-1)
+			group.admission.Add(-1)
 		}
-		gp.isolateGroup.live.Add(-1)
 		gp.isolateGroup = nil
+		group.releaseLive()
 	}
 	gp.isolateStarted = false
 	gp.isolateAdmitted = false
@@ -5419,6 +5425,12 @@ func malg(stacksize int32) *g {
 // The compiler turns a go statement into a call to this.
 func newproc(fn *funcval) {
 	gp := getg()
+	if fn != nil && !isSystemGoroutinePC(fn.fn, nil, false) {
+		isolateDiscardIfRevoked()
+	}
+	if fn == nil && gp.isolateGroup != nil && gp.isolateGroup.ownershipHandler != nil {
+		isolateReportPanic("go of nil func value", "goroutine")
+	}
 	// Allocation inside a metadata service can start GC workers. Match the
 	// system-goroutine classification used by newproc1: those workers never
 	// inherit the caller's isolate, while application goroutines must not
