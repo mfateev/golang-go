@@ -1,7 +1,7 @@
 # Reliable lifecycle: productization feature 5
 
-Status: runtime and definition lifecycle implemented and validated; worker
-shutdown integration awaits a design decision (2026-10-07).
+Status: complete for the agreed scope (2026-10-07). Automatic worker-shutdown
+integration is deferred at the user's request; current SDK behavior is retained.
 Features 1, 2 and 4 are complete. Feature 3, frozen-heap GC, remains deferred.
 
 ## Contract
@@ -13,8 +13,9 @@ Features 1, 2 and 4 are complete. Feature 3, frozen-heap GC, remains deferred.
   Unrecovered child panics terminate the isolate, never the worker process.
   Root panic/Goexit and initializer failures produce defined host diagnostics.
 - Workflow context cancellation remains cooperative. Eviction, exit, failure
-  and worker shutdown revoke execution and wake supported synchronization and
-  copied-byte Call waits. Revocation does not run application defers.
+  and workflow-definition close revoke execution and wake supported
+  synchronization and copied-byte Call waits. Revocation does not run application
+  defers.
 - Runtime/process service cleanup finishes before a revoked goroutine is
   discarded. Live counts are released after queue records are detached.
 - A deadline cannot undo revocation. Pending termination reports remaining
@@ -92,7 +93,8 @@ select stream. A regression compares immediate and delayed receipt; the original
 counts pending joins so Start never publishes a false idle interval.
 
 The implemented runtime and definition paths passed their acceptance gates.
-Worker shutdown remains open as described below; feature 5 is not yet complete.
+Feature 5 is complete for the agreed scope. Automatic worker-shutdown integration
+is deferred as described below.
 
 Local acceptance passed on 2026-10-07: full `src/all.bash`, repeated lifecycle
 race/static-lock-ranking stress, all eight compiler integration scripts, the
@@ -135,16 +137,16 @@ panic, Goexit and exit as task failures (`/tmp/feature5-lifecycle-final-live.log
 The checker terminated its own negative-test executions; the development server
 was stopped after verification.
 
-## Remaining shutdown integration decision
+## Deferred worker-shutdown integration
 
 The pinned Temporal Go SDK shares its sticky workflow cache across workers.
 `Worker.Stop` stops pollers and task processors but does not evict cached workflow
 definitions. Its public process-wide purge is valid only after all workers stop.
-Definition `Close` is implemented and tested, but the worker-stop path must still
-reach it safely under the SDK's workflow-context lock.
+Definition `Close` is implemented and tested. Automatic cleanup on worker stop
+remains future work and must reach it safely under the SDK's workflow-context lock.
 
-The preferred integration is a per-worker cache-eviction hook in a separate Go
-SDK fork. The alternative is to limit the shutdown contract to an explicit
-process-wide purge after all workers stop. This design choice remains pending;
-feature 5 is not complete until the agreed shutdown path is implemented and
-tested with a cached workflow, late events and another active worker.
+On 2026-10-07 the user chose to retain the current behavior and defer this work.
+A future integration could add a per-worker cache-eviction hook to the Go SDK or
+provide explicit process-wide cleanup after all workers stop. Before advertising
+automatic worker-shutdown cleanup, test cached workflows, late events and another
+active worker. This deferred work does not block the accepted feature 5 scope.

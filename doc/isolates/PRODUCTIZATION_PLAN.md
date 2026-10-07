@@ -100,14 +100,15 @@ reporting. Full `src/all.bash`, compiler integration, race/lock-ranking stress,
 SDK/sample tests, live-server failure-history checks and all four native
 Linux/macOS arm64/amd64 jobs passed on 2026-10-07. See the acceptance evidence in
 [Effect restrictions](./EFFECT_RESTRICTIONS_PLAN.md).
-Feature **5 (reliable lifecycle)** has validated runtime and definition cleanup,
-panic containment, startup and pending-termination diagnostics, and SDK callback
-retirement. Full Go, SDK/sample, live-server and all four native gates passed on
-2026-10-07. Its worker-shutdown integration remains open: the pinned SDK's shared
-sticky cache is not evicted by `Worker.Stop`, so safe per-worker cleanup needs an
-SDK hook or an explicitly narrower process-wide shutdown contract. See
-[Reliable lifecycle](./LIFECYCLE_PLAN.md) for the design decision and evidence.
-After feature 5 is finished, feature **6 (resource controls)** is next; feature 3
+Feature **5 (reliable lifecycle)** is complete for the agreed scope: runtime and
+definition cleanup, panic containment, startup and pending-termination
+diagnostics, and SDK callback retirement. Full Go, SDK/sample, live-server and
+all four native gates passed on 2026-10-07. Automatic worker-shutdown integration
+is deferred at the user's request: the pinned SDK's shared sticky cache is not
+evicted by `Worker.Stop`, so safe per-worker cleanup needs an SDK hook or an
+explicitly narrower process-wide shutdown contract. See
+[Reliable lifecycle](./LIFECYCLE_PLAN.md) for the scope decision and evidence.
+Feature **6 (resource controls)** is next; feature 3
 remains deferred. Custom converter support retains
 its separate feature 8 gate. The validated determinism contract still excludes
 its documented unsupported operations.
