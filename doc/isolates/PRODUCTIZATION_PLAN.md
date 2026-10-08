@@ -116,7 +116,7 @@ with copied observer events. Limit violations fail the Workflow Task. Full local
 Go, SDK/sample, real-server, 10,000-instance density and all four native platform
 checks passed on 2026-10-07, with all 24 native replay results unchanged. See
 [Resource controls](./RESOURCE_CONTROLS_PLAN.md) for scope and validation.
-Feature **7 (complete Temporal integration)** is next. Feature 3 remains deferred.
+Feature **7 (complete Temporal integration)** is in progress. Feature 3 remains deferred.
 Custom converter support retains
 its separate feature 8 gate. The validated determinism contract still excludes
 its documented unsupported operations.
@@ -161,7 +161,9 @@ SDK API innovations are deferred until after this compatibility work.
 Differences should follow the native Go execution model already agreed for the
 POC: standard `context.Context`, `go`, channels, `select`, and deterministic
 `time` replace the SDK's workflow context and concurrency/time abstractions.
-Asynchronous results use the existing typed result/error channels. Avoid adding
+Activities use SDK-style futures; ordinary Go goroutines and channels adapt
+them for native select. Typed activity helpers are retained as comments at the
+user's request. Avoid adding
 new API variations beyond those needed for these native replacements.
 
 Use SDK-compatible activity options and context option helpers when expanding
@@ -365,8 +367,8 @@ channels can adapt futures for select. Samples and compiled probes use this API.
 Structured failures remain required feature 7 work. An ownership-checked probe
 confirmed that SDK DefaultFailureConverter.FailureToError currently reads
 foreign protobuf fast-path metadata during proto.Clone. Do not disable ownership
-checks to accept it. Continue-as-new, versioning, children, queries, and updates
-remain pending; this activity checkpoint does not mark feature 7 complete.
+checks to accept it. Children, queries, and updates remain pending; this
+activity checkpoint does not mark feature 7 complete.
 
 Activity checkpoint validation: SDK package suite; race tests for workflow,
 bridge, and worker; compiled ownership-checked driver with race detection;
@@ -379,3 +381,40 @@ Real Temporal server checks passed for ordinary SDK workflows, activity
 aliases, concurrent activities, native context deadlines, and cancellation.
 SDK callbacks retire their command and outcome references after consumption
 or eviction; ignored futures still schedule activities before returning.
+
+### Feature 7 continuation and versioning checkpoint (2026-10-08)
+
+Added SDK-compatible `NewContinueAsNewError`, `NewContinueAsNewErrorWithOptions`,
+workflow context option helpers, `GetVersion` and `IsReplaying`. Continuation
+uses the actual SDK error type, supports wrapped errors and workflow registration
+aliases, and retires the previous isolate before reporting completion. Each
+new run initializes fresh state. The host SDK owns continuation commands and
+version markers, including replay defaults and supported-range checks.
+
+Compiled and live-server checks exercise a four-run chain with fresh globals,
+aliased function references and inherited options. Saved histories cover
+continue-as-new and final completion, an old execution without a marker,
+a new execution with exactly one version marker, repeated lookup and rejection
+of a recorded version outside the supported range. Replay checks compare
+computed completion values against the history. Custom context propagation
+retains the feature 8 boundary. Structured failures, children, queries and
+updates still block completion of feature 7.
+
+Checkpoint validation passed: full SDK package suite, tracked sample package
+suite, workflow/bridge/worker race tests, compiled continuation under the race
+detector, live Temporal recording and fresh compiled saved-history replay.
+The existing determinism history also passed its computed-result comparison
+and corrupted-history negative check. The full Go toolchain/native platform
+matrix was not rerun for this SDK-only checkpoint.
+
+The user also requested `Future.ToChannel()` as the native select adapter. Each
+call returns a buffered one-result channel carrying `FutureResult{Value, Err}`;
+the value implements SDK `converter.EncodedValue`, with typed extraction through
+`Value.Get(&result)`. The active future and conversion contracts remain the same.
+Channel adaptation neither consumes the future nor changes activity cancellation.
+Earlier typed activity helpers remain commented out.
+
+Channel adapter validation passed: full SDK and tracked sample suites, race
+unit tests, compiled ownership-checked race driver (including empty-message
+activity failures, extraction failures and late callbacks), and fresh replay
+of the goroutines sample with its computed result checked against history.
