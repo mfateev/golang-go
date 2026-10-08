@@ -351,3 +351,31 @@ block the trusted release.
    prove `Kill`'s nil result under wakeup races.
 5. Make the package ownership report reject unclassified reachable state and
    effects, then expand the verified standard-library set from real samples.
+
+### Feature 7 activity API checkpoint (2026-10-08)
+
+Per user direction, typed activity helpers are commented out and retained for
+later API work. The active API follows the pinned SDK: context option helpers,
+`ExecuteActivity(ctx, activity, args...)`, `Future.Get(ctx, valuePtr)`, and
+`Future.IsReady()`. Scheduling completes before ExecuteActivity returns, even
+if the future is ignored. Host SDK cancellation semantics, including
+WaitForCancellation, determine the future outcome. Native Go goroutines and
+channels can adapt futures for select. Samples and compiled probes use this API.
+
+Structured failures remain required feature 7 work. An ownership-checked probe
+confirmed that SDK DefaultFailureConverter.FailureToError currently reads
+foreign protobuf fast-path metadata during proto.Clone. Do not disable ownership
+checks to accept it. Continue-as-new, versioning, children, queries, and updates
+remain pending; this activity checkpoint does not mark feature 7 complete.
+
+Activity checkpoint validation: SDK package suite; race tests for workflow,
+bridge, and worker; compiled ownership-checked driver with race detection;
+all tracked sample package tests; all four saved sample histories; six
+fresh-process determinism variants (GOMAXPROCS 1/2/8, CPU features on/off).
+The 195-observation replay checksum remains
+`12500bc0e73b412e9166503f4c1cb009db6259375824d5a7a47e528439646916`.
+Compiler work-package tests and function/metadata build scripts passed.
+Real Temporal server checks passed for ordinary SDK workflows, activity
+aliases, concurrent activities, native context deadlines, and cancellation.
+SDK callbacks retire their command and outcome references after consumption
+or eviction; ignored futures still schedule activities before returning.

@@ -232,8 +232,9 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 	// exact reviewed metadata methods may enter a process service. The converter
 	// package itself replays its error values and default objects per instance.
 	processConverter := make(map[string]bool)
-	// Activities may live beside marked workflow functions. Their SDK imports
-	// reach host logging and worker services that must initialize only in the
+	// Activities and SDK-compatible option/error types may live beside marked
+	// workflow functions. Their SDK imports reach host logging and worker
+	// services that must initialize only in the
 	// process. Keep this pinned SDK graph process-owned too; activity functions
 	// still run exclusively on the host in this trusted POC. Application and
 	// workflow-support packages are not part of that SDK dependency graph.
@@ -244,7 +245,7 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 			switch p.ImportPath {
 			case "go.temporal.io/sdk/converter":
 				processGraph = processConverter
-			case "go.temporal.io/sdk/activity":
+			case "go.temporal.io/sdk/activity", "go.temporal.io/sdk/temporal", "go.temporal.io/sdk/workflow":
 				processGraph = processActivity
 			default:
 				continue
