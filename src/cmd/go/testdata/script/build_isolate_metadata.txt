@@ -2,6 +2,10 @@
 # fixtures downloads a module or compiles the fake implementation.
 [short] skip
 
+# SDK sentinel reads also require the pinned, unreplaced SDK source.
+! go build -mod=mod ./hostsdk
+stderr 'metadata services require go.temporal.io/sdk@v1.49.0 without a replacement'
+
 # Local replacements cannot impersonate an audited metadata implementation.
 ! go build -mod=mod ./host
 stderr 'metadata services require google.golang.org/protobuf@v1.36.11 without a replacement, nested module, or vendored source'
@@ -32,7 +36,9 @@ module example.org/isolateMetadata
 go 1.26
 
 require google.golang.org/protobuf v1.36.11
+require go.temporal.io/sdk v1.49.0
 replace google.golang.org/protobuf => ./fake
+replace go.temporal.io/sdk => ./sdkfake
 -- vendor.go.mod --
 module example.org/isolateMetadata
 
@@ -96,5 +102,18 @@ package main
 import (
  "example.org/isolateMetadata/pure"
  "google.golang.org/protobuf/probe"
+)
+func main() { pure.Work(); probe.Value() }
+-- sdkfake/go.mod --
+module go.temporal.io/sdk
+go 1.26
+-- sdkfake/probe/probe.go --
+package probe
+func Value() int { return 1 }
+-- hostsdk/main.go --
+package main
+import (
+ "example.org/isolateMetadata/pure"
+ "go.temporal.io/sdk/probe"
 )
 func main() { pure.Work(); probe.Value() }

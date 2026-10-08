@@ -103,12 +103,38 @@ func isolatePublishMessageInfos(values any) {
 	if reflectOffs.isolateMessageInfoArrays == nil {
 		reflectOffs.isolateMessageInfoArrays = make(map[unsafe.Pointer]isolateMessageInfoLayout)
 	}
+	if reflectOffs.isolateProtoValueTypes == nil {
+		reflectOffs.isolateProtoValueTypes = make(map[*abi.Type]bool)
+	}
 	reflectOffs.isolateMessageInfoArrays[infos.array] = isolateMessageInfoLayout{typ.Size_, readonly, uintptr(infos.len)}
 	for i := 0; i < infos.len; i++ {
 		p := add(infos.array, uintptr(i)*typ.Size_)
 		if (*iface)(add(p, descOffset)).tab != nil {
 			reflectOffs.isolateTypes[p] = readonly
+			for _, field := range (*structtype)(unsafe.Pointer(typ)).Fields {
+				switch field.Name.Name() {
+				case "GoReflectType":
+					value := (*iface)(add(p, field.Offset))
+					if value.tab != nil {
+						reflectOffs.isolateProtoValueTypes[(*abi.Type)(value.data)] = true
+					}
+				case "OneofWrappers":
+					for _, value := range *(*[]any)(add(p, field.Offset)) {
+						reflectOffs.isolateProtoValueTypes[efaceOf(&value)._type] = true
+					}
+				}
+			}
 		}
 	}
 	reflectOffsUnlock()
+}
+
+//go:linkname isolateCheckProtoValueType
+func isolateCheckProtoValueType(typ *abi.Type) {
+	reflectOffsLock()
+	valid := reflectOffs.isolateProtoValueTypes[typ]
+	reflectOffsUnlock()
+	if !valid {
+		isolateRejectEffect("unaudited protobuf clone type")
+	}
 }

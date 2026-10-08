@@ -287,6 +287,7 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 		for _, trusted := range []struct{ path, version string }{
 			{isolatepolicy.ProtobufModule, isolatepolicy.ProtobufVersion},
 			{isolatepolicy.TemporalAPIModule, isolatepolicy.TemporalAPIVersion},
+			{isolatepolicy.TemporalSDKModule, isolatepolicy.TemporalSDKVersion},
 		} {
 			if p.ImportPath != trusted.path && !strings.HasPrefix(p.ImportPath, trusted.path+"/") {
 				continue

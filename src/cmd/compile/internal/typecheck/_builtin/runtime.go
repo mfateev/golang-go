@@ -334,6 +334,8 @@ func isolateCheckHeapAtomicCall(uintptr, *byte, *byte, *byte)
 func isolateCheckHeapSelect(*byte, int)
 func isolateCheckHeapStrings([]string)
 func isolatePublishMessageInfos(any)
+func isolateCloneProto(any) any
+func isolatePublishErrorSentinel(any)
 func isolateCheckHeapMap(*byte, bool)
 func isolateCheckHeapMapKey(*byte, *byte, *byte, bool)
 func isolateCheckHeapReference(*byte, *byte)

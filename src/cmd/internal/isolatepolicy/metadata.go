@@ -14,6 +14,9 @@ const ProtobufVersion = "v1.36.11"
 const TemporalAPIModule = "go.temporal.io/api"
 const TemporalAPIVersion = "v1.63.6"
 
+const TemporalSDKModule = "go.temporal.io/sdk"
+const TemporalSDKVersion = "v1.49.0"
+
 // MetadataScope identifies functions that only construct/cache type descriptions
 // or read the built-in registries. Marshal/unmarshal, value allocation, and
 // application callbacks are deliberately absent. Private or custom descriptor
@@ -77,6 +80,14 @@ func RejectedMetadata(pkg, function string) bool {
 // Only reads of the cell itself are allowed. This grants no read of arbitrary
 // receiver fields, mutation, array resizing, or private-reference publication.
 func MetadataGlobal(symbol string) bool {
+	// The default failure converter compares this startup-derived type name
+	// with reflect.Type.Name. Its backing bytes are immutable type metadata.
+	if symbol == TemporalSDKModule+"/internal.goErrType" {
+		return true
+	}
+	if symbol == TemporalSDKModule+"/internal.ErrNoData" || symbol == TemporalSDKModule+"/temporal.ErrNoData" {
+		return true
+	}
 	// SHA backend flags select equivalent implementations. These scalar reads
 	// and the fixed round table expose no application object or write privilege.
 	switch symbol {

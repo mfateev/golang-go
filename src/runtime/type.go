@@ -291,6 +291,9 @@ var reflectOffs struct {
 	// Exact element roots are in isolateTypes; only their immutable exported
 	// prefixes may be read outside a metadata service.
 	isolateMessageInfoArrays map[unsafe.Pointer]isolateMessageInfoLayout
+	// Generated message and oneof wrapper types from the audited process builder.
+	// This is type provenance, never permission to read a message's storage.
+	isolateProtoValueTypes map[*abi.Type]bool
 }
 
 func reflectOffsLock() {

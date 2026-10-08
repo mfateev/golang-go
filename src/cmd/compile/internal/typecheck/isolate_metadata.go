@@ -26,6 +26,20 @@ func ScopeIsolateMetadata() {
 			continue
 		}
 		ir.CurFunc = fn
+		if pkg == isolatepolicy.TemporalSDKModule+"/internal" && name == "init" {
+			fn.Pragma |= ir.Noinline
+			value := AssignConv(types.LocalPkg.Lookup("ErrNoData").Def.(*ir.Name), types.Types[types.TINTER], "SDK error sentinel")
+			publish := Stmt(Call(fn.Pos(), LookupRuntime("isolatePublishErrorSentinel", types.Types[types.TINTER]), []ir.Node{value}, false))
+			if last, ok := fn.Body[len(fn.Body)-1].(*ir.ReturnStmt); ok {
+				last.PtrInit().Append(publish)
+			} else {
+				fn.Body.Append(publish)
+			}
+		}
+		if pkg == isolatepolicy.ProtobufModule+"/proto" && name == "Clone" {
+			cloneIsolateProto(fn)
+			continue
+		}
 		if pkg == isolatepolicy.ProtobufModule+"/internal/filetype" && name == "Builder.Build" {
 			publishIsolateMessageInfos(fn)
 			continue
@@ -63,6 +77,25 @@ func ScopeIsolateMetadata() {
 			fn.Body = append(guards, fn.Body...)
 		}
 	}
+}
+
+// The shared coder tables are mutable during lazy initialization. For the
+// pinned generated value representation, clone exported fields and unknown
+// bytes under the caller's owner, without invoking metadata or user methods.
+// Ordinary host execution retains protobuf's original implementation.
+func cloneIsolateProto(fn *ir.Func) {
+	fn.Pragma |= ir.Noinline
+	input := AssignConv(fn.Type().Param(0).Nname.(*ir.Name), types.Types[types.TINTER], "protobuf clone input")
+	clone := Call(fn.Pos(), LookupRuntime("isolateCloneProto", types.Types[types.TINTER], types.Types[types.TINTER]), []ir.Node{input}, false)
+	result := Expr(ir.NewTypeAssertExpr(fn.Pos(), clone, fn.Type().Result(0).Type))
+	ret := ir.NewReturnStmt(fn.Pos(), []ir.Node{result})
+	// A nil interface needs the ordinary nil return, rather than an assertion.
+	nilInput := Expr(ir.NewBinaryExpr(fn.Pos(), ir.OEQ, fn.Type().Param(0).Nname.(*ir.Name), NodNil()))
+	nilReturn := ir.NewReturnStmt(fn.Pos(), []ir.Node{NodNil()})
+	body := []ir.Node{Stmt(ir.NewIfStmt(fn.Pos(), nilInput, []ir.Node{Stmt(nilReturn)}, nil)), Stmt(ret)}
+	owner := Call(fn.Pos(), LookupRuntime("isolateGetOwner"), nil, false)
+	active := Expr(ir.NewBinaryExpr(fn.Pos(), ir.ONE, owner, ir.NewInt(fn.Pos(), 0)))
+	fn.Body.Prepend(Stmt(ir.NewIfStmt(fn.Pos(), active, body, nil)))
 }
 
 // The pinned builder populates and registers MessageInfos before its final
