@@ -138,6 +138,14 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/query-race.log"
             exit 1
           fi
+          if ! ../golang-go/bin/go build -race "${ownership_gcflags[@]}" -o "$RUNNER_TEMP/isolate-updates-race" ./example/update/check > "$POC_LOG_DIR/update-race-build.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/update-race-build.log"
+            exit 1
+          fi
+          if ! GOGC=1 "$RUNNER_TEMP/isolate-updates-race" -history example/update/testdata/history.json > "$POC_LOG_DIR/update-race.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/update-race.log"
+            exit 1
+          fi
           if ! ../golang-go/bin/go build "${ownership_gcflags[@]}" -o "$RUNNER_TEMP/isolate-driver-heap" ./example/driver > "$POC_LOG_DIR/driver-heap-build.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/driver-heap-build.log"
             exit 1

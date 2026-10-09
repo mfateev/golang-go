@@ -120,8 +120,15 @@ func RuntimeHook(pkg, function string) bool {
 	// Instrumenting its local pointer stores violates that runtime contract.
 	// Public process/syscall entry points reject isolate execution before this
 	// private path; do not grant the exemption to arbitrary //go:norace code.
-	if pkg == "syscall" && (function == "forkAndExecInChild" || function == "forkAndExecInChild1") {
-		return true
+	if pkg == "syscall" {
+		switch function {
+		case "forkAndExecInChild", "forkAndExecInChild1",
+			// Darwin calls these nosplit libc wrappers between BeforeFork
+			// and AfterFork. Their argument-array stores must also remain
+			// free of probes. Public syscall wrappers retain their checks.
+			"rawSyscall", "rawSyscall6", "rawSyscall9":
+			return true
+		}
 	}
 	// Pure manifest queries run from the runtime probes themselves. Adding
 	// probes to them would recursively invoke the effect/ownership checker.
