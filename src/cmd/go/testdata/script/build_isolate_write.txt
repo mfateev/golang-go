@@ -1,0 +1,78 @@
+# One-way writes work in marked builds with enforced ownership and effects.
+[short] skip
+[compiler:gccgo] skip
+
+go build -o writes$GOEXE ./host
+exec ./writes$GOEXE
+stdout '^compiled one-way writes passed$'
+
+[cgo] [race] go build -race -gcflags=example.org/isolatewrite/host=-d=isolateheap=2 -o writes-race$GOEXE ./host
+[cgo] [race] exec ./writes-race$GOEXE
+[cgo] [race] stdout '^compiled one-way writes passed$'
+
+-- go.mod --
+module example.org/isolatewrite
+go 1.26
+-- jobs/jobs.go --
+package jobs
+
+import "isolate"
+
+var state = []byte{7}
+
+//go:isolate
+func Work() {
+    state[0]++
+    isolate.Write(1, state)
+    clear(state)
+    for op := uint32(2); op <= 1000; op++ {
+        isolate.Write(op, []byte("event"))
+    }
+    isolate.Write(1001, make([]byte, (64<<10)+1))
+}
+-- host/main.go --
+package main
+
+import (
+    "fmt"
+    "isolate"
+    "time"
+    "example.org/isolatewrite/jobs"
+)
+
+func run(deterministic bool) {
+    handle, ok := isolate.LookupFunction(jobs.Work)
+    if !ok { panic("missing function handle") }
+    program := handle.ProgramWithHandle(func(h isolate.Handle) {
+        if err := h.Invoke(func(...isolate.Value) error { return nil }, func(...isolate.Value) error { return nil }); err != nil { panic(err) }
+    })
+    clock := time.Unix(0, 0)
+    instance, err := isolate.New(isolate.Config{Program: program, Deterministic: deterministic, InitialTime: &clock, TimerOp: 77})
+    if err != nil { panic(err) }
+    if err := instance.Start(); err != nil { panic(err) }
+    select {
+    case <-instance.Done():
+    case <-time.After(5*time.Second): panic("writes waited for host receipt or acknowledgment")
+    }
+    if err := instance.Wait(); err != nil { panic(err) }
+    if instance.PendingCalls() != 0 || instance.DroppedWrites() != 937 { panic("unexpected pending calls or dropped writes") }
+    for op := uint32(1); op <= 64; op++ {
+        message := <-instance.Writes()
+        if message.Op != op { panic("write order changed") }
+        if op == 1 {
+            if len(message.Payload) != 1 || message.Payload[0] != 8 { panic("state shared or payload not copied") }
+        } else if string(message.Payload) != "event" { panic("payload changed") }
+    }
+    select {
+    case <-instance.Commands(): panic("Write created a reply command")
+    default:
+    }
+}
+
+func main() {
+    for _, deterministic := range []bool{false, true} {
+        run(deterministic)
+        run(deterministic)
+    }
+    fmt.Println("compiled one-way writes passed")
+}

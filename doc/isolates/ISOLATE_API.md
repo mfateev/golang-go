@@ -239,7 +239,7 @@ Marked builds make ownership and effect checks mandatory across dependencies.
 The runtime uses owner-specific allocations under the shared Go collector and
 supports deterministic native goroutine dispatch and host-controlled time.
 
-The host API provides `New`, `NewContext`, `Start`, `Commands`, `Suspend`, `Resume`,
+The host API provides `New`, `NewContext`, `Start`, `Commands`, `Writes`, `Suspend`, `Resume`,
 `AdvanceTime`, `Kill`, `Done`, and `Wait`. Returning from the entry terminates its
 remaining goroutines. `Done` closes and `Wait` publishes the outcome only after
 all attached goroutines detach and supported waiter cleanup finishes. A nil
@@ -266,6 +266,33 @@ use permanent revocation. CPU loops without a supported execution fence and
 unsupported native waits may remain pending: no in-process hard kill of arbitrary
 code is promised. See [Reliable lifecycle](./LIFECYCLE_PLAN.md) for the contract
 and acceptance tests.
+
+### One-way observational output
+
+`isolate.Write(op uint32, payload []byte)` copies bytes into a separate host-owned
+queue and returns without waiting for receipt or acknowledgment. The host reads
+`*isolate.Message` values (`Op`, `Payload`) from `instance.Writes()`. Messages have
+no reply method or correlation ID. Write uses neither DataConverter nor Payloads;
+operation numbers and byte encodings belong to the SDK using the isolate.
+
+Use Write for logs, metrics, traces, and similar best-effort output. Read-only
+queries and update validators may also write observations. Write returns no
+status to instance code: host delivery speed and backend errors cannot become
+workflow inputs. It does not count as a pending Call, wait for host progress,
+consume workflow select randomness, or advance Call IDs. Call remains the
+transport for durable operations and external decisions.
+
+The POC buffers 64 messages of at most 64 KiB each per isolate. Full queues and
+oversized messages are dropped; `instance.DroppedWrites()` reports the total to
+the host. Accepted writes preserve enqueue order, independently of Call order.
+Delivery is not durable or exactly once. SDK adapters must suppress replay output
+according to their policy; the generic runtime knows nothing about replay.
+
+The Writes channel is not closed. Hosts should select on `instance.Done()` and
+drain remaining writes on completion if final observations are needed. Copied
+messages remain readable after termination and retain no private heap references.
+Isolate revocation still stops writers. Initializers without an active boundary
+cannot use Write, just as they cannot use arbitrary Call operations.
 
 ### What `internal/isolateproto` models
 

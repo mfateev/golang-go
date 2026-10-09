@@ -22,6 +22,8 @@ type Boundary struct {
 	owner            uintptr
 	group            unsafe.Pointer
 	calls            chan *Command
+	writes           chan *Message
+	droppedWrites    atomic.Uint64
 	next             atomic.Uint64
 	halt             chan struct{}
 	stop             sync.Once
@@ -62,10 +64,11 @@ func New() *Boundary {
 		panic("isolate: owner ID exhausted")
 	}
 	b := &Boundary{
-		owner: owner,
-		group: group,
-		calls: make(chan *Command),
-		halt:  make(chan struct{}),
+		owner:  owner,
+		group:  group,
+		calls:  make(chan *Command),
+		writes: make(chan *Message, writeBufferSize),
+		halt:   make(chan struct{}),
 	}
 	setGroupExit(b.group, b.exit)
 	return b

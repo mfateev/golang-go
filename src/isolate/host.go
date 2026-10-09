@@ -47,6 +47,10 @@ type Config struct {
 // Command is one host request made by Call. Reply must be called once.
 type Command = isolatebridge.Command
 
+// Message is observational output from Write. Payload is a host-owned copy;
+// no acknowledgment or reply is required or possible.
+type Message = isolatebridge.Message
+
 // Isolate is a trusted instance of one statically linked program. This POC
 // uses owner-specific allocations under the shared Go collector. Deterministic
 // mode gates native goroutines through a FIFO token. It is not a process sandbox.
@@ -441,6 +445,16 @@ func (i *Isolate) finishCleanup() {
 // Commands returns host requests from the program. The host must reply to
 // each request using Command.Reply.
 func (i *Isolate) Commands() <-chan *Command { return i.boundary.Commands() }
+
+// Writes returns best-effort observational messages, independently of Commands.
+// A host can consume this stream on its own goroutine without resuming instance
+// dispatch. Buffered messages remain readable after Done; the channel is not
+// closed. Hosts should drain it on completion if final output is needed.
+func (i *Isolate) Writes() <-chan *Message { return i.boundary.Writes() }
+
+// DroppedWrites reports writes lost to queue or payload limits. It is a host
+// diagnostic; instance code cannot observe delivery or backend failures.
+func (i *Isolate) DroppedWrites() uint64 { return i.boundary.DroppedWrites() }
 
 // Suspend waits for every deterministic instance goroutine to block, then
 // fences dispatch. Service Commands concurrently until this returns. Deliver

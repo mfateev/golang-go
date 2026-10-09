@@ -26,6 +26,20 @@ func Call(op uint32, payload []byte) ([]byte, error) {
 	return isolatebridge.Current().Call(op, payload)
 }
 
+// Write sends observational output to the host without waiting for receipt or
+// acknowledgment. It copies payload into process-owned memory. The host reads
+// messages from Isolate.Writes; no response or delivery status enters the
+// isolate. SDKs can use it for logging, metrics, or tracing, including from
+// read-only handlers. Durable effects and external decisions must use Call.
+//
+// Delivery is best effort: the POC drops writes when the 64-message queue is
+// full or payload exceeds 64 KiB. The host can inspect Isolate.DroppedWrites.
+// Write order is independent of Call order. It panics outside an active isolate
+// and participates in normal isolate revocation.
+func Write(op uint32, payload []byte) {
+	isolatebridge.Current().Write(op, payload)
+}
+
 // ReadOnlyCall waits for host work on a dedicated read-only service goroutine.
 // After its first reply, allocations use a scratch heap. Existing workflow
 // memory can be read but never written, even by callbacks. The goroutine cannot
