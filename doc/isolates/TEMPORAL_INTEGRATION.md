@@ -23,6 +23,11 @@ workflows and host activities retain their registration and execution behavior.
 - `Future.ToChannel()` remains the explicitly requested native select adapter;
   results expose `converter.EncodedValue` alongside the error. `Future.Get`
   remains available and repeatable.
+- Additional API coverage: external workflow signals/cancellation, host local
+  activities with markers and durable retry backoff, SDK session-worker protocol
+  with native session contexts, and Nexus clients/execution/result futures with
+  all SDK cancellation policies. SideEffect/MutableSideEffect are intentionally
+  excluded; nondeterministic work belongs in activities.
 
 Host SDK protocol callbacks only queue copied bytes. Normal workflow execution
 resumes at the runtime's task suspension fence. Queries and validators use a
@@ -70,6 +75,29 @@ does not establish native platform completion.
   static dependency versions and the deferred worker-stop cache policy remain.
 - This checkpoint covers the delivered integration features below; it does
   not claim implementation of every Temporal SDK operation or interceptor.
+- Local activity implementations must be registered on the host worker. Offline
+  replay needs no implementations. Session IDs are deterministic original-run
+  IDs plus sequence; legacy SDK UUID SideEffect session histories are not migrated.
+
+## Additional API coverage and observability
+
+The SDK's `example/apicoverage/check` exercises the added APIs with ownership
+checks at GOMAXPROCS 1/2/8, live execution and saved-history replay with computed
+results. Local activity failures preserve details and retries across durable
+timers. Session failure is tested by stopping a dedicated session worker while
+the workflow worker stays active. External commands interoperate with ordinary
+SDK workflows. Nexus tests cover synchronous/asynchronous operations, structured
+failures, separate execution tokens, and all four cancellation policies.
+
+Queries install their host router at execution setup, so an early query returns
+an error before its application handler has registered instead of panicking the
+SDK's task processor.
+
+Printing/standard logging already use worker-configured replay-aware host calls.
+SDK logger/metrics interfaces and tracing remain feature 10 work. The SDK's
+`API_COVERAGE_PLAN.md` proposes copied one-way sink messages with replay suppression
+and bounded best-effort delivery, following TypeScript's sinks model. Host sink
+objects never enter an isolate and sink outcomes must not affect decisions.
 
 ## Worker-configured serialization (feature 8)
 

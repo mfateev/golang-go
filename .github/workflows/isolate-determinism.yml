@@ -172,6 +172,14 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/converter-race.log"
             exit 1
           fi
+          if ! ../golang-go/bin/go build -race "${ownership_gcflags[@]}" -o "$RUNNER_TEMP/isolate-api-race" ./example/apicoverage/check > "$POC_LOG_DIR/api-race-build.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/api-race-build.log"
+            exit 1
+          fi
+          if ! GOGC=1 "$RUNNER_TEMP/isolate-api-race" -history-dir ./example/apicoverage/testdata > "$POC_LOG_DIR/api-race.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/api-race.log"
+            exit 1
+          fi
           if ! ../golang-go/bin/go build "${ownership_gcflags[@]}" -o "$RUNNER_TEMP/isolate-replay" ./example/determinism/check > "$POC_LOG_DIR/replay-build.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/replay-build.log"
             exit 1
