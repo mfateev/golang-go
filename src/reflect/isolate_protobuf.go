@@ -6,8 +6,8 @@ package reflect
 
 import (
 	"internal/abi"
+	"internal/stringslite"
 	"internal/unsafeheader"
-	"strings"
 	_ "unsafe"
 )
 
@@ -63,7 +63,7 @@ func isolateCloneProtoValue(v Value) Value {
 			value := source.Field(i)
 			// Implicit proto3 scalar/bytes presence is determined by the
 			// nonzero value. Explicit oneof and proto2 presence is retained.
-			if strings.Contains(string(field.Tag), "proto3") && !strings.Contains(string(field.Tag), "oneof") && (value.IsZero() || value.Kind() == Slice && value.Len() == 0) {
+			if stringslite.Index(string(field.Tag), "proto3") >= 0 && stringslite.Index(string(field.Tag), "oneof") < 0 && (value.IsZero() || value.Kind() == Slice && value.Len() == 0) {
 				continue
 			}
 			dst.Set(isolateCloneProtoValue(value))
