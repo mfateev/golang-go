@@ -680,6 +680,9 @@ func deferreturn() {
 //
 // It crashes if called from a thread not created by the Go runtime.
 func Goexit() {
+	if getg().isolateReadOnlyOwner != 0 {
+		panic("isolate: read-only handlers cannot call Goexit")
+	}
 	// Create a panic object for Goexit, so we can recognize when it might be
 	// bypassed by a recover().
 	var p _panic

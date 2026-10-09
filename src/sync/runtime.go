@@ -64,3 +64,12 @@ func init() {
 
 func throw(string)
 func fatal(string)
+
+// These checks precede race.Disable and all waiter/object mutations so a
+// recovered read-only panic leaves race detection and workflow state intact.
+//
+//go:linkname runtime_isolateReadOnlyWrite runtime.isolateReadOnlyWrite
+func runtime_isolateReadOnlyWrite(unsafe.Pointer, uintptr)
+
+//go:linkname runtime_isolateReadOnlySyncWait runtime.isolateReadOnlySyncWait
+func runtime_isolateReadOnlySyncWait()

@@ -33,8 +33,9 @@ func isolateE4NewState(typ unsafe.Pointer) unsafe.Pointer {
 // compiled package layouts in one goroutine. A later whole-program layout
 // should replace this table with one base and linker-assigned offsets.
 type isolateE4PackageBases struct {
-	keys  []unsafe.Pointer
-	bases []unsafe.Pointer
+	keys                                    []unsafe.Pointer
+	bases                                   []unsafe.Pointer
+	libraryKeys, libraryTypes, libraryTasks []unsafe.Pointer
 }
 
 //go:linkname isolateE4NewPackageBases
@@ -120,4 +121,39 @@ func isolateE4GetImportedPackageBase(key unsafe.Pointer) unsafe.Pointer {
 		panic("isolate: imported package has no state in selected isolate")
 	}
 	return nil // ordinary process initialization
+}
+
+//go:linkname isolateE4SetReadOnlyLibraries
+func isolateE4SetReadOnlyLibraries(p unsafe.Pointer, keys, types, tasks []unsafe.Pointer) {
+	table := (*isolateE4PackageBases)(p)
+	table.libraryKeys = append([]unsafe.Pointer(nil), keys...)
+	table.libraryTypes = append([]unsafe.Pointer(nil), types...)
+	table.libraryTasks = append([]unsafe.Pointer(nil), tasks...)
+}
+
+// A read-only handler receives fresh standard-library caches. Reinitializing
+// these layouts prevents cache writes from touching workflow memory; callbacks
+// still run under the scratch owner and cannot mutate captured workflow data.
+func isolateReadOnlyLibraries() {
+	gp := getg()
+	original := (*isolateE4PackageBases)(gp.isolateE4Bases)
+	if original == nil {
+		return
+	}
+	table := &isolateE4PackageBases{
+		keys:  append([]unsafe.Pointer(nil), original.keys...),
+		bases: append([]unsafe.Pointer(nil), original.bases...),
+	}
+	for i, key := range original.libraryKeys {
+		for j, candidate := range table.keys {
+			if candidate == key {
+				table.bases[j] = newobject((*_type)(original.libraryTypes[i]))
+				break
+			}
+		}
+	}
+	gp.isolateE4Bases = unsafe.Pointer(table)
+	for _, task := range original.libraryTasks {
+		isolateE4RunInitTask(task)
+	}
 }

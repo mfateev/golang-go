@@ -78,6 +78,7 @@ func isolateReleaseGroupAlloc(p unsafe.Pointer) {
 	// Private objects remain under ordinary GC. Detaching the acyclic lifetime
 	// handle lets GC retire its non-GC cache even if the host retains Isolate.
 	group.alloc = nil
+	group.readOnlyAlloc = nil
 	group.randLegacy = nil // The lazily created application generator is private.
 }
 

@@ -28,13 +28,16 @@ func (m *Map) IsolateOwner() uintptr { return m.owner }
 
 func (m *Map) checkIsolateWrite() {
 	if m.owner != isolateMapOwner() {
+		if borrowed := isolateReadOnlyOwner(); borrowed != 0 && m.owner == borrowed {
+			panic("isolate: read-only handler cannot mutate workflow map")
+		}
 		isolateOwnershipViolation("isolate: map write crosses owner boundary")
 	}
 }
 
 func (m *Map) checkIsolateRead() {
 	if m.owner != 0 && m.owner != isolateMapOwner() {
-		if m.owner == isolateMetadataBorrowOwner() {
+		if m.owner == isolateMetadataBorrowOwner() || m.owner == isolateReadOnlyOwner() {
 			return
 		}
 		isolateOwnershipViolation("isolate: map read crosses owner boundary")
@@ -43,3 +46,6 @@ func (m *Map) checkIsolateRead() {
 
 //go:linkname isolateCheckCloneGroup runtime.isolateCheckCloneGroup
 func isolateCheckCloneGroup(*abi.MapType, unsafe.Pointer, unsafe.Pointer)
+
+//go:linkname isolateReadOnlyOwner runtime.isolateReadOnlyOwner
+func isolateReadOnlyOwner() uintptr

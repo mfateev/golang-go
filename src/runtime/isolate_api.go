@@ -52,6 +52,9 @@ func isolateSetOwner(id uintptr) uintptr {
 	old := gp.isolateOwner
 	if id != 0 && gp.isolateGroup != nil {
 		cache := gp.isolateGroup.alloc.cache
+		if gp.isolateReadOnlyOwner != 0 && id != gp.isolateReadOnlyOwner {
+			cache = gp.isolateGroup.readOnlyAlloc.cache
+		}
 		lock(&cache.isolateLock)
 		if cache.isolateOwner != 0 && cache.isolateOwner != id {
 			throw("isolate: group allocation owner changed")
@@ -76,6 +79,7 @@ func isolateNewGroup() unsafe.Pointer {
 	resources := newIsolateResources()
 	alloc := newIsolateAllocHandle()
 	alloc.cache.isolateResources = resources.account
+	alloc.cache.isolateMetadataBytes = uint64(unsafe.Sizeof(mcache{}))
 	resources.account.refs.Add(1)
 	resources.account.addMetadata(uint64(unsafe.Sizeof(mcache{})))
 	return unsafe.Pointer(&isolateRevocationGroup{alloc: alloc, resources: resources,
@@ -134,6 +138,9 @@ func isolateSetTimerSleep(p unsafe.Pointer, fn func(int64) error) bool {
 //
 //go:linkname isolateTimerSleep
 func isolateTimerSleep(ns int64) error {
+	if getg().isolateReadOnlyOwner != 0 {
+		panic("isolate: read-only handlers cannot wait on timers")
+	}
 	gp := getg()
 	group := gp.isolateGroup
 	if group == nil || !group.clockSet.Load() || group.timerSleep == nil {

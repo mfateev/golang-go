@@ -6,7 +6,7 @@ package runtime
 
 import (
 	"internal/runtime/sys"
-	"unsafe"
+	_ "unsafe"
 )
 
 // An independent, acyclic lifetime handle lets GC retire the non-GC cache even
@@ -42,6 +42,7 @@ func newIsolateAllocHandle() *isolateAllocHandle {
 func retireIsolateAllocCache(handle *isolateAllocHandle) {
 	c := handle.cache
 	resources := c.isolateResources
+	metadataBytes := c.isolateMetadataBytes
 	systemstack(func() {
 		lockWithRank(&isolateAllocRegistry.lock, lockRankIsolateAllocRegistry)
 		link := &isolateAllocRegistry.head
@@ -60,7 +61,7 @@ func retireIsolateAllocCache(handle *isolateAllocHandle) {
 	})
 	handle.cache = nil
 	if resources != nil {
-		resources.removeMetadata(uint64(unsafe.Sizeof(mcache{})))
+		resources.removeMetadata(metadataBytes)
 		resources.release()
 	}
 }
@@ -74,6 +75,9 @@ func acquireIsolateAllocCache(mp *m) *mcache {
 		return getMCache(mp)
 	}
 	c := gp.isolateGroup.alloc.cache
+	if gp.isolateReadOnlyOwner != 0 {
+		c = gp.isolateGroup.readOnlyAlloc.cache
+	}
 	lock(&c.isolateLock)
 	if c.isolateOwner != gp.isolateOwner {
 		throw("isolate: allocation owner mismatch")

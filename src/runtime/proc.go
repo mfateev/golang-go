@@ -4651,6 +4651,12 @@ func gdestroy(gp *g) {
 	gp.labels = nil
 	gp.isolateE4Base = nil
 	gp.isolateE4Bases = nil
+	gp.isolateReadOnlySelectSeq = 0
+	gp.isolateReadOnlyRandSeq = 0
+	gp.isolateReadOnlyRandLegacy = nil
+	gp.isolateReadOnlyOwner = 0
+	gp.isolateMetadataOwner = 0
+	gp.isolateReadOnlyService = false
 	gp.isolateOwner = 0
 	gp.isolateCallSelectNext = 0
 	gp.isolateCallSelectRemaining = 0
@@ -5467,6 +5473,9 @@ func malg(stacksize int32) *g {
 // The compiler turns a go statement into a call to this.
 func newproc(fn *funcval) {
 	gp := getg()
+	if gp.isolateReadOnlyOwner != 0 && (fn == nil || !isSystemGoroutinePC(fn.fn, nil, false)) {
+		panic("isolate: read-only handlers cannot start goroutines")
+	}
 	if fn != nil && !isSystemGoroutinePC(fn.fn, nil, false) {
 		isolateDiscardIfRevoked()
 	}
@@ -5550,6 +5559,12 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	newg.runningCleanups.Store(false)
 	newg.isolateE4Base = nil
 	newg.isolateE4Bases = nil
+	newg.isolateReadOnlySelectSeq = 0
+	newg.isolateReadOnlyRandSeq = 0
+	newg.isolateReadOnlyRandLegacy = nil
+	newg.isolateReadOnlyOwner = 0
+	newg.isolateMetadataOwner = 0
+	newg.isolateReadOnlyService = false
 	newg.isolateOwner = 0
 	newg.isolateMetadataDepth = 0
 	newg.isolatePrinting = false

@@ -67,10 +67,11 @@ type mcache struct {
 	// Instance caches are independent of P migration. Host caches keep their
 	// existing lock-free per-P fast path. These pointers refer only to non-GC
 	// allocator metadata; the registry must not retain the owning group.
-	isolateOwner     uintptr
-	isolateResources *isolateResourceAccount
-	isolateLock      mutex
-	isolateNext      *mcache
+	isolateOwner         uintptr
+	isolateMetadataBytes uint64
+	isolateResources     *isolateResourceAccount
+	isolateLock          mutex
+	isolateNext          *mcache
 }
 
 // A gclink is a node in a linked list of blocks, like mlink,

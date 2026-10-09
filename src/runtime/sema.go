@@ -162,6 +162,10 @@ func semacquire1(addr *uint32, lifo bool, profile semaProfileFlags, skipframes i
 		return
 	}
 
+	if gp.isolateReadOnlyOwner != 0 && gp.isolateMetadataDepth == 0 && isolateOwnedSemaWait(reason) {
+		panic("isolate: read-only handlers cannot block on synchronization")
+	}
+
 	// Harder case:
 	//	increment waiter count
 	//	try cansemacquire one more time, return if succeeded
@@ -691,6 +695,9 @@ func less(a, b uint32) bool {
 //
 //go:linkname notifyListAdd sync.runtime_notifyListAdd
 func notifyListAdd(l *notifyList) uint32 {
+	if getg().isolateReadOnlyOwner != 0 {
+		panic("isolate: read-only handlers cannot wait on sync.Cond")
+	}
 	// This may be called concurrently, for example, when called from
 	// sync.Cond.Wait while holding a RWMutex in read mode.
 	return l.wait.Add(1) - 1

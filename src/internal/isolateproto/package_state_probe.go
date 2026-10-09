@@ -46,7 +46,7 @@ func isolateRunInitTask(unsafe.Pointer)
 // NewPackageInstance allocates the selected packages' layouts and replays
 // their initializers in dependency order. Its input is an explicit list of
 // compiler-owned descriptors; whole-program discovery remains open.
-func NewPackageInstance(descriptors []unsafe.Pointer) (*PackageInstance, error) {
+func NewPackageInstance(descriptors []unsafe.Pointer, readOnlyLibraries ...[]unsafe.Pointer) (*PackageInstance, error) {
 	ordered := make([]packageDescriptor, len(descriptors))
 	for i, descriptor := range descriptors {
 		if descriptor == nil {
@@ -124,6 +124,21 @@ func NewPackageInstance(descriptors []unsafe.Pointer) (*PackageInstance, error) 
 	}
 
 	instance := &PackageInstance{table: isolateNewPackageBases(keys, types)}
+	if len(readOnlyLibraries) != 0 {
+		selected := make(map[unsafe.Pointer]bool)
+		for _, descriptor := range readOnlyLibraries[0] {
+			selected[(*packageDescriptor)(descriptor).Key] = true
+		}
+		var libraryKeys, libraryTypes, libraryTasks []unsafe.Pointer
+		for _, i := range initOrder {
+			if selected[keys[i]] {
+				libraryKeys = append(libraryKeys, keys[i])
+				libraryTypes = append(libraryTypes, types[i])
+				libraryTasks = append(libraryTasks, ordered[i].InitTask)
+			}
+		}
+		isolateSetReadOnlyLibraries(instance.table, libraryKeys, libraryTypes, libraryTasks)
+	}
 	instance.Run(func() {
 		for _, i := range initOrder {
 			isolateRunInitTask(ordered[i].InitTask)
@@ -138,3 +153,6 @@ func (instance *PackageInstance) Run(fn func()) {
 	defer isolateSetPackageBases(old)
 	fn()
 }
+
+//go:linkname isolateSetReadOnlyLibraries runtime.isolateE4SetReadOnlyLibraries
+func isolateSetReadOnlyLibraries(unsafe.Pointer, []unsafe.Pointer, []unsafe.Pointer, []unsafe.Pointer)

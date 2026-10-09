@@ -20,5 +20,20 @@ import "internal/isolatebridge"
 // isolate's SDK; the runtime does not interpret it. An SDK can use an
 // operation such as NextRequest to wait for incoming host work.
 func Call(op uint32, payload []byte) ([]byte, error) {
+	if IsReadOnly() {
+		panic("isolate: read-only handlers cannot issue workflow calls")
+	}
 	return isolatebridge.Current().Call(op, payload)
 }
+
+// ReadOnlyCall waits for host work on a dedicated read-only service goroutine.
+// After its first reply, allocations use a scratch heap. Existing workflow
+// memory can be read but never written, even by callbacks. The goroutine cannot
+// start children or perform blocking native channel operations. The host must
+// use ResumeReadOnly to admit these requests while workflow dispatch is fenced.
+func ReadOnlyCall(op uint32, payload []byte) ([]byte, error) {
+	return isolatebridge.Current().ReadOnlyCall(op, payload)
+}
+
+// IsReadOnly reports execution in a query or update validator.
+func IsReadOnly() bool { return isolatebridge.InReadOnly() }

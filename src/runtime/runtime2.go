@@ -23,6 +23,8 @@ import (
 // semaphore waits, and permanent parks; their runtime cleanup still runs on
 // the resumed goroutine.
 type isolateRevocationGroup struct {
+	readOnlyAlloc    *isolateAllocHandle // Scratch owner for queries and update validators.
+	dispatchReadOnly bool                // Only read-only service goroutines may dispatch; dispatchLock.
 	alloc            *isolateAllocHandle // GC-visible lifetime; registry keeps no group pointer.
 	resources        *isolateResourceHandle
 	resourceFault    *isolateOwnershipFault // Preallocated process record, publishable from g0.
@@ -612,7 +614,13 @@ type g struct {
 	isolateHeapReservation     uint64
 	isolateCallSelectNext      uint64 // Four poll draws reserved before a Call transport park.
 	isolateCallSelectRemaining uint32
-	isolateMetadataDepth       uint32                  // Audited process metadata service nesting; never inherited.
+	isolateMetadataDepth       uint32 // Audited process metadata service nesting; never inherited.
+	isolateReadOnlySelectSeq   uint64
+	isolateReadOnlyRandSeq     uint64
+	isolateReadOnlyRandLegacy  unsafe.Pointer
+	isolateReadOnlyOwner       uintptr // Workflow memory may be borrowed for reads, never writes.
+	isolateMetadataOwner       uintptr // Original caller owner, including a read-only scratch owner.
+	isolateReadOnlyService     bool
 	isolateOwner               uintptr                 // monotonic trusted instance ID for future heap ownership
 	isolateBoundary            unsafe.Pointer          // provisional host transport for Call
 	isolateGroup               *isolateRevocationGroup // Phase 2B live count and first-dispatch experiment

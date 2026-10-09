@@ -116,6 +116,13 @@ func MetadataGlobal(symbol string) bool {
 // allocate, grow a stack, or consult application ownership while retiring the
 // process pool lists. Private Put/Get never join those lists.
 func RuntimeHook(pkg, function string) bool {
+	// The post-fork child cannot grow its stack, allocate, or acquire locks.
+	// Instrumenting its local pointer stores violates that runtime contract.
+	// Public process/syscall entry points reject isolate execution before this
+	// private path; do not grant the exemption to arbitrary //go:norace code.
+	if pkg == "syscall" && (function == "forkAndExecInChild" || function == "forkAndExecInChild1") {
+		return true
+	}
 	// Pure manifest queries run from the runtime probes themselves. Adding
 	// probes to them would recursively invoke the effect/ownership checker.
 	if pkg == "internal/isolatepolicy" {

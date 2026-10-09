@@ -23,6 +23,9 @@ func isolateSelectRandn(gp *g, n uint32) uint32 {
 		sequence = gp.isolateCallSelectNext
 		gp.isolateCallSelectNext++
 		gp.isolateCallSelectRemaining--
+	} else if gp.isolateReadOnlyService {
+		gp.isolateReadOnlySelectSeq++
+		sequence = gp.isolateReadOnlySelectSeq
 	} else {
 		sequence = group.selectSeq.Add(1)
 	}
@@ -47,6 +50,10 @@ func isolateRand() uint64 {
 	if group == nil || !group.deterministic {
 		return rand()
 	}
+	if gp := getg(); gp.isolateReadOnlyOwner != 0 {
+		gp.isolateReadOnlyRandSeq++
+		return isolateMix64(gp.isolateReadOnlyRandSeq)
+	}
 	return isolateMix64(group.randSeq.Add(1))
 }
 
@@ -61,6 +68,9 @@ func isolateRandLegacy() (unsafe.Pointer, bool) {
 	if group == nil || !group.deterministic {
 		return nil, false
 	}
+	if gp := getg(); gp.isolateReadOnlyOwner != 0 {
+		return gp.isolateReadOnlyRandLegacy, true
+	}
 	if raceenabled && group.randLegacy != nil {
 		raceacquire(unsafe.Pointer(&group.randLegacy))
 	}
@@ -69,7 +79,15 @@ func isolateRandLegacy() (unsafe.Pointer, bool) {
 
 //go:linkname isolateSetRandLegacy
 func isolateSetRandLegacy(p unsafe.Pointer) {
-	group := getg().isolateGroup
+	gp := getg()
+	group := gp.isolateGroup
+	if gp.isolateReadOnlyOwner != 0 {
+		if gp.isolateReadOnlyRandLegacy != nil || p == nil {
+			throw("isolate: invalid read-only random initialization")
+		}
+		gp.isolateReadOnlyRandLegacy = p
+		return
+	}
 	if group == nil || !group.deterministic || group.randLegacy != nil || p == nil {
 		throw("isolate: invalid legacy random initialization")
 	}
@@ -91,7 +109,12 @@ func isolateCallSelectBegin() {
 	if gp.isolateCallSelectNext != 0 {
 		throw("isolate: nested Call transport")
 	}
-	gp.isolateCallSelectNext = gp.isolateGroup.selectSeq.Add(4) - 3
+	if gp.isolateReadOnlyService {
+		gp.isolateReadOnlySelectSeq += 4
+		gp.isolateCallSelectNext = gp.isolateReadOnlySelectSeq - 3
+	} else {
+		gp.isolateCallSelectNext = gp.isolateGroup.selectSeq.Add(4) - 3
+	}
 	gp.isolateCallSelectRemaining = 4
 }
 

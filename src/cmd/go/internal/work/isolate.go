@@ -382,6 +382,12 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 		for _, path := range paths {
 			fmt.Fprintf(&source, "unsafe.Pointer(&isolatePackageDescriptor%d),\n", descriptorIndex[path])
 		}
+		source.WriteString("}, []unsafe.Pointer{\n")
+		for _, path := range paths {
+			if isolateOwnedStandardPackages[path] {
+				fmt.Fprintf(&source, "unsafe.Pointer(&isolatePackageDescriptor%d),\n", descriptorIndex[path])
+			}
+		}
 		source.WriteString("})\n")
 		source.WriteString("if err != nil { return nil, err }; return state.Run, nil\n}\n")
 	}

@@ -32,7 +32,7 @@ func isolateDispatchReadyLocked(gp *g) bool {
 	if gp.isolateDispatchQueued {
 		throw("isolate: duplicate runnable publication")
 	}
-	if group.dispatchToken == 0 && !group.dispatchPaused {
+	if group.dispatchToken == 0 && !group.dispatchPaused && (!group.dispatchReadOnly || gp.isolateReadOnlyService) {
 		group.dispatchToken.set(gp)
 		return true
 	}
@@ -54,7 +54,7 @@ func isolateDispatchEnterReady(gp *g, ready chan struct{}) {
 		return
 	}
 	lock(&group.dispatchLock)
-	if group.dispatchToken == 0 && !group.dispatchPaused {
+	if group.dispatchToken == 0 && !group.dispatchPaused && (!group.dispatchReadOnly || gp.isolateReadOnlyService) {
 		group.dispatchToken.set(gp)
 		unlock(&group.dispatchLock)
 		if ready != nil {
@@ -73,7 +73,7 @@ func isolateDispatchEnterReady(gp *g, ready chan struct{}) {
 func isolateDispatchJoin(gp *g, p unsafe.Pointer) bool {
 	group := (*isolateRevocationGroup)(p)
 	lock(&group.dispatchLock)
-	if group.dispatchToken == 0 && !group.dispatchPaused {
+	if group.dispatchToken == 0 && !group.dispatchPaused && (!group.dispatchReadOnly || gp.isolateReadOnlyService) {
 		group.dispatchToken.set(gp)
 		group.dispatchJoining--
 		unlock(&group.dispatchLock)
@@ -129,7 +129,7 @@ func isolateDispatchRelease(gp *g, requeue bool) {
 	}
 	group.dispatchToken = 0
 	if !group.dispatchPaused {
-		next = group.dispatchQueue.pop()
+		next = isolateDispatchPopLocked(group)
 		if next != nil {
 			next.isolateDispatchQueued = false
 			group.dispatchToken.set(next)
@@ -206,7 +206,7 @@ func isolateSuspendCommit(gp *g, p unsafe.Pointer) bool {
 	if group.dispatchWaiter != 0 {
 		throw("isolate: concurrent suspension waiters")
 	}
-	if group.dispatchToken == 0 && group.dispatchQueue.empty() && group.dispatchJoining == 0 {
+	if group.dispatchToken == 0 && !isolateDispatchHasReadyLocked(group) && group.dispatchJoining == 0 {
 		group.dispatchPaused = true
 		unlock(&group.dispatchLock)
 		return false
@@ -231,9 +231,10 @@ func isolateResume(p unsafe.Pointer) {
 		if group.dispatchWaiter != 0 {
 			throw("isolate: resume before suspension finished")
 		}
+		group.dispatchReadOnly = false
 		group.dispatchPaused = false
 		if group.dispatchToken == 0 {
-			next = group.dispatchQueue.pop()
+			next = isolateDispatchPopLocked(group)
 			if next != nil {
 				next.isolateDispatchQueued = false
 				group.dispatchToken.set(next)
@@ -255,11 +256,12 @@ func isolateDispatchRevoke(group *isolateRevocationGroup) {
 	systemstack(func() {
 		var next, waiter *g
 		lock(&group.dispatchLock)
+		group.dispatchReadOnly = false
 		group.dispatchPaused = false
 		waiter = group.dispatchWaiter.ptr()
 		group.dispatchWaiter = 0
 		if group.dispatchToken == 0 {
-			next = group.dispatchQueue.pop()
+			next = isolateDispatchPopLocked(group)
 			if next != nil {
 				next.isolateDispatchQueued = false
 				group.dispatchToken.set(next)

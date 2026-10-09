@@ -32,6 +32,21 @@ func IsolateMetadataRunForTest(p unsafe.Pointer, owner uintptr, fn func()) {
 	fn()
 }
 
+func IsolateReadOnlyRunForTest(p unsafe.Pointer, owner, scratch uintptr, fn func()) {
+	isolateEnableDeterminism(p)
+	isolatePrepareReadOnly(p, scratch)
+	IsolateMetadataRunForTest(p, owner, func() {
+		gp := getg()
+		defer func() {
+			gp.isolateReadOnlyOwner = 0
+			gp.isolateReadOnlyService = false
+		}()
+		isolateMarkReadOnlyService()
+		isolateBeginReadOnly()
+		fn()
+	})
+}
+
 func IsolateAllocOriginForTest(p unsafe.Pointer) (uintptr, bool) {
 	return isolateAllocOrigin(p)
 }

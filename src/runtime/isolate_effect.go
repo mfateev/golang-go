@@ -21,6 +21,9 @@ func isolateRejectEffect(operation string) {
 }
 
 func isolateRejectEffectSlow(operation string) {
+	if getg().isolateReadOnlyOwner != 0 {
+		panic("isolate: forbidden operation in read-only handler: " + operation)
+	}
 	isolateReportFault("isolate: forbidden operation "+operation, operation)
 }
 

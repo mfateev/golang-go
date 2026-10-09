@@ -127,6 +127,9 @@ func isolateDiscard0(gp *g) {
 //
 //go:linkname isolateExit
 func isolateExit(code int) {
+	if getg().isolateReadOnlyOwner != 0 {
+		panic("isolate: read-only handlers cannot exit an instance")
+	}
 	if getg().isolateMetadataDepth != 0 {
 		panic("isolate: metadata services cannot exit an instance")
 	}

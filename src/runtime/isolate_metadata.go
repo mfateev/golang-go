@@ -6,7 +6,6 @@ package runtime
 
 import (
 	"internal/abi"
-	"internal/runtime/atomic"
 	"unsafe"
 )
 
@@ -21,7 +20,7 @@ func isolateMetadataBorrowOwner() uintptr {
 	if gp.isolateMetadataDepth == 0 || gp.isolateGroup == nil {
 		return 0
 	}
-	return atomic.Loaduintptr(&gp.isolateGroup.alloc.cache.isolateOwner)
+	return gp.isolateMetadataOwner
 }
 
 // Audited metadata builders publish immutable types into process registries.
@@ -43,6 +42,9 @@ func isolateEnterMetadata() uintptr {
 		throw("isolate: metadata nesting overflow")
 	}
 	owner := gp.isolateOwner
+	if gp.isolateMetadataDepth == 0 {
+		gp.isolateMetadataOwner = owner
+	}
 	gp.isolateMetadataDepth++
 	gp.isolateOwner = 0
 	return owner
@@ -63,6 +65,7 @@ func isolateLeaveMetadata(owner uintptr) {
 	gp.isolateOwner = owner
 	gp.isolateMetadataDepth--
 	if gp.isolateMetadataDepth == 0 {
+		gp.isolateMetadataOwner = 0
 		isolateDiscardIfRevoked()
 		isolateCopyMetadataPanic(gp, owner)
 	}
@@ -186,7 +189,7 @@ func isolateCopyMetadataString(message string) string {
 		return ""
 	}
 	origin, heap := isolateAllocOrigin(unsafe.Pointer(unsafe.StringData(message)))
-	if !heap || origin == owner {
+	if !heap || origin == owner || (getg().isolateReadOnlyOwner != 0 && origin == getg().isolateReadOnlyOwner) {
 		return message
 	}
 	if origin != 0 {

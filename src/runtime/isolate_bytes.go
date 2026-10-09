@@ -26,9 +26,12 @@ func isolateCheckBoundaryBytes(p unsafe.Pointer, size uintptr) {
 		return
 	}
 	owner := gp.isolateOwner
-	var original uintptr
+	var original, scratch uintptr
 	if gp.isolateGroup != nil {
 		original = atomic.Loaduintptr(&gp.isolateGroup.alloc.cache.isolateOwner)
+		if gp.isolateReadOnlyOwner != 0 && gp.isolateGroup.readOnlyAlloc != nil {
+			scratch = gp.isolateGroup.readOnlyAlloc.cache.isolateOwner
+		}
 	}
 	for addr := uintptr(p); ; {
 		s := spanOfHeap(addr)
@@ -39,7 +42,7 @@ func isolateCheckBoundaryBytes(p unsafe.Pointer, size uintptr) {
 			isolateCheckNonHeapAccess(addr, end, false)
 			return
 		}
-		if s.isolateAllocOwner != 0 && s.isolateAllocOwner != owner && (original == 0 || s.isolateAllocOwner != original) {
+		if s.isolateAllocOwner != 0 && s.isolateAllocOwner != owner && (original == 0 || s.isolateAllocOwner != original) && (scratch == 0 || s.isolateAllocOwner != scratch) {
 			isolateOwnershipViolation("isolate: boundary bytes belong to another instance")
 		}
 		if end < s.limit {

@@ -525,3 +525,45 @@ func callSelectBegin()
 
 //go:linkname callSelectEnd runtime.isolateCallSelectEnd
 func callSelectEnd()
+
+// ReadOnlyCall is the transport for a dedicated query/validator goroutine.
+// Its first host reply admits it to the separate scratch allocation owner.
+func (b *Boundary) ReadOnlyCall(op uint32, payload []byte) ([]byte, error) {
+	markReadOnlyService()
+	response, err := b.Call(op, payload)
+	beginReadOnly()
+	return response, err
+}
+
+func (b *Boundary) FreezeWorkflow() { freezeWorkflow(b.group) }
+
+func (b *Boundary) ResumeReadOnly() error {
+	if !b.deterministic || b.Stopped() {
+		return errors.New("isolate: invalid read-only dispatch")
+	}
+	owner := nextOwner.Add(1)
+	if owner == 0 {
+		panic("isolate: owner ID exhausted")
+	}
+	prepareReadOnly(b.group, owner)
+	resumeReadOnly(b.group)
+	return nil
+}
+
+//go:linkname markReadOnlyService runtime.isolateMarkReadOnlyService
+func markReadOnlyService()
+
+//go:linkname beginReadOnly runtime.isolateBeginReadOnly
+func beginReadOnly()
+
+//go:linkname prepareReadOnly runtime.isolatePrepareReadOnly
+func prepareReadOnly(unsafe.Pointer, uintptr)
+
+//go:linkname freezeWorkflow runtime.isolateFreezeWorkflow
+func freezeWorkflow(unsafe.Pointer)
+
+//go:linkname resumeReadOnly runtime.isolateResumeReadOnly
+func resumeReadOnly(unsafe.Pointer)
+
+//go:linkname InReadOnly runtime.isolateInReadOnly
+func InReadOnly() bool

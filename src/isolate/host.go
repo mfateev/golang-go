@@ -550,3 +550,17 @@ func (i *Isolate) pendingError() *KillPendingError {
 	return &KillPendingError{GoroutineID: id, ThreadID: thread, Stack: stack,
 		LiveGoroutines: i.boundary.LiveGoroutines(), RunningGoroutines: i.boundary.RunningGoroutines()}
 }
+
+// FreezeWorkflow fences workflow continuations at their next park, while an
+// in-progress Suspend waits only for read-only service work. Completed workflows
+// may retain their private state this way until host cache eviction calls Kill.
+func (i *Isolate) FreezeWorkflow() { i.boundary.FreezeWorkflow() }
+
+// ResumeReadOnly admits only read-only service goroutines. Other continuations
+// keep their FIFO positions. Service Commands and call Suspend as with Resume.
+func (i *Isolate) ResumeReadOnly() error {
+	if i == nil || !i.started.Load() {
+		return errors.New("isolate: instance not started")
+	}
+	return i.executionError(i.boundary.ResumeReadOnly())
+}

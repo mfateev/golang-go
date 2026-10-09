@@ -6,6 +6,7 @@ package sync
 
 import (
 	isync "internal/sync"
+	"unsafe"
 )
 
 // Map is like a Go map[any]any but is safe for concurrent use
@@ -50,11 +51,13 @@ func (m *Map) Load(key any) (value any, ok bool) {
 
 // Store sets the value for a key.
 func (m *Map) Store(key, value any) {
+	runtime_isolateReadOnlyWrite(unsafe.Pointer(m), unsafe.Sizeof(*m))
 	m.m.Store(key, value)
 }
 
 // Clear deletes all the entries, resulting in an empty Map.
 func (m *Map) Clear() {
+	runtime_isolateReadOnlyWrite(unsafe.Pointer(m), unsafe.Sizeof(*m))
 	m.m.Clear()
 }
 
@@ -62,24 +65,28 @@ func (m *Map) Clear() {
 // Otherwise, it stores and returns the given value.
 // The loaded result is true if the value was loaded, false if stored.
 func (m *Map) LoadOrStore(key, value any) (actual any, loaded bool) {
+	runtime_isolateReadOnlyWrite(unsafe.Pointer(m), unsafe.Sizeof(*m))
 	return m.m.LoadOrStore(key, value)
 }
 
 // LoadAndDelete deletes the value for a key, returning the previous value if any.
 // The loaded result reports whether the key was present.
 func (m *Map) LoadAndDelete(key any) (value any, loaded bool) {
+	runtime_isolateReadOnlyWrite(unsafe.Pointer(m), unsafe.Sizeof(*m))
 	return m.m.LoadAndDelete(key)
 }
 
 // Delete deletes the value for a key.
 // If the key is not in the map, Delete does nothing.
 func (m *Map) Delete(key any) {
+	runtime_isolateReadOnlyWrite(unsafe.Pointer(m), unsafe.Sizeof(*m))
 	m.m.Delete(key)
 }
 
 // Swap swaps the value for a key and returns the previous value if any.
 // The loaded result reports whether the key was present.
 func (m *Map) Swap(key, value any) (previous any, loaded bool) {
+	runtime_isolateReadOnlyWrite(unsafe.Pointer(m), unsafe.Sizeof(*m))
 	return m.m.Swap(key, value)
 }
 
@@ -87,6 +94,7 @@ func (m *Map) Swap(key, value any) (previous any, loaded bool) {
 // if the value stored in the map is equal to old.
 // The old value must be of a comparable type.
 func (m *Map) CompareAndSwap(key, old, new any) (swapped bool) {
+	runtime_isolateReadOnlyWrite(unsafe.Pointer(m), unsafe.Sizeof(*m))
 	return m.m.CompareAndSwap(key, old, new)
 }
 
@@ -96,6 +104,7 @@ func (m *Map) CompareAndSwap(key, old, new any) (swapped bool) {
 // If there is no current value for key in the map, CompareAndDelete
 // returns false (even if the old value is the nil interface value).
 func (m *Map) CompareAndDelete(key, old any) (deleted bool) {
+	runtime_isolateReadOnlyWrite(unsafe.Pointer(m), unsafe.Sizeof(*m))
 	return m.m.CompareAndDelete(key, old)
 }
 

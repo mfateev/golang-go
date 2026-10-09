@@ -167,6 +167,9 @@ func chansend1(c *hchan, elem unsafe.Pointer) {
 // If block == false and the send cannot proceed immediately, it returns false.
 // Otherwise, it waits as needed for the send to complete and returns true.
 func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
+	if block {
+		isolateCheckReadOnlyBlock()
+	}
 	isolateDiscardIfRevoked()
 	if c == nil {
 		if !block {
@@ -542,6 +545,9 @@ func chanrecv2(c *hchan, elem unsafe.Pointer) (received bool) {
 // Otherwise, fills in *ep with an element and returns (true, true).
 // A non-nil ep must point to the heap or the caller's stack.
 func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool) {
+	if block {
+		isolateCheckReadOnlyBlock()
+	}
 	isolateDiscardIfRevoked()
 	// raceenabled: don't need to check ep, as it is always on the stack
 	// or is new memory allocated by reflect.

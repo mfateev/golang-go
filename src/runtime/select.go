@@ -161,6 +161,9 @@ func block() {
 // Also, if the chosen scase was a receive operation, it reports whether
 // a value was received.
 func selectgo(cas0 *scase, order0 *uint16, pc0 *uintptr, nsends, nrecvs int, block bool) (int, bool) {
+	if block {
+		isolateCheckReadOnlyBlock()
+	}
 	isolateDiscardIfRevoked()
 	gp := getg()
 	if debugSelect {

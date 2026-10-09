@@ -43,13 +43,19 @@ func isolateCheckHeapAccess(p unsafe.Pointer, size uintptr, write bool) {
 			return
 		}
 		if s.isolateAllocOwner != owner && (borrowed == 0 || s.isolateAllocOwner != borrowed) {
-			if !write && s.isolateAllocOwner == 0 && isolateReadOnlyTypeRange(p, size) {
-				return
+			if gp.isolateReadOnlyOwner != 0 && s.isolateAllocOwner == gp.isolateReadOnlyOwner {
+				if write {
+					panic("isolate: read-only handler cannot mutate workflow state")
+				}
+			} else {
+				if !write && s.isolateAllocOwner == 0 && isolateReadOnlyTypeRange(p, size) {
+					return
+				}
+				if write {
+					isolateOwnershipViolation("isolate: write to foreign heap")
+				}
+				isolateOwnershipViolation("isolate: read from foreign heap")
 			}
-			if write {
-				isolateOwnershipViolation("isolate: write to foreign heap")
-			}
-			isolateOwnershipViolation("isolate: read from foreign heap")
 		}
 		if end < s.limit {
 			return
@@ -162,6 +168,12 @@ func isolateCheckHeapMap(p unsafe.Pointer, write bool) {
 	if m.IsolateOwner() == gp.isolateOwner {
 		return
 	}
+	if gp.isolateReadOnlyOwner != 0 && m.IsolateOwner() == gp.isolateReadOnlyOwner {
+		if write {
+			panic("isolate: read-only handler cannot mutate workflow map")
+		}
+		return
+	}
 	if !write {
 		if borrowed := isolateMetadataBorrowOwner(); borrowed != 0 && m.IsolateOwner() == borrowed {
 			return
@@ -222,7 +234,7 @@ func isolateCheckHeapReferenceTo(dst, value unsafe.Pointer, stack bool) {
 		// publication into process caches or an instance heap.
 		if gp.isolateMetadataDepth != 0 {
 			if source := spanOfHeap(uintptr(value)); source != nil &&
-				(source.isolateAllocOwner == 0 || source.isolateAllocOwner == isolateMetadataBorrowOwner()) {
+				(source.isolateAllocOwner == 0 || source.isolateAllocOwner == isolateMetadataBorrowOwner() || source.isolateAllocOwner == gp.isolateReadOnlyOwner) {
 				return
 			}
 		}
@@ -263,6 +275,9 @@ func isolateCheckHeapReferenceTo(dst, value unsafe.Pointer, stack bool) {
 		return
 	}
 	if source.isolateAllocOwner != owner {
+		if gp.isolateReadOnlyOwner != 0 && source.isolateAllocOwner == gp.isolateReadOnlyOwner && owner == gp.isolateOwner {
+			return // Scratch values may refer to the borrowed workflow heap.
+		}
 		if source.isolateAllocOwner == 0 && isolateReadOnlyTypeRoot(value) {
 			return
 		}

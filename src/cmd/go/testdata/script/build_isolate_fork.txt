@@ -1,0 +1,36 @@
+# Heap checks must preserve the no-stack-growth contract after fork.
+[short] skip
+go build -gcflags=syscall=-d=isolateheap=2 -o fork.exe .
+env GOGC=1
+exec ./fork.exe
+stdout '^fork checks passed$'
+[race] go build -race -gcflags=syscall=-d=isolateheap=2 -o fork-race.exe .
+[race] exec ./fork-race.exe
+[race] stdout '^fork checks passed$'
+
+-- go.mod --
+module example.org/isolatefork
+go 1.26
+
+-- main.go --
+package main
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+)
+
+func main() {
+	if len(os.Args) > 1 {
+		fmt.Println("child")
+		return
+	}
+	binary, err := os.Executable()
+	if err != nil { panic(err) }
+	for range 8 {
+		output, err := exec.Command(binary, "child").CombinedOutput()
+		if err != nil || string(output) != "child\n" { panic(fmt.Sprintf("fork: %v %s", err, output)) }
+	}
+	fmt.Println("fork checks passed")
+}
