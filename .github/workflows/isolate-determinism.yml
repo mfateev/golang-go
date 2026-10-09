@@ -146,6 +146,14 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/update-race.log"
             exit 1
           fi
+          if ! ../golang-go/bin/go build -race "${ownership_gcflags[@]}" -o "$RUNNER_TEMP/isolate-children-race" ./example/child/check > "$POC_LOG_DIR/child-race-build.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/child-race-build.log"
+            exit 1
+          fi
+          if ! GOGC=1 "$RUNNER_TEMP/isolate-children-race" -history-dir example/child/testdata > "$POC_LOG_DIR/child-race.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/child-race.log"
+            exit 1
+          fi
           if ! ../golang-go/bin/go build "${ownership_gcflags[@]}" -o "$RUNNER_TEMP/isolate-driver-heap" ./example/driver > "$POC_LOG_DIR/driver-heap-build.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/driver-heap-build.log"
             exit 1
