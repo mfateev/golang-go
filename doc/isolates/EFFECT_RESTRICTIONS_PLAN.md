@@ -11,7 +11,7 @@ Temporal operations. Ordinary host code and activities keep their Go behavior.
 
 | Operation | Workflow policy |
 |---|---|
-| Printing and standard logging | Format in the isolate; send copied bytes through a reserved host Call. Configure output handling on the worker. |
+| Printing and standard logging | Format in the isolate; send copied bytes through a reserved host Write without acknowledgment. Configure output handling on the worker. |
 | Environment and configuration files | Reject reads and mutations; pass configuration in workflow input. |
 | Files, networking, subprocesses, process control | Reject before the effect occurs. Pure parsing, formatting and instance-local buffers remain available. |
 | Time and timers | Use the supported history-clock and durable-timer implementations. Explicit time-zone data remains available; machine time-zone loading is rejected. |
@@ -34,8 +34,8 @@ Go synchronization and local context cancellation remain deterministic.
 2. Extend the fatal ownership-reporting fence with effect diagnostics. Checks use
    isolate membership even during process-owned metadata services. Cleanup must
    release trusted locks before discarding application execution.
-3. Introduce the reserved logging Call and worker configuration. Printing returns
-   the formatted byte count and nil after acceptance; host sink errors do not
+3. Introduce the reserved logging Write and worker configuration. Printing returns
+   the formatted byte count and nil without waiting for delivery; host sink errors do not
    become workflow inputs. Handle initializer logging before `New` returns.
    Replay state is supplied by the host to the worker's logging handler.
 4. Integrate fatal violations with Workflow Task failure reporting and cache
@@ -114,12 +114,16 @@ The reserved logging operation cannot be configured as a durable timer opcode.
 
 ## Worker integration
 
-Printing, standard `log` and default `slog` use the reserved `isolate.LogOp` Call.
+Printing, standard `log` and default `slog` use the reserved `isolate.LogOp` Write.
 The host configures `worker.SetIsolateLogHandler` on an isolate worker or replayer,
 either before or after registration. Custom handlers receive copied messages,
 source, workflow/run/type identifiers and replay status. A nil handler restores
-the SDK logger and its `EnableLoggingInReplay` behavior. The reply is nil bytes
-and nil error; logging configuration and sink failures are not workflow inputs.
+the SDK logger and its `EnableLoggingInReplay` behavior. There is no reply;
+logging configuration and sink failures are not workflow inputs. Host handler
+panics become diagnostics rather than Workflow Task failures. The SDK consumes
+Writes during task/query dispatch and drains final records before releasing
+completed or revoked state. The POC queue holds 64 messages of at most 64 KiB;
+oversized records and full-queue writes are dropped, as for other observations.
 
 Effect faults panic only on the host after revoking and closing the instance.
 The standard SDK's `BlockWorkflow` policy converts that panic to a Workflow Task

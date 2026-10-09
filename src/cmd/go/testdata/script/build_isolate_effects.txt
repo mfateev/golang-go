@@ -1,4 +1,4 @@
-# Effects are rejected before execution; logs use copied-byte host calls.
+# Effects are rejected before execution; logs use one-way copied-byte writes.
 [short] skip
 [compiler:gccgo] skip
 [!GOARCH:amd64] [!GOARCH:arm64] skip
@@ -71,7 +71,8 @@ func Work(mode string) {
   log.SetFlags(0)
   log.Print("standard")
   slog.Info("structured", "count", 7)
-  println(strings.Repeat("x", 100000), 42)
+  println(strings.Repeat("x", 60000), 42)
+  println(strings.Repeat("x", 100000)) // Oversized observations are dropped.
  } else {
   effects.Run(mode)
  }
@@ -156,12 +157,13 @@ func main() {
   running:
    for {
     select {
+    case message := <-i.Writes():
+     if message.Op != isolate.LogOp { panic("unexpected write operation") }
+     r, err := isolate.DecodeLog(message.Payload); if err != nil { panic(err) }
+     logs = append(logs, r)
     case c := <-i.Commands():
      switch c.Op {
      case 1: c.Reply([]byte(mode), nil)
-     case isolate.LogOp:
-      r, err := isolate.DecodeLog(c.Payload); if err != nil { panic(err) }
-      logs = append(logs, r); c.Reply(nil, nil)
      case 4:
       if mode != "log" { panic("effect returned: "+mode) }
       succeeded = true; c.Reply(nil, nil)
@@ -175,10 +177,19 @@ func main() {
     case <-time.After(10*time.Second): panic("timeout: "+mode)
     }
    }
+  drainLogs:
+   for {
+    select {
+    case message := <-i.Writes():
+     r, err := isolate.DecodeLog(message.Payload); if err != nil { panic(err) }
+     logs = append(logs, r)
+    default: break drainLogs
+    }
+   }
    err = i.Wait()
    if mode == "log" {
     if err != nil || !succeeded { panic(fmt.Sprintf("logging: %v", err)) }
-    if len(logs) != 5 || logs[1].Source != "fmt" || logs[2].Source != "log" || logs[3].Source != "slog" || logs[4].Source != "builtin" || logs[4].Message != strings.Repeat("x", 100000)+" 42\n" { panic(fmt.Sprintf("logging sources/counts: %d", len(logs))) }
+    if len(logs) != 5 || logs[1].Source != "fmt" || logs[2].Source != "log" || logs[3].Source != "slog" || logs[4].Source != "builtin" || logs[4].Message != strings.Repeat("x", 60000)+" 42\n" || i.DroppedWrites() != 1 { panic(fmt.Sprintf("logging sources/counts: %d drops: %d", len(logs), i.DroppedWrites())) }
    } else {
     expected := map[string]string{"nested":"isolate.New", "environment":"os.Getenv", "file":"os.WriteFile", "network":"net.Dial", "entropy":"crypto/rand.Read", "gc":"runtime.GC", "zone":"time.LoadLocation", "weak":"weak.Make", "unsafe":"unsafe operation", "native":"effects.native", "alias":"go:linkname runtime.nanotime", "reflect":"os.Getenv", "reflect-unsafe":"reflect.(*Value).UnsafePointer", "go":"os.Getenv", "defer":"os.Getenv"}
     var effect *isolate.EffectError

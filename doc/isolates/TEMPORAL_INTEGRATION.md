@@ -93,7 +93,10 @@ Queries install their host router at execution setup, so an early query returns
 an error before its application handler has registered instead of panicking the
 SDK's task processor.
 
-Printing/standard logging already use worker-configured replay-aware host calls.
+Printing/standard logging use worker-configured replay-aware one-way Writes,
+without host acknowledgments. Startup, task/query dispatch and termination drain
+copied records; logging handler panics remain host diagnostics. Delivery is best
+effort under the runtime's bounded queue and payload limits.
 SDK logger/metrics interfaces and tracing remain feature 10 work. The SDK's
 `API_COVERAGE_PLAN.md` proposes copied one-way sink messages with replay suppression
 and bounded best-effort delivery, following TypeScript's sinks model. Host sink

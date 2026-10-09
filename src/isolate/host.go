@@ -40,7 +40,7 @@ type Config struct {
 	TimerOp        uint32     // Call operation used for durable timer waits.
 	ResourceLimits ResourceLimits
 	// LogHandler enables LogOp and services printing during initialization.
-	// After Start, logging commands arrive on Commands with other host calls.
+	// After Start, logging messages arrive on Writes without acknowledgments.
 	LogHandler func(LogRecord)
 }
 
@@ -268,7 +268,18 @@ func NewContext(ctx context.Context, cfg Config) (*Isolate, error) {
 	}()
 	<-ready
 	// New has not returned an instance yet. Service only the reserved logging
-	// operation so initializers can print through the same copied-byte Call.
+	// Write so initializers can print without an active Call boundary.
+	handleLog := func(message *Message) error {
+		if message.Op != LogOp || cfg.LogHandler == nil {
+			return errors.New("isolate: initializer attempted an unsupported host write")
+		}
+		record, cause := DecodeLog(message.Payload)
+		if cause != nil {
+			return cause
+		}
+		cfg.LogHandler(record)
+		return nil
+	}
 initialize:
 	for {
 		select {
@@ -276,16 +287,25 @@ initialize:
 			break initialize
 		case <-ctx.Done():
 			return nil, i.initializationFailure(ctx.Err())
-		case command := <-boundary.Commands():
-			if command.Op != LogOp || cfg.LogHandler == nil {
-				return nil, i.initializationFailure(errors.New("isolate: initializer attempted an unsupported host call"))
-			}
-			record, cause := DecodeLog(command.Payload)
-			if cause != nil {
+		case message := <-boundary.Writes():
+			if cause := handleLog(message); cause != nil {
 				return nil, i.initializationFailure(cause)
 			}
-			cfg.LogHandler(record)
-			command.Reply(nil, nil)
+		case <-boundary.Commands():
+			return nil, i.initializationFailure(errors.New("isolate: initializer attempted an unsupported host call"))
+		}
+	}
+	// Completion and the final writes can be ready simultaneously. Initializer
+	// records must not depend on which ready select case the host chose first.
+drainInitializerLogs:
+	for {
+		select {
+		case message := <-boundary.Writes():
+			if cause := handleLog(message); cause != nil {
+				return nil, i.initializationFailure(cause)
+			}
+		default:
+			break drainInitializerLogs
 		}
 	}
 	if reason := boundary.OwnershipFaultReason(); reason != "" {

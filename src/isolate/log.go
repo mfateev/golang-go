@@ -9,14 +9,14 @@ import (
 	"internal/isolatebridge"
 )
 
-// LogOp is the reserved Call operation for printing and standard logging.
+// LogOp is the reserved Write operation for printing and standard logging.
 const LogOp = isolatebridge.LogOp
 
 // LogRecord contains copied output bytes, formatted inside the instance.
 type LogRecord struct{ Source, Message string }
 
-// DecodeLog decodes a host-owned LogOp command. Replies must not expose a sink's
-// errors or configuration to workflow code: reply with nil bytes and nil error.
+// DecodeLog decodes the copied payload of a host-owned LogOp message.
+// No sink errors or configuration are returned to workflow code.
 func DecodeLog(payload []byte) (LogRecord, error) {
 	if len(payload) == 0 {
 		return LogRecord{}, errors.New("isolate: empty logging command")

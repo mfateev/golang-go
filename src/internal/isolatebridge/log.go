@@ -6,7 +6,7 @@ package isolatebridge
 
 import "unsafe"
 
-// LogOp is reserved for observational output. The reply carries no worker state.
+// LogOp is reserved for one-way observational output.
 const LogOp uint32 = 0xffff0001
 
 func (b *Boundary) ConfigureLogging() bool { return setLogTransport(b.group, b.writeLog) }
@@ -18,5 +18,5 @@ func (b *Boundary) writeLog(source byte, message []byte) {
 	payload := make([]byte, 1+len(message))
 	payload[0] = source
 	copy(payload[1:], message)
-	_, _ = b.Call(LogOp, payload)
+	b.Write(LogOp, payload)
 }
