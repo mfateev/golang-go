@@ -1,0 +1,63 @@
+# Support functions contribute their own state and initialize shared deps once.
+[short] skip
+go build -o host.exe ./host
+exec ./host.exe
+stdout 'support state independent'
+go build -race -o race.exe ./host
+exec ./race.exe
+stdout 'support state independent'
+
+-- go.mod --
+module example.org/isolatesupport
+
+go 1.26
+-- shared/shared.go --
+package shared
+var Counter int
+func init() { Counter++ }
+-- support/support.go --
+package support
+import "example.org/isolatesupport/shared"
+var Count = 10
+//go:isolate
+func Factory() (int,error) { Count++; shared.Counter++; return Count+shared.Counter,nil }
+-- entry/entry.go --
+package entry
+import "example.org/isolatesupport/shared"
+var Count = 1
+//go:isolate
+func Work(input int) (int,error) { Count++; shared.Counter++; return input+Count+shared.Counter,nil }
+-- host/main.go --
+package main
+import (
+ "context"
+ "fmt"
+ "isolate"
+ "time"
+ "example.org/isolatesupport/entry"
+ "example.org/isolatesupport/support"
+ "example.org/isolatesupport/shared"
+)
+func main() {
+ h,ok:=isolate.LookupFunction(entry.Work); if !ok { panic("missing work") }
+ factory,ok:=isolate.LookupFunction(support.Factory); if !ok { panic("missing factory") }
+ if instance,err:=isolate.New(isolate.Config{Program:h.ProgramWithSupport(isolate.Handle{},func(isolate.Handle,isolate.Handle){})}); err==nil || instance!=nil { panic("empty support accepted") }
+ for range 3 {
+  p:=h.ProgramWithSupport(factory,func(h,f isolate.Handle){
+   var input int
+   err:=f.Invoke(func(args ...isolate.Value)error{return nil},func(values ...isolate.Value)error{ input=values[0].Value.(int); return nil })
+   if err!=nil { panic(err) }
+   err=h.Invoke(func(args ...isolate.Value)error{ *args[0].Pointer.(*int)=input; return nil },func(values ...isolate.Value)error{
+    if values[0].Value.(int)!=18 { panic("support or shared state leaked") }
+    _,err:=isolate.Call(1,nil); return err
+   }); if err!=nil { panic(err) }
+  })
+  i,err:=isolate.New(isolate.Config{Program:p}); if err!=nil { panic(err) }
+  if err=i.Start(); err!=nil { panic(err) }
+  select { case command:=<-i.Commands(): command.Reply(nil,nil); case <-i.Done(): panic(i.Wait()) }
+  if err=i.Wait(); err!=nil { panic(err) }
+  ctx,cancel:=context.WithTimeout(context.Background(),time.Second); err=i.Kill(ctx); cancel(); if err!=nil { panic(err) }
+ }
+ if entry.Count!=1 || support.Count!=10 || shared.Counter!=1 { panic("host state changed") }
+ fmt.Println("support state independent")
+}

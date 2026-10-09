@@ -66,3 +66,19 @@ func (h Handle) Invoke(decode, encode func(...Value) error) error {
 	_ = isolatebridge.Current() // Reject invocation without an isolate boundary.
 	return h.entry.Invoke(decode, encode)
 }
+
+// ProgramWithSupport adds a marked support function's package state to this
+// program and passes both handles to a noncapturing dispatcher. Shared
+// dependencies initialize once per instance. Only compiler-created metadata
+// crosses the boundary; application configuration must use copied bytes.
+//
+//go:noinline
+func (h Handle) ProgramWithSupport(support Handle, dispatch func(Handle, Handle)) Program {
+	if dispatch == nil || h.entry.StateDescriptors == nil || support.entry.StateDescriptors == nil {
+		return Program{}
+	}
+	return Program{name: h.Name(), entry: isolatebridge.ProgramEntry{
+		Main:     func() { dispatch(h, support) },
+		NewState: func() (func(func()), error) { return newSupportedState(h.entry, support.entry) },
+	}}
+}

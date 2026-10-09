@@ -377,8 +377,8 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 		fmt.Fprintf(&source, "var isolatePackageDescriptor%d byte\n", i)
 	}
 	for i, paths := range programPaths {
-		fmt.Fprintf(&source, "func isolateProgramState%d() (func(func()), error) {\n", i)
-		source.WriteString("state, err := isolateproto.NewPackageInstance([]unsafe.Pointer{\n")
+		fmt.Fprintf(&source, "func isolateProgramDescriptors%d() ([]unsafe.Pointer, []unsafe.Pointer) {\n", i)
+		source.WriteString("return []unsafe.Pointer{\n")
 		for _, path := range paths {
 			fmt.Fprintf(&source, "unsafe.Pointer(&isolatePackageDescriptor%d),\n", descriptorIndex[path])
 		}
@@ -388,8 +388,8 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 				fmt.Fprintf(&source, "unsafe.Pointer(&isolatePackageDescriptor%d),\n", descriptorIndex[path])
 			}
 		}
-		source.WriteString("})\n")
-		source.WriteString("if err != nil { return nil, err }; return state.Run, nil\n}\n")
+		source.WriteString("}\n}\n")
+		fmt.Fprintf(&source, "func isolateProgramState%d() (func(func()), error) {\npackages, libraries := isolateProgramDescriptors%d()\nstate, err := isolateproto.NewPackageInstance(packages, libraries)\nif err != nil { return nil, err }; return state.Run, nil\n}\n", i, i)
 	}
 	source.WriteString("func init() {\n")
 	if len(functions) == 0 {
@@ -399,7 +399,7 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 	} else {
 		for i, fn := range functions {
 			root := slices.Index(loaded, fn.Package)
-			fmt.Fprintf(&source, "isolatebridge.RegisterFunction(isolatebridge.FunctionEntry{Name:%q, Function:isolateFunctionValue%d(), Invoke:isolateFunctionInvoke%d, NewState:isolateProgramState%d})\n", fn.fullName(), i, i, root)
+			fmt.Fprintf(&source, "isolatebridge.RegisterFunction(isolatebridge.FunctionEntry{Name:%q, Function:isolateFunctionValue%d(), Invoke:isolateFunctionInvoke%d, NewState:isolateProgramState%d, StateDescriptors:isolateProgramDescriptors%d})\n", fn.fullName(), i, i, root, root)
 		}
 	}
 	source.WriteString("}\nfunc main() { isolateHostMain() }\n")

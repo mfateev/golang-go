@@ -7,6 +7,7 @@ package isolatebridge
 import (
 	"reflect"
 	"sync"
+	"unsafe"
 )
 
 // Value describes a typed slot in a generated invoker. Pointer points to the
@@ -25,6 +26,9 @@ type FunctionEntry struct {
 	Function any
 	Invoke   func(decode, encode func(...Value) error) error
 	NewState func() (func(func()), error)
+	// StateDescriptors returns a fresh slice of immutable compiler descriptors.
+	// Support functions can join a program without sharing package globals.
+	StateDescriptors func() (packages, readOnlyLibraries []unsafe.Pointer)
 }
 
 var functions = struct {

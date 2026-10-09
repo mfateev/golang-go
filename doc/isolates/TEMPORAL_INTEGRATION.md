@@ -1,4 +1,4 @@
-# Temporal integration: feature 7
+# Temporal integration: features 7 and 8
 
 The POC uses Temporal Go SDK v1.49.0 host bindings with statically compiled
 `//go:isolate` workflow functions. Native contexts, goroutines, channels,
@@ -8,7 +8,7 @@ workflows and host activities retain their registration and execution behavior.
 ## Delivered API and behavior
 
 - Activities: SDK options, function references/aliases, repeatable futures,
-  cancellation policy, structured errors and default-converter results.
+  cancellation policy, structured errors and isolate-owned serialized results.
 - Continue-as-new and workflow versioning: SDK error/options and version
   markers, recorded histories and computed-result replay checks.
 - Queries: read-only allocation owner while workflow goroutines are fenced;
@@ -57,8 +57,9 @@ does not establish native platform completion.
 
 ## Explicit POC exclusions
 
-- Worker-configured data/failure converters, codecs, arbitrary protobuf values,
-  custom headers and context propagation retain the feature 8 audit.
+- Arbitrary protobuf values, custom headers/context propagation, custom failure
+  converter implementations and per-operation value-serializer contexts remain
+  deferred. Batch codecs that change payload count are not supported.
 - Nonempty child typed search attributes are rejected explicitly. Their pinned
   SDK representation uses interface-key maps; deterministic iteration needs
   separate support. Ordinary memo/untyped search attributes are supported.
@@ -67,5 +68,44 @@ does not establish native platform completion.
   containment of a non-yielding CPU loop remains a productization limitation.
 - Runtime/library restrictions, unsupported map key kinds, trusted-code scope,
   static dependency versions and the deferred worker-stop cache policy remain.
-- This checkpoint covers the feature 7 list in the productization plan; it does
+- This checkpoint covers the delivered integration features below; it does
   not claim implementation of every Temporal SDK operation or interceptor.
+
+## Worker-configured serialization (feature 8)
+
+`worker.SetIsolateDataConverter` configures a marked
+`func([]byte) (converter.DataConverter, error)` factory and copied configuration
+on workers and replayers. Registration can precede configuration; each execution
+snapshots it. The factory runs under the workflow owner before argument decoding.
+`isolate.Handle.ProgramWithSupport` composes compiler-created state descriptors
+for the workflow and factory, with one initializer per shared dependency. No
+host-owned converter object or capturing factory closure crosses the boundary.
+
+Query/validator conversions use freshly constructed scratch-owned serializers.
+Their caches can mutate locally while retained workflow state remains read-only.
+Factories and user marshal/error callbacks have the same compulsory ownership
+and effect restrictions as workflow code. Default behavior and ordinary SDK
+workflows are preserved.
+
+The client's/replayer's ordinary host DataConverter applies codecs to RawValue
+payloads, skipping application-value serialization. Plain protobuf Payloads cross
+Call. This supports host compression, encryption/randomness and remote codec I/O
+without sharing keys, clients or their Go objects with an isolate. Activity and
+child results, signals, queries, updates, continuation and failure cause-chain
+payloads use that boundary. SDK execution handles use an isolate-owned built-in
+JSON converter; search attributes use SDK default serialization.
+
+The adapter supplies SDK serialization contexts on the host and determines child
+IDs before encoding. The pinned SDK's private current-run-ID string is read on
+the host to retain its ID convention; a public bindings hook remains a TODO.
+Codecs must decode self-describing historical payloads: SDK failure conversion
+may omit context and standalone replay uses synthetic namespace/execution IDs.
+The initial bridge uses the SDK's single-payload contract; cardinality-changing
+batch codecs are deferred and codec errors fail Workflow Tasks.
+
+Validation includes separate-package state composition (normal/race compiler
+scripts), all SDK packages, remote HTTP codec transport and encrypted common
+failure attributes, ownership-checked custom serializer/cache/query checks, live
+AES-GCM encrypted activities/signals/queries/updates/children/continuation,
+ordinary SDK interoperability, and encrypted history replay with exact results.
+See the SDK README for the configuration API, restrictions and commands.

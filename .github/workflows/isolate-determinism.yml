@@ -86,7 +86,7 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/compiler-default.log"
             exit 1
           fi
-          if ! ./bin/go test cmd/go -run 'TestScript/build_isolate_(functions|programs|metadata|heap|fault|ownership|effects|lifecycle|resources|nilinterface|fork)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
+          if ! ./bin/go test cmd/go -run 'TestScript/build_isolate_(functions|support|programs|metadata|heap|fault|ownership|effects|lifecycle|resources|nilinterface|fork)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/compiler.log"
             exit 1
           fi
@@ -164,6 +164,14 @@ jobs:
               exit 1
             fi
           done
+          if ! ../golang-go/bin/go build -race "${ownership_gcflags[@]}" -o "$RUNNER_TEMP/isolate-converter-race" ./example/converter/check > "$POC_LOG_DIR/converter-race-build.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/converter-race-build.log"
+            exit 1
+          fi
+          if ! GOGC=1 "$RUNNER_TEMP/isolate-converter-race" -history-dir ./example/converter/testdata > "$POC_LOG_DIR/converter-race.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/converter-race.log"
+            exit 1
+          fi
           if ! ../golang-go/bin/go build "${ownership_gcflags[@]}" -o "$RUNNER_TEMP/isolate-replay" ./example/determinism/check > "$POC_LOG_DIR/replay-build.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/replay-build.log"
             exit 1
