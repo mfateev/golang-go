@@ -68,7 +68,7 @@ jobs:
           cd golang-go
           for cpu in default disabled; do
             if [ "$cpu" = disabled ]; then export GODEBUG=cpu.all=off; else unset GODEBUG; fi
-            if ! ./bin/go test math isolate -run 'TestIsolateMathOriginalRounding|TestDeterministicMathBitPatterns' -count=1 > "$POC_LOG_DIR/math-$cpu.log" 2>&1; then
+            if ! ./bin/go test math isolate -run 'TestIsolateMathOriginalRounding|TestIsolateRandFMA32|TestDeterministicMathBitPatterns' -count=1 > "$POC_LOG_DIR/math-$cpu.log" 2>&1; then
               cat "$POC_LOG_DIR/math-$cpu.log"
               exit 1
             fi

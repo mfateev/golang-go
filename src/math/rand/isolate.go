@@ -6,6 +6,12 @@ package rand
 
 import "unsafe"
 
+//go:linkname isolateDeterministic runtime.isolateDeterministic
+func isolateDeterministic() bool
+
+//go:linkname isolateFMA32 math.isolateRandFMA32
+func isolateFMA32(x, y, z float32) float32
+
 //go:linkname isolateRandLegacy runtime.isolateRandLegacy
 func isolateRandLegacy() (unsafe.Pointer, bool)
 

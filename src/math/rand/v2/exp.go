@@ -39,7 +39,12 @@ func (r *Rand) ExpFloat64() float64 {
 		if i == 0 {
 			return re - math.Log(r.Float64())
 		}
-		if fe[i]+float32(r.Float64())*(fe[i-1]-fe[i]) < float32(math.Exp(-x)) {
+		v := float32(r.Float64())
+		threshold := fe[i] + v*(fe[i-1]-fe[i])
+		if isolateDeterministic() {
+			threshold = isolateFMA32(v, fe[i-1]-fe[i], fe[i])
+		}
+		if threshold < float32(math.Exp(-x)) {
 			return x
 		}
 	}

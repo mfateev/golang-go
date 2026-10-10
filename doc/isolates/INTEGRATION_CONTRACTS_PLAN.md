@@ -113,3 +113,13 @@ and `math.Exp` now specify the original arm64 IEEE fused evaluation order;
 65,536-input rounding checks and local saved-history replay pass. A native
 bit-pattern gate exercises normal and exponential distributions with hardware
 features enabled and disabled. Final native acceptance remains pending.
+The broader bit-pattern gate exposed additional implicit fusion in normal
+tail returns; both rand APIs now specify it explicitly. Rejection thresholds
+pin float32 fused rounding using an exact product and compensated addition,
+including a test for float64-to-float32 double rounding. Per-API digests make
+future native failures distinguish Log, Exp and each distribution stream.
+Local full math/rand suites, repeated bit-pattern race tests, exact rational
+float32 checks, and unchanged-history upgrade/rollback replay pass after these
+changes. A later cold full SDK run reached the integration fixtures' shared
+three-minute build/execution limits; samples passed. Separating fixture budgets
+is awaiting feedback, and no deadline has been relaxed.

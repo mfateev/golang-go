@@ -63,6 +63,8 @@ Legacy runtime probes can retain ordinary dispatch for their revocation tests.
   original arm64 corpus. Architecture assembly and implicit compiler fusion
   otherwise change distribution-tail bits. Direct and indirect calls share
   this path; ordinary host math retains its architecture implementation.
+  Normal-distribution tail returns and float32 rejection thresholds also use
+  explicit fused rounding, preserving the original arm64 choices on amd64.
   A fixed bit-pattern digest covers both functions and all four normal/exponential
   distribution APIs, with native CPU-feature-disabled checks. This does not
   make arbitrary floating-point expressions or every math API portable.

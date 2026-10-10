@@ -9,6 +9,29 @@ import _ "unsafe" // for go:linkname
 //go:linkname isolateDeterministic runtime.isolateDeterministic
 func isolateDeterministic() bool
 
+// isolateRandFMA32 fixes the float32 interpolation in the random distributions.
+// Its callers use finite nonnegative operands and a normal result. A float32
+// product is exact in float64; TwoSum retains the addition's lost bits. Correct a float64 result
+// on a float32 midpoint before conversion to avoid double rounding.
+//
+//go:linkname isolateRandFMA32
+func isolateRandFMA32(x, y, z float32) float32 {
+	p := float64(float64(x) * float64(y))
+	c := float64(z)
+	s := float64(p + c)
+	b := float64(s - c)
+	e := float64(float64(c-float64(s-b)) + float64(p-b))
+	bits := Float64bits(s)
+	if bits&((1<<29)-1) == 1<<28 {
+		if e > 0 {
+			bits++
+		} else if e < 0 {
+			bits--
+		}
+	}
+	return float32(Float64frombits(bits))
+}
+
 // isolateLog fixes the rounding operations used by the original arm64 replay
 // corpus. Architecture-specific Log implementations and optional compiler
 // fusion otherwise change the low bits of random distribution tails. Explicit

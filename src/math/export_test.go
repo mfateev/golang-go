@@ -8,6 +8,7 @@ package math
 var ExpGo = exp
 var IsolateLog = isolateLog
 var IsolateExp = isolateExp
+var IsolateRandFMA32 = isolateRandFMA32
 var Exp2Go = exp2
 var HypotGo = hypot
 var SqrtGo = sqrt

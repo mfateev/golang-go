@@ -46,19 +46,34 @@ func (r *Rand) NormFloat64() float64 {
 
 		if i == 0 {
 			// This extra work is only required for the base strip.
+			var logX float64
 			for {
-				x = -math.Log(r.Float64()) * (1.0 / rn)
+				logX = math.Log(r.Float64())
+				x = -logX * (1.0 / rn)
 				y := -math.Log(r.Float64())
 				if y+y >= x*x {
 					break
 				}
+			}
+			if isolateDeterministic() {
+				// Preserve the original arm64 tail's implicit fused return.
+				// Using x here would round the product before the addition.
+				if j > 0 {
+					return math.FMA(-logX, 1.0/rn, rn)
+				}
+				return math.FMA(logX, 1.0/rn, -rn)
 			}
 			if j > 0 {
 				return rn + x
 			}
 			return -rn - x
 		}
-		if fn[i]+float32(r.Float64())*(fn[i-1]-fn[i]) < float32(math.Exp(-.5*x*x)) {
+		u := float32(r.Float64())
+		threshold := fn[i] + u*(fn[i-1]-fn[i])
+		if isolateDeterministic() {
+			threshold = isolateFMA32(u, fn[i-1]-fn[i], fn[i])
+		}
+		if threshold < float32(math.Exp(-.5*x*x)) {
 			return x
 		}
 	}
