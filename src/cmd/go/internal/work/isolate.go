@@ -557,6 +557,11 @@ func isolateTrustedRuntimePackage(path string) bool {
 // providers use only its value/context API, never the automatic/global provider.
 func isolateOwnedObservabilityPackage(path string) bool {
 	switch path {
+	// OpenTracing's context key, error values, optional global tracer and ext
+	// tag descriptors are ordinary private package state. Replay their startup
+	// in query/validator scratch layouts too; grant no process-state access.
+	case "github.com/opentracing/opentracing-go", "github.com/opentracing/opentracing-go/log", "github.com/opentracing/opentracing-go/ext":
+		return true
 	case "go.opentelemetry.io/otel/attribute", "go.opentelemetry.io/otel/attribute/internal", "go.opentelemetry.io/otel/baggage", "go.opentelemetry.io/otel/internal/baggage", "go.opentelemetry.io/otel/propagation":
 		return true
 	}

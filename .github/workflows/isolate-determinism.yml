@@ -197,7 +197,7 @@ jobs:
               fi
             done
           done
-          for adapter in v1 v2 datadog; do
+          for adapter in v1 v2 datadog opentracing; do
             if ! GOGC=1 "$RUNNER_TEMP/isolate-tracing-race" -history ./example/tracing/testdata/$adapter.json > "$POC_LOG_DIR/tracing-replay-race-$adapter.log" 2>&1; then
               tail -n 100 "$POC_LOG_DIR/tracing-replay-race-$adapter.log"
               exit 1
