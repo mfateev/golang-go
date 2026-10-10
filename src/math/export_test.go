@@ -6,6 +6,8 @@ package math
 
 // Export internal functions for testing.
 var ExpGo = exp
+var IsolateLog = isolateLog
+var IsolateExp = isolateExp
 var Exp2Go = exp2
 var HypotGo = hypot
 var SqrtGo = sqrt

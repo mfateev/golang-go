@@ -59,6 +59,13 @@ Legacy runtime probes can retain ordinary dispatch for their revocation tests.
   cryptographic entropy: secrets, security tokens and cryptographic key
   generation belong on the host. Default crypto/rand.Reader, Read, Int and Text
   are supported; Prime and direct DRBG access remain forbidden.
+- Deterministic `math.Log` and `math.Exp` pin IEEE fused operations to the
+  original arm64 corpus. Architecture assembly and implicit compiler fusion
+  otherwise change distribution-tail bits. Direct and indirect calls share
+  this path; ordinary host math retains its architecture implementation.
+  A fixed bit-pattern digest covers both functions and all four normal/exponential
+  distribution APIs, with native CPU-feature-disabled checks. This does not
+  make arbitrary floating-point expressions or every math API portable.
 - `sync.Pool` behaves as empty inside isolates: Put drops values and Get uses
   New or returns nil. GC cycles and P assignment cannot choose cached values.
 - Package initialization uses the same dispatch rules. Unsupported process I/O,

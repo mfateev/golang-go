@@ -13,6 +13,12 @@ and `crypto/rand` APIs. Set `isolate.Config.RandomSeed` before initialization to
 provide a stable 32-byte execution seed; the default is all zeros. Read-only
 services use scratch random state and cannot advance workflow randomness.
 
+Deterministic `math.Log` and `math.Exp` use a fixed sequence of IEEE fused
+operations, including the software fallback when hardware FMA is unavailable.
+This preserves the original arm64 distribution-tail observations across supported
+CPUs. Other floating-point expressions and unreviewed math APIs still require
+portability review; ordinary Go permits architecture-dependent implicit fusion.
+
 **Security:** `crypto/rand` inside deterministic isolates produces predictable
 replay data, not cryptographic entropy. Do not use it for encryption keys,
 passwords, authentication tokens, cryptographic secrets or encryption nonces

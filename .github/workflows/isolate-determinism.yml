@@ -61,12 +61,24 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/bootstrap.log"
             exit 1
           fi
+      - name: Portable distribution rounding
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd golang-go
+          for cpu in default disabled; do
+            if [ "$cpu" = disabled ]; then export GODEBUG=cpu.all=off; else unset GODEBUG; fi
+            if ! ./bin/go test math isolate -run 'TestIsolateMathOriginalRounding|TestDeterministicMathBitPatterns' -count=1 > "$POC_LOG_DIR/math-$cpu.log" 2>&1; then
+              cat "$POC_LOG_DIR/math-$cpu.log"
+              exit 1
+            fi
+          done
       - name: Runtime and compiler conformance
         shell: bash
         run: |
           set -euo pipefail
           cd golang-go
-          if ! ./bin/go test -short runtime isolate internal/isolatebridge internal/isolatepolicy go/build internal/trace context time sync iter reflect internal/runtime/maps math/rand math/rand/v2 > "$POC_LOG_DIR/runtime.log" 2>&1; then
+          if ! ./bin/go test -short runtime isolate internal/isolatebridge internal/isolatepolicy go/build internal/trace context time sync iter reflect internal/runtime/maps math math/rand math/rand/v2 > "$POC_LOG_DIR/runtime.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/runtime.log"
             exit 1
           fi

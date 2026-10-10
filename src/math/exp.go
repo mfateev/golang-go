@@ -14,6 +14,9 @@ package math
 // Very large values overflow to 0 or +Inf.
 // Very small values underflow to 1.
 func Exp(x float64) float64 {
+	if isolateDeterministic() {
+		return isolateExp(x)
+	}
 	if haveArchExp {
 		return archExp(x)
 	}

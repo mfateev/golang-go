@@ -79,6 +79,9 @@ package math
 //	Log(x < 0) = NaN
 //	Log(NaN) = NaN
 func Log(x float64) float64 {
+	if isolateDeterministic() {
+		return isolateLog(x)
+	}
 	if haveArchLog {
 		return archLog(x)
 	}

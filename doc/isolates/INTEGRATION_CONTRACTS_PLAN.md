@@ -102,3 +102,14 @@ reproduced identical hashes at GOMAXPROCS 1/8: old history
 `d32ba831efe3a3dd81f88fe400fcec9f1ebdf2be4806ada5f5527ac1d0d065b3`,
 new history `98b8eb58a444fd2a202e61ce967b43984b19e28a59d610a9e04e17e45e31c072`.
 Native Linux/macOS arm64/amd64 validation runs after publishing these changes.
+
+### Native follow-up (2026-10-10)
+
+The SDK fork's standard-Go binding CI passed. All four native platforms passed
+bootstrap and runtime/compiler conformance, but SDK checks exposed an amd64
+distribution-tail mismatch in the shared-stream history and synthetic test
+deadline failures. The histories remain unchanged. Deterministic `math.Log`
+and `math.Exp` now specify the original arm64 IEEE fused evaluation order;
+65,536-input rounding checks and local saved-history replay pass. A native
+bit-pattern gate exercises normal and exponential distributions with hardware
+features enabled and disabled. Final native acceptance remains pending.
