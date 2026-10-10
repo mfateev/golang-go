@@ -85,7 +85,8 @@ this POC does not automatically migrate running workflows.
 
 ### Local checkpoint (2026-10-10, Linux arm64)
 
-Passed: standard-Go canonical SDK fork quality checks; custom-Go focused SDK
+Passed: full custom-toolchain bootstrap from standard Go 1.26.7; standard-Go
+canonical SDK fork quality checks; custom-Go focused SDK
 fork unit/race checks; standard-Go reset-aware child and typed-attribute
 integration checks with default and zero cache; custom runtime/library regression
 suite, metadata/descriptor tests and full isolate compiler script matrix; repeated

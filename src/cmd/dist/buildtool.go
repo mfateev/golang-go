@@ -147,6 +147,7 @@ var bootstrapDirs = []string{
 	"internal/goroot",
 	"internal/gover",
 	"internal/goversion",
+	"internal/isolateabi",
 	"internal/isolatepolicy",
 	// internal/lazyregexp is provided by Go 1.17, which permits it to
 	// be imported by other packages in this list, but is not provided
