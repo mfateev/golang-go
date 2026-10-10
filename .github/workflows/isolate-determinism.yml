@@ -112,7 +112,7 @@ jobs:
         run: |
           set -euo pipefail
           cd sdk-go-poc
-          if ! ../golang-go/bin/go test ./... > "$POC_LOG_DIR/sdk.log" 2>&1; then
+          if ! ../golang-go/bin/go test -timeout=20m ./... > "$POC_LOG_DIR/sdk.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/sdk.log"
             exit 1
           fi
@@ -202,11 +202,8 @@ jobs:
               exit 1
             fi
             for procs in 1 2 8; do
-              args=()
-              if [[ "$probe" == tracing ]]; then
-                # Synthetic deadline includes cold ownership/race instrumentation.
-                args=(-task-timeout 30s)
-              fi
+              # Each synthetic task gets a budget for ownership/race instrumentation.
+              args=(-task-timeout 30s)
               if ! GOGC=1 GOMAXPROCS="$procs" "$RUNNER_TEMP/isolate-$probe-race" "${args[@]}" > "$POC_LOG_DIR/$probe-race-$procs.log" 2>&1; then
                 tail -n 100 "$POC_LOG_DIR/$probe-race-$procs.log"
                 exit 1
@@ -224,7 +221,7 @@ jobs:
             exit 1
           fi
           cd ../samples-go-poc
-          if ! ../golang-go/bin/go test ./... > "$POC_LOG_DIR/samples.log" 2>&1; then
+          if ! ../golang-go/bin/go test -timeout=20m ./... > "$POC_LOG_DIR/samples.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/samples.log"
             exit 1
           fi

@@ -629,6 +629,7 @@ func TestKillWakesSemaphoreWaiters(t *testing.T) {
 
 func TestKillRacesMutexUnlock(t *testing.T) {
 	entered := make(chan struct{})
+	unlockerStarted := make(chan struct{})
 	var release atomic.Bool
 	program := Program{entry: isolatebridge.ProgramEntry{
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
@@ -641,6 +642,7 @@ func TestKillRacesMutexUnlock(t *testing.T) {
 				mu.Unlock()
 			}()
 			go func() {
+				close(unlockerStarted)
 				for !release.Load() {
 				}
 				mu.Unlock()
@@ -652,10 +654,21 @@ func TestKillRacesMutexUnlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		release.Store(true)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := i.Kill(ctx); err != nil {
+			t.Errorf("cleanup after Mutex.Unlock race: %v", err)
+		}
+	})
 	if err := i.Start(); err != nil {
 		t.Fatal(err)
 	}
 	<-entered
+	// Running==1 can describe the root before it has created the unlocker.
+	// Establish that both children exist before waiting for the mutex park.
+	<-unlockerStarted
 	deadline := time.Now().Add(time.Second)
 	for i.boundary.RunningGoroutines() != 1 && time.Now().Before(deadline) {
 		runtime.Gosched()

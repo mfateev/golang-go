@@ -122,9 +122,16 @@ Local full math/rand suites, repeated bit-pattern race tests, exact rational
 float32 checks, and unchanged-history upgrade/rollback replay pass after these
 changes. A later cold full SDK run reached the integration fixtures' shared
 three-minute build/execution limits; samples passed. Separating fixture budgets
-is awaiting feedback, and no deadline has been relaxed.
+was approved and has now been implemented: compiled SDK fixtures get separate
+10-minute build and fresh 2-minute process budgets; synthetic interceptor/tracing/
+metadata tasks get 30 seconds; the CI package timeout is 20 minutes. Dedicated
+deadline-enforcement checks retain their short limits.
 
 Native run [38065454916](https://github.com/mfateev/golang-go/actions/runs/38065454916),
 compiler commit `6fa9249064`, passed the distribution-rounding gate on Linux
 amd64 and arm64 with CPU features enabled and disabled. Runtime/compiler and
-macOS checks are still running; this is not final acceptance of the full matrix.
+macOS rounding checks also passed. The full run failed on synthetic task/build
+deadlines, a mutex test setup race, and pending cleanup during legacy replay.
+The mutex test now waits for the unlocker to start before asserting the parked
+state; 200 race-enabled local repetitions pass. Cleanup remains a separate
+validation issue; fixture budgets do not alter worker cleanup policy.
