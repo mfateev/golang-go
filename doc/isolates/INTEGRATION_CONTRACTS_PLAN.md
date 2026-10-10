@@ -123,3 +123,8 @@ float32 checks, and unchanged-history upgrade/rollback replay pass after these
 changes. A later cold full SDK run reached the integration fixtures' shared
 three-minute build/execution limits; samples passed. Separating fixture budgets
 is awaiting feedback, and no deadline has been relaxed.
+
+Native run [38065454916](https://github.com/mfateev/golang-go/actions/runs/38065454916),
+compiler commit `6fa9249064`, passed the distribution-rounding gate on Linux
+amd64 and arm64 with CPU features enabled and disabled. Runtime/compiler and
+macOS checks are still running; this is not final acceptance of the full matrix.
