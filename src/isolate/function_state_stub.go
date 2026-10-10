@@ -11,6 +11,6 @@ import (
 	"internal/isolatebridge"
 )
 
-func newSupportedState(a, b isolatebridge.FunctionEntry) (func(func()), error) {
+func newSupportedState(entries ...isolatebridge.FunctionEntry) (func(func()), error) {
 	return nil, errors.New("isolate: support functions require a compiler-generated isolate build")
 }

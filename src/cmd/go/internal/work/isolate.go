@@ -21,6 +21,7 @@ import (
 	"cmd/go/internal/load"
 	"cmd/go/internal/modload"
 	"cmd/internal/isolatepolicy"
+	"cmd/internal/objabi"
 )
 
 type isolateDirsFlag []string
@@ -234,7 +235,7 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 	// exact reviewed metadata methods may enter a process service. The converter
 	// package itself replays its error values and default objects per instance.
 	processConverter := make(map[string]bool)
-	// Activities and SDK-compatible option/error types may live beside marked
+	// Activities and SDK-compatible option/error/interceptor types may live beside marked
 	// workflow functions. Their SDK imports reach host logging and worker
 	// services that must initialize only in the
 	// process. Keep this pinned SDK graph process-owned too; activity functions
@@ -247,7 +248,7 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 			switch p.ImportPath {
 			case "go.temporal.io/sdk/converter":
 				processGraph = processConverter
-			case "go.temporal.io/sdk/activity", "go.temporal.io/sdk/temporal", "go.temporal.io/sdk/workflow":
+			case "go.opentelemetry.io/otel/trace", "go.temporal.io/sdk/activity", "go.temporal.io/sdk/temporal", "go.temporal.io/sdk/workflow", "go.temporal.io/sdk/client", "go.temporal.io/sdk/interceptor", "go.temporal.io/sdk/interceptor/tracing":
 				processGraph = processActivity
 			default:
 				continue
@@ -268,7 +269,7 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 			allReachable[p.ImportPath] = p
 			// UUID's reader and optional byte pool must be private when workflows
 			// use it too. Ordinary ownership/effect checks still apply to its code.
-			if (processConverter[p.ImportPath] || processActivity[p.ImportPath]) && p.ImportPath != "go.temporal.io/sdk/converter" && p.ImportPath != "github.com/google/uuid" {
+			if (processConverter[p.ImportPath] || processActivity[p.ImportPath]) && p.ImportPath != "go.temporal.io/sdk/converter" && p.ImportPath != "github.com/google/uuid" && !isolateOwnedObservabilityPackage(p.ImportPath) {
 				continue
 			}
 			if p.Standard {
@@ -292,8 +293,15 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 			{isolatepolicy.ProtobufModule, isolatepolicy.ProtobufVersion},
 			{isolatepolicy.TemporalAPIModule, isolatepolicy.TemporalAPIVersion},
 			{isolatepolicy.TemporalSDKModule, isolatepolicy.TemporalSDKVersion},
+			{isolatepolicy.OTelTraceModule, isolatepolicy.OTelVersion},
 		} {
 			if p.ImportPath != trusted.path && !strings.HasPrefix(p.ImportPath, trusted.path+"/") {
+				continue
+			}
+			// SDK contrib integrations are separate modules and have no entries
+			// in the compiler service manifest. Their ordinary instrumented
+			// code never inherits the parent SDK's metadata privileges.
+			if trusted.path == isolatepolicy.TemporalSDKModule && strings.HasPrefix(p.ImportPath, trusted.path+"/contrib/") {
 				continue
 			}
 			if p.Module == nil || p.Module.Path != trusted.path || p.Module.Version != trusted.version || p.Module.Replace != nil || cfg.BuildMod == "vendor" {
@@ -361,23 +369,23 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 		}
 	}
 	source.WriteString(")\n")
-	fmt.Fprintf(&source, "//go:linkname isolateHostMain %s.main\n", host.ImportPath)
+	fmt.Fprintf(&source, "//go:linkname isolateHostMain %s.main\n", objabi.PathToPrefix(host.ImportPath))
 	source.WriteString("func isolateHostMain()\n")
 	if len(functions) == 0 {
 		for i, p := range loaded {
-			fmt.Fprintf(&source, "//go:linkname isolateProgramMain%d %s.main\n", i, p.ImportPath)
+			fmt.Fprintf(&source, "//go:linkname isolateProgramMain%d %s.main\n", i, objabi.PathToPrefix(p.ImportPath))
 			fmt.Fprintf(&source, "func isolateProgramMain%d()\n", i)
 		}
 	} else {
 		for i, fn := range functions {
-			fmt.Fprintf(&source, "//go:linkname isolateFunctionValue%d %s.%s\nfunc isolateFunctionValue%d() any\n", i, fn.Package.ImportPath, fn.valueName(), i)
-			fmt.Fprintf(&source, "//go:linkname isolateFunctionInvoke%d %s.%s\nfunc isolateFunctionInvoke%d(decode, encode func(...isolatebridge.Value) error) error\n", i, fn.Package.ImportPath, fn.invokeName(), i)
+			fmt.Fprintf(&source, "//go:linkname isolateFunctionValue%d %s.%s\nfunc isolateFunctionValue%d() any\n", i, objabi.PathToPrefix(fn.Package.ImportPath), fn.valueName(), i)
+			fmt.Fprintf(&source, "//go:linkname isolateFunctionInvoke%d %s.%s\nfunc isolateFunctionInvoke%d(decode, encode func(...isolatebridge.Value) error) error\n", i, objabi.PathToPrefix(fn.Package.ImportPath), fn.invokeName(), i)
 		}
 	}
 	descriptorIndex := make(map[string]int, len(selectedPaths))
 	for i, path := range selectedPaths {
 		descriptorIndex[path] = i
-		fmt.Fprintf(&source, "//go:linkname isolatePackageDescriptor%d %s.isolatePackageDescriptor\n", i, path)
+		fmt.Fprintf(&source, "//go:linkname isolatePackageDescriptor%d %s.isolatePackageDescriptor\n", i, objabi.PathToPrefix(path))
 		fmt.Fprintf(&source, "var isolatePackageDescriptor%d byte\n", i)
 	}
 	for i, paths := range programPaths {
@@ -390,7 +398,7 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 		for _, path := range paths {
 			// UUID caches its Reader and optionally a mutable random-byte pool.
 			// Read-only handlers need a fresh layout, just like standard caches.
-			if isolateOwnedStandardPackages[path] || path == "github.com/google/uuid" {
+			if isolateOwnedStandardPackages[path] || path == "github.com/google/uuid" || isolateOwnedObservabilityPackage(path) {
 				fmt.Fprintf(&source, "unsafe.Pointer(&isolatePackageDescriptor%d),\n", descriptorIndex[path])
 			}
 		}
@@ -538,6 +546,18 @@ func isolateTrustedRuntimePackage(path string) bool {
 		"internal/abi", "internal/goarch", "internal/goos", "internal/cpu", "internal/bytealg",
 		"internal/race", "internal/asan", "internal/msan", "internal/coverage/rtcov",
 		"internal/isolatebridge", "internal/isolateproto", "internal/isolatepolicy", "isolate":
+		return true
+	}
+	return false
+}
+
+// OTel API attribute encoders and header parsing caches are private, including
+// scratch copies for read-only handlers. The trace API initializes an automatic
+// tracer from process environment; keep that startup on the host. Native sink
+// providers use only its value/context API, never the automatic/global provider.
+func isolateOwnedObservabilityPackage(path string) bool {
+	switch path {
+	case "go.opentelemetry.io/otel/attribute", "go.opentelemetry.io/otel/attribute/internal", "go.opentelemetry.io/otel/baggage", "go.opentelemetry.io/otel/internal/baggage", "go.opentelemetry.io/otel/propagation":
 		return true
 	}
 	return false

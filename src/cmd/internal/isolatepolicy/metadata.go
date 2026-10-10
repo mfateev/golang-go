@@ -17,6 +17,9 @@ const TemporalAPIVersion = "v1.63.6"
 const TemporalSDKModule = "go.temporal.io/sdk"
 const TemporalSDKVersion = "v1.49.0"
 
+const OTelTraceModule = "go.opentelemetry.io/otel/trace"
+const OTelVersion = "v1.44.0"
+
 // MetadataScope identifies functions that only construct/cache type descriptions
 // or read the built-in registries. Marshal/unmarshal, value allocation, and
 // application callbacks are deliberately absent. Private or custom descriptor
@@ -80,6 +83,12 @@ func RejectedMetadata(pkg, function string) bool {
 // Only reads of the cell itself are allowed. This grants no read of arbitrary
 // receiver fields, mutation, array resizing, or private-reference publication.
 func MetadataGlobal(symbol string) bool {
+	// These unexported arrays are fixed zero ID sentinels in the pinned OTel
+	// trace API. Reading their bytes exposes no heap object or mutable provider.
+	if symbol == OTelTraceModule+".nilTraceID" || symbol == OTelTraceModule+".nilSpanID" {
+		return true
+	}
+
 	// The default failure converter compares this startup-derived type name
 	// with reflect.Type.Name. Its backing bytes are immutable type metadata.
 	if symbol == TemporalSDKModule+"/internal.goErrType" {

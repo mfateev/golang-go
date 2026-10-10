@@ -6,6 +6,10 @@
 ! go build -mod=mod ./hostsdk
 stderr 'metadata services require go.temporal.io/sdk@v1.49.0 without a replacement'
 
+# OTel scalar ID sentinel reads require pinned, unreplaced trace API sources.
+! go build -mod=mod ./hostotel
+stderr 'metadata services require go.opentelemetry.io/otel/trace@v1.44.0 without a replacement'
+
 # Local replacements cannot impersonate an audited metadata implementation.
 ! go build -mod=mod ./host
 stderr 'metadata services require google.golang.org/protobuf@v1.36.11 without a replacement, nested module, or vendored source'
@@ -37,6 +41,8 @@ go 1.26
 
 require google.golang.org/protobuf v1.36.11
 require go.temporal.io/sdk v1.49.0
+require go.opentelemetry.io/otel/trace v1.44.0
+replace go.opentelemetry.io/otel/trace => ./otelfake
 replace google.golang.org/protobuf => ./fake
 replace go.temporal.io/sdk => ./sdkfake
 -- vendor.go.mod --
@@ -117,3 +123,18 @@ import (
  "go.temporal.io/sdk/probe"
 )
 func main() { pure.Work(); probe.Value() }
+
+-- otelfake/go.mod --
+module go.opentelemetry.io/otel/trace
+
+go 1.26
+-- otelfake/trace.go --
+package trace
+func Value() int { return 1 }
+-- hostotel/main.go --
+package main
+import (
+ "example.org/isolateMetadata/pure"
+ "go.opentelemetry.io/otel/trace"
+)
+func main() { pure.Work(); trace.Value() }

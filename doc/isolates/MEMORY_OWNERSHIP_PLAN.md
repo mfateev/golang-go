@@ -120,6 +120,12 @@ The service manifest consists of:
   vendored, nested-module and unaudited-version sources are rejected throughout
   the compiled graph, including host-only implementations reachable from
   registries.
+- OpenTelemetry `go.opentelemetry.io/otel/trace@v1.44.0`: reads of the two
+  unexported fixed zero-ID arrays only. Global providers and automatic tracer
+  initialization remain process-owned; application provider objects remain
+  private. Attribute/baggage/propagation package caches receive private layouts,
+  including fresh read-only scratch layouts. No exporter/service privilege is
+  granted. SDK contrib modules do not inherit the parent SDK's service manifest.
 - Exact process metadata handle cells, fixed CPU feature records, SHA-256
   backend-selection scalar reads and its fixed round table, and a proven
   immutable prefix of canonical protobuf `MessageInfo` records. This does not

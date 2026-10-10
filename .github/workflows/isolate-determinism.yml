@@ -180,6 +180,29 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/api-race.log"
             exit 1
           fi
+          for probe in interceptors tracing; do
+            if ! ../golang-go/bin/go build -race "${ownership_gcflags[@]}" -o "$RUNNER_TEMP/isolate-$probe-race" ./example/$probe/check > "$POC_LOG_DIR/$probe-race-build.log" 2>&1; then
+              tail -n 100 "$POC_LOG_DIR/$probe-race-build.log"
+              exit 1
+            fi
+            for procs in 1 2 8; do
+              args=()
+              if [[ "$probe" == tracing ]]; then
+                # Synthetic deadline includes cold ownership/race instrumentation.
+                args=(-task-timeout 30s)
+              fi
+              if ! GOGC=1 GOMAXPROCS="$procs" "$RUNNER_TEMP/isolate-$probe-race" "${args[@]}" > "$POC_LOG_DIR/$probe-race-$procs.log" 2>&1; then
+                tail -n 100 "$POC_LOG_DIR/$probe-race-$procs.log"
+                exit 1
+              fi
+            done
+          done
+          for adapter in v1 v2 datadog; do
+            if ! GOGC=1 "$RUNNER_TEMP/isolate-tracing-race" -history ./example/tracing/testdata/$adapter.json > "$POC_LOG_DIR/tracing-replay-race-$adapter.log" 2>&1; then
+              tail -n 100 "$POC_LOG_DIR/tracing-replay-race-$adapter.log"
+              exit 1
+            fi
+          done
           if ! ../golang-go/bin/go build "${ownership_gcflags[@]}" -o "$RUNNER_TEMP/isolate-replay" ./example/determinism/check > "$POC_LOG_DIR/replay-build.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/replay-build.log"
             exit 1

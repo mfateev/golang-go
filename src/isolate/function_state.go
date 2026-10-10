@@ -12,9 +12,7 @@ import (
 	"unsafe"
 )
 
-func newSupportedState(a, b isolatebridge.FunctionEntry) (func(func()), error) {
-	packages, libraries := a.StateDescriptors()
-	extraPackages, extraLibraries := b.StateDescriptors()
+func newSupportedState(entries ...isolatebridge.FunctionEntry) (func(func()), error) {
 	// Descriptors are immutable linker metadata. Duplicate dependencies retain
 	// one layout and one initializer, even when reached by both entry points.
 	union := func(a, b []unsafe.Pointer) []unsafe.Pointer {
@@ -30,7 +28,12 @@ func newSupportedState(a, b isolatebridge.FunctionEntry) (func(func()), error) {
 		}
 		return result
 	}
-	state, err := isolateproto.NewPackageInstance(union(packages, extraPackages), union(libraries, extraLibraries))
+	var packages, libraries []unsafe.Pointer
+	for _, entry := range entries {
+		extraPackages, extraLibraries := entry.StateDescriptors()
+		packages, libraries = union(packages, extraPackages), union(libraries, extraLibraries)
+	}
+	state, err := isolateproto.NewPackageInstance(packages, libraries)
 	if err != nil {
 		return nil, err
 	}

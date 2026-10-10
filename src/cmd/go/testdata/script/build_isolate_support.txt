@@ -11,19 +11,19 @@ stdout 'support state independent'
 module example.org/isolatesupport
 
 go 1.26
--- shared/shared.go --
+-- shared/v1.2.0/shared.go --
 package shared
 var Counter int
 func init() { Counter++ }
--- support/support.go --
+-- support/v1.2.0/support.go --
 package support
-import "example.org/isolatesupport/shared"
+import "example.org/isolatesupport/shared/v1.2.0"
 var Count = 10
 //go:isolate
 func Factory() (int,error) { Count++; shared.Counter++; return Count+shared.Counter,nil }
 -- entry/entry.go --
 package entry
-import "example.org/isolatesupport/shared"
+import "example.org/isolatesupport/shared/v1.2.0"
 var Count = 1
 //go:isolate
 func Work(input int) (int,error) { Count++; shared.Counter++; return input+Count+shared.Counter,nil }
@@ -35,23 +35,25 @@ import (
  "isolate"
  "time"
  "example.org/isolatesupport/entry"
- "example.org/isolatesupport/support"
- "example.org/isolatesupport/shared"
+ "example.org/isolatesupport/support/v1.2.0"
+ "example.org/isolatesupport/shared/v1.2.0"
 )
 func main() {
  h,ok:=isolate.LookupFunction(entry.Work); if !ok { panic("missing work") }
  factory,ok:=isolate.LookupFunction(support.Factory); if !ok { panic("missing factory") }
  if instance,err:=isolate.New(isolate.Config{Program:h.ProgramWithSupport(isolate.Handle{},func(isolate.Handle,isolate.Handle){})}); err==nil || instance!=nil { panic("empty support accepted") }
- for range 3 {
-  p:=h.ProgramWithSupport(factory,func(h,f isolate.Handle){
-   var input int
-   err:=f.Invoke(func(args ...isolate.Value)error{return nil},func(values ...isolate.Value)error{ input=values[0].Value.(int); return nil })
-   if err!=nil { panic(err) }
-   err=h.Invoke(func(args ...isolate.Value)error{ *args[0].Pointer.(*int)=input; return nil },func(values ...isolate.Value)error{
-    if values[0].Value.(int)!=18 { panic("support or shared state leaked") }
-    _,err:=isolate.Call(1,nil); return err
-   }); if err!=nil { panic(err) }
-  })
+ if instance,err:=isolate.New(isolate.Config{Program:h.ProgramWithSupports([]isolate.Handle{{}},func(isolate.Handle,[]isolate.Handle){})}); err==nil || instance!=nil { panic("empty supports accepted") }
+ for pass:=0;pass<6;pass++ {
+  p:=h.ProgramWithSupport(factory,dispatch)
+  if pass>=3 {
+   supports:=[]isolate.Handle{factory,factory,h}
+   p=h.ProgramWithSupports(supports,func(h isolate.Handle,private []isolate.Handle){
+    if len(private)!=3 || private[0].Name()!=private[1].Name() || private[2].Name()!=h.Name() { panic("support order or snapshot changed") }
+    private[0]=isolate.Handle{} // The dispatcher receives writable private storage.
+    dispatch(h,private[1])
+   })
+   supports[0]=isolate.Handle{} // Caller mutation must not change the program.
+  }
   i,err:=isolate.New(isolate.Config{Program:p}); if err!=nil { panic(err) }
   if err=i.Start(); err!=nil { panic(err) }
   select { case command:=<-i.Commands(): command.Reply(nil,nil); case <-i.Done(): panic(i.Wait()) }
@@ -61,3 +63,12 @@ func main() {
  if entry.Count!=1 || support.Count!=10 || shared.Counter!=1 { panic("host state changed") }
  fmt.Println("support state independent")
 }
+func dispatch(h,f isolate.Handle){
+   var input int
+   err:=f.Invoke(func(args ...isolate.Value)error{return nil},func(values ...isolate.Value)error{ input=values[0].Value.(int); return nil })
+   if err!=nil { panic(err) }
+   err=h.Invoke(func(args ...isolate.Value)error{ *args[0].Pointer.(*int)=input; return nil },func(values ...isolate.Value)error{
+    if values[0].Value.(int)!=18 { panic("support or shared state leaked") }
+    _,err:=isolate.Call(1,nil); return err
+   }); if err!=nil { panic(err) }
+  }

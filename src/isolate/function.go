@@ -82,3 +82,33 @@ func (h Handle) ProgramWithSupport(support Handle, dispatch func(Handle, Handle)
 		NewState: func() (func(func()), error) { return newSupportedState(h.entry, support.entry) },
 	}}
 }
+
+// ProgramWithSupports joins marked support factories with this function's
+// package state. It snapshots the handle list and supplies an isolate-owned
+// copy to dispatch. Only immutable compiler metadata is transferred; factory
+// configuration and application values must still cross as copied bytes.
+// Shared dependencies initialize once. Support order is preserved.
+//
+//go:noinline
+func (h Handle) ProgramWithSupports(supports []Handle, dispatch func(Handle, []Handle)) Program {
+	if dispatch == nil || h.entry.StateDescriptors == nil {
+		return Program{}
+	}
+	supports = append([]Handle(nil), supports...)
+	entries := make([]isolatebridge.FunctionEntry, 1, len(supports)+1)
+	entries[0] = h.entry
+	for _, support := range supports {
+		if support.entry.StateDescriptors == nil {
+			return Program{}
+		}
+		entries = append(entries, support.entry)
+	}
+	return Program{name: h.Name(), entry: isolatebridge.ProgramEntry{
+		Main: func() {
+			// This trusted wrapper allocates under the current isolate owner.
+			private := append([]Handle(nil), supports...)
+			dispatch(h, private)
+		},
+		NewState: func() (func(func()), error) { return newSupportedState(entries...) },
+	}}
+}

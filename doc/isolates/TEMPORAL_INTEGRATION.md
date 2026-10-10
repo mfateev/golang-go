@@ -62,7 +62,7 @@ does not establish native platform completion.
 
 ## Explicit POC exclusions
 
-- Arbitrary protobuf values, custom headers/context propagation, custom failure
+- Arbitrary protobuf values, arbitrary worker context propagators, custom failure
   converter implementations and per-operation value-serializer contexts remain
   deferred. Batch codecs that change payload count are not supported.
 - Nonempty child typed search attributes are rejected explicitly. Their pinned
@@ -97,10 +97,21 @@ Printing/standard logging use worker-configured replay-aware one-way Writes,
 without host acknowledgments. Startup, task/query dispatch and termination drain
 copied records; logging handler panics remain host diagnostics. Delivery is best
 effort under the runtime's bounded queue and payload limits.
-SDK logger/metrics interfaces and tracing remain feature 10 work. The SDK's
-`API_COVERAGE_PLAN.md` proposes copied one-way sink messages with replay suppression
-and bounded best-effort delivery, following TypeScript's sinks model. Host sink
-objects never enter an isolate and sink outcomes must not affect decisions.
+SDK-style logger/metrics interfaces and native workflow interception now use
+copied one-way sink messages with replay suppression and bounded best-effort
+delivery. Private OpenTelemetry v1/v2 and Datadog adapters construct spans inside
+isolates; host exporters retain exact IDs and parent links. Observations bypass
+DataConverter/codecs. OpenTracing needs a backend choice for exact ID support.
+See the SDK's `INTERCEPTORS.md` for configuration, supported hooks and limitations.
+Host sink objects never enter an isolate and sink outcomes cannot affect decisions.
+
+Marked interceptor and converter factories compose through
+`isolate.Handle.ProgramWithSupports`. Their state layouts are joined with the
+workflow's layout, deduplicating shared package initializers. Only compiler
+metadata and copied configuration bytes cross the boundary. Queries and update
+validators construct fresh scratch-owned interceptor chains, preserving cached
+workflow state. Inbound/outbound headers retain opaque serialized Payloads;
+application converters never decode tracing carriers.
 
 ## Worker-configured serialization (feature 8)
 
