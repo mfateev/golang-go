@@ -15,7 +15,7 @@ Temporal operations. Ordinary host code and activities keep their Go behavior.
 | Environment and configuration files | Reject reads and mutations; pass configuration in workflow input. |
 | Files, networking, subprocesses, process control | Reject before the effect occurs. Pure parsing, formatting and instance-local buffers remain available. |
 | Time and timers | Use the supported history-clock and durable-timer implementations. Explicit time-zone data remains available; machine time-zone loading is rejected. |
-| Randomness | Keep supported deterministic PRNGs; reject OS entropy and crypto/rand. |
+| Randomness | Replay-seeded crypto/rand Read/Reader/Int/Text and top-level math/rand share select's stream; reject direct OS/DRBG entropy and crypto/rand.Prime. Predictable output is unsuitable for secrets. |
 | Runtime configuration, profiling, GC observations | Reject operations exposing machine/collector state or changing the process. |
 | Finalizers, cleanup callbacks, weak/unique observations | Reject application entry points that introduce GC-dependent execution or results. Runtime-owned allocator cleanup remains internal. |
 | Unsafe, native code and aliases | Reject application escape paths; permit audited runtime/library implementations with verified source provenance. |

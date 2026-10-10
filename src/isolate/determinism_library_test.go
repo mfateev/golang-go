@@ -6,6 +6,7 @@ package isolate_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"internal/isolatebridge"
 	"iter"
 	"math/rand"
@@ -38,7 +39,9 @@ func TestDeterministicRandomStreams(t *testing.T) {
 		runtime.GOMAXPROCS(procs)
 		for repetition := 0; repetition < 4; repetition++ {
 			b := deterministicBoundary(t)
-			want := rand.New(rand.NewSource(1))
+			reader := randv2.NewChaCha8([32]byte{})
+			source := &randomByteSource{reader}
+			want := rand.New(source)
 			// A group retains its generator and Read remainder between entries.
 			for _, size := range []int{1, 8, 2, 17, 3} {
 				rand.Seed(int64(size + repetition))
@@ -63,15 +66,20 @@ func TestDeterministicRandomStreams(t *testing.T) {
 				runtime.GC()
 			}
 			b.Run(func() {
-				for _, expected := range []uint64{0xe220a8397b1dcdaf, 0x6e789e6aa1b965f4, 0x06c45d188009454f} {
-					// Neither select polling nor legacy rand advances rand/v2.
-					_ = rand.Int63()
+				for range 3 {
+					// All top-level random APIs and select consume one stream.
+					if got, expected := rand.Int63(), want.Int63(); got != expected {
+						t.Fatalf("Int63=%x want %x", got, expected)
+					}
 					closed := make(chan struct{})
 					close(closed)
 					select {
 					case <-closed:
 					case <-closed:
 					}
+					var selectBytes [16]byte
+					_, _ = reader.Read(selectBytes[:]) // Two shuffle draws, including n=1.
+					expected := source.Uint64()
 					if got := randv2.Uint64(); got != expected {
 						t.Fatalf("rand/v2=%x, want %x", got, expected)
 					}
@@ -558,3 +566,15 @@ func TestDeterministicPullGoexit(t *testing.T) {
 		t.Fatal("iterator Goexit returned from next")
 	}
 }
+
+// Source64 facade for the shared byte stream, preserving Go's math/rand
+// distribution and Read algorithms while drawing from the seeded reader.
+type randomByteSource struct{ reader *randv2.ChaCha8 }
+
+func (s *randomByteSource) Uint64() uint64 {
+	var b [8]byte
+	_, _ = s.reader.Read(b[:])
+	return binary.LittleEndian.Uint64(b[:])
+}
+func (s *randomByteSource) Int63() int64 { return int64(s.Uint64() & ((1 << 63) - 1)) }
+func (*randomByteSource) Seed(int64)     { panic("unexpected seed") }

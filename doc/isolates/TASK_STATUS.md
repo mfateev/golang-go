@@ -335,8 +335,10 @@ ordinary-Go execution remains unproved.**
 - [x] Provisional `runtime/trace` guards reject process trace and flight
       recorder controls. Isolate annotations are inert while preserving
       `WithRegion`'s function call; the host trace stays active
-- [x] Provisional entropy guards reject public `crypto/rand.Read`, its
-      default `Reader`, internal DRBG reads, and OS entropy reads. A direct
+- [x] Deterministic isolates route public `crypto/rand.Read`, its default
+      `Reader`, `Int` and `Text` through the replay-seeded stream shared with
+      select and top-level math/rand. Concurrent-mode isolates still reject
+      entropy; direct internal DRBG and OS entropy reads remain forbidden. A direct
       DRBG-backed ML-KEM path is covered; other cryptographic setup effects
       still need audit. `runtime/metrics.Read` rejects process metrics
 - [x] `runtime/metrics.All` copies static descriptions for an active isolate,

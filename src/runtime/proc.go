@@ -4651,9 +4651,8 @@ func gdestroy(gp *g) {
 	gp.labels = nil
 	gp.isolateE4Base = nil
 	gp.isolateE4Bases = nil
-	gp.isolateReadOnlySelectSeq = 0
-	gp.isolateReadOnlyRandSeq = 0
 	gp.isolateReadOnlyRandLegacy = nil
+	gp.isolateReadOnlyRandom = nil
 	gp.isolateReadOnlyOwner = 0
 	gp.isolateMetadataOwner = 0
 	gp.isolateReadOnlyService = false
@@ -5559,9 +5558,8 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	newg.runningCleanups.Store(false)
 	newg.isolateE4Base = nil
 	newg.isolateE4Bases = nil
-	newg.isolateReadOnlySelectSeq = 0
-	newg.isolateReadOnlyRandSeq = 0
 	newg.isolateReadOnlyRandLegacy = nil
+	newg.isolateReadOnlyRandom = nil
 	newg.isolateReadOnlyOwner = 0
 	newg.isolateMetadataOwner = 0
 	newg.isolateReadOnlyService = false

@@ -8,7 +8,7 @@ Legacy runtime probes can retain ordinary dispatch for their revocation tests.
 ## Contracts
 
 - Native and reflected `select` use an isolate-local, reproducible shuffle of
-  ready-case polling order. Every instance starts the same sequence. It is
+  ready-case polling order. Instances with the same RandomSeed start the same sequence. It is
   independent of process random state, OS threads, and isolate IDs. Deterministic
   readiness still requires the dispatch phase below.
 - Native map range and reflection iterate an ascending snapshot of integer or
@@ -43,12 +43,18 @@ Legacy runtime probes can retain ordinary dispatch for their revocation tests.
   Their goroutines inherit ownership, yield through FIFO dispatch, participate
   in suspension, and can be discarded during revocation. Ordinary host
   iterators retain Go's direct coroutine switches.
-- Top-level `math/rand` uses an isolate-owned Go 1 generator seeded with 1,
-  including byte-read remainder. Top-level Seed is a no-op independently of
-  host GODEBUG. `math/rand/v2` uses its own SplitMix64 stream starting from
-  sequence zero. Neither stream consumes select or runtime hashing entropy;
-  suspension preserves state. Explicit seeded generators retain their Go API.
-  These fixed default streams are for replay, never security or unique IDs.
+- Top-level `math/rand`, `math/rand/v2`, `crypto/rand` and select use one
+  ChaCha8 byte stream, configured before initialization with RandomSeed.
+  math/rand preserves its distribution and byte-buffer APIs; top-level Seed
+  remains a no-op independently of host GODEBUG. Suspension preserves state;
+  explicit seeded generators retain their Go API. The Temporal adapter hashes
+  the original history run ID into the seed, while
+  independent host users default to a zero seed. Read-only services use scratch
+  state. The shared stream replaces the POC's earlier independent streams;
+  old observations are incompatible. It is predictable replay data, never
+  cryptographic entropy: secrets, security tokens and cryptographic key
+  generation belong on the host. Default crypto/rand.Reader, Read, Int and Text
+  are supported; Prime and direct DRBG access remain forbidden.
 - `sync.Pool` behaves as empty inside isolates: Put drops values and Get uses
   New or returns nil. GC cycles and P assignment cannot choose cached values.
 - Package initialization uses the same dispatch rules. Unsupported process I/O,

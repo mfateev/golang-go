@@ -34,8 +34,14 @@ func LookupProgram(name string) (Program, bool) {
 
 // Config selects one program.
 type Config struct {
-	Program        Program
-	Deterministic  bool       // FIFO native goroutines and deterministic select/map iteration.
+	Program       Program
+	Deterministic bool // FIFO native goroutines and deterministic select/map iteration.
+	// RandomSeed seeds select and top-level math/rand, math/rand/v2 and
+	// crypto/rand before initialization.
+	// The same seed replays the same bytes. Zero is a fixed default; supply a
+	// distinct, replay-stable seed per execution when generating IDs. These
+	// bytes are predictable and must never be used for cryptographic secrets.
+	RandomSeed     [32]byte
 	InitialTime    *time.Time // Enables the host clock before package initialization.
 	TimerOp        uint32     // Call operation used for durable timer waits.
 	ResourceLimits ResourceLimits
@@ -195,6 +201,9 @@ func NewContext(ctx context.Context, cfg Config) (*Isolate, error) {
 	if cfg.Program.entry.Main == nil || cfg.Program.entry.NewState == nil {
 		return nil, errors.New("isolate: unknown program")
 	}
+	if !cfg.Deterministic && cfg.RandomSeed != [32]byte{} {
+		return nil, errors.New("isolate: random seed requires deterministic mode")
+	}
 	boundary := isolatebridge.New()
 	if err := boundary.ConfigureResources(cfg.ResourceLimits.MaxMemoryBytes, cfg.ResourceLimits.MaxGoroutines); err != nil {
 		return nil, err
@@ -204,6 +213,9 @@ func NewContext(ctx context.Context, cfg Config) (*Isolate, error) {
 	}
 	if cfg.Deterministic {
 		if err := boundary.EnableDeterminism(); err != nil {
+			return nil, err
+		}
+		if err := boundary.ConfigureRandom(cfg.RandomSeed); err != nil {
 			return nil, err
 		}
 	}

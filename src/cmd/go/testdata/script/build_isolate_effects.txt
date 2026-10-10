@@ -148,6 +148,7 @@ func main() {
  now := time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)
  for _, deterministic := range []bool{false, true} {
   for _, mode := range []string{"nested", "environment", "file", "network", "entropy", "gc", "zone", "weak", "unsafe", "native", "alias", "reflect", "reflect-unsafe", "go", "defer", "log"} {
+   if deterministic && mode == "entropy" { continue } // Covered by deterministic random replay tests.
    var logs []isolate.LogRecord
    i, err := isolate.New(isolate.Config{Program: program, Deterministic: deterministic, InitialTime: &now, TimerOp: 10, LogHandler: func(r isolate.LogRecord) { logs = append(logs, r) }})
    if err != nil { panic(fmt.Sprintf("new %s: %v", mode, err)) }

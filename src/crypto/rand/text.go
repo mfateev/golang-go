@@ -11,6 +11,8 @@ const base32alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
 // The result contains at least 128 bits of randomness, enough to prevent brute force
 // guessing attacks and to make the likelihood of collisions vanishingly small.
 // A future version may return longer texts as needed to maintain those properties.
+// In deterministic isolates, Text is predictable replay data and must not be
+// used for secrets, tokens, or passwords.
 func Text() string {
 	// ⌈log₃₂ 2¹²⁸⌉ = 26 chars
 	src := make([]byte, 26)

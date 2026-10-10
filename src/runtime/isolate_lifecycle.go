@@ -80,6 +80,7 @@ func isolateReleaseGroupAlloc(p unsafe.Pointer) {
 	group.alloc = nil
 	group.readOnlyAlloc = nil
 	group.randLegacy = nil // The lazily created application generator is private.
+	group.random = nil
 }
 
 // Panic diagnostics never invoke application Error or String methods. Such a

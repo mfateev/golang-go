@@ -4,6 +4,8 @@
 
 // Package rand implements a cryptographically secure
 // random number generator.
+// In this fork, deterministic isolates instead use a replay-seeded byte stream.
+// Its output is predictable and is not suitable for cryptographic secrets.
 package rand
 
 import (
@@ -20,6 +22,8 @@ import (
 
 // Reader is a global, shared instance of a cryptographically
 // secure random number generator. It is safe for concurrent use.
+// In deterministic isolates, the default Reader instead uses the host's public
+// replay seed. Its bytes are predictable and unsuitable for cryptographic secrets.
 //
 //   - On Linux, FreeBSD, Dragonfly, and Solaris, Reader uses getrandom(2).
 //   - On legacy Linux (< 3.17), Reader opens /dev/urandom on first use.
@@ -31,7 +35,7 @@ import (
 //
 // In FIPS 140-3 mode, the output passes through an SP 800-90A Rev. 1
 // Deterministric Random Bit Generator (DRBG).
-var Reader io.Reader = rand.Reader
+var Reader io.Reader = rand.DefaultReader()
 
 // fatal is [runtime.fatal], pushed via linkname.
 //
@@ -40,13 +44,20 @@ func fatal(string)
 
 // Read fills b with cryptographically secure random bytes. It never returns an
 // error, and always fills b entirely.
+// In deterministic isolates, the default Reader supplies predictable replay
+// bytes, not cryptographic entropy.
 //
 // Read calls [io.ReadFull] on [Reader] and crashes the program irrecoverably if
 // an error is returned. The default Reader uses operating system APIs that are
 // documented to never return an error on all but legacy Linux systems.
 func Read(b []byte) (n int, err error) {
 	if isolateActive() {
-		isolateRejectEffect("crypto/rand.Read")
+		if !isolateDeterministic() {
+			isolateRejectEffect("crypto/rand.Read")
+		}
+		if rand.IsDefaultReader(Reader) && isolateCryptoRandRead(b) {
+			return len(b), nil
+		}
 	}
 	// We don't want b to escape to the heap, but escape analysis can't see
 	// through a potentially overridden Reader, so we special-case the default

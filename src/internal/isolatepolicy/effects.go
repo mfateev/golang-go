@@ -46,7 +46,9 @@ func Forbidden(pkg, name string) bool {
 	case "net/http":
 		return name == "Get" || name == "Head" || name == "Post" || name == "PostForm" || prefix(name, "ListenAndServe") || prefix(name, "Serve") || prefix(name, "(*Client).") || prefix(name, "(*Transport).") || prefix(name, "(*Server).")
 	case "crypto/rand":
-		return name == "Read" || name == "Text" || name == "Int" || name == "Prime" || name == "(*reader).Read"
+		// Read/Reader/Text/Int use the deterministic stream in deterministic
+		// isolates. Key generation and direct DRBG/OS entropy stay forbidden.
+		return name == "Prime"
 	case "runtime":
 		switch name {
 		case "SetFinalizer", "AddCleanup", "GC", "ReadMemStats", "NumGoroutine", "NumCPU", "NumCgoCall", "GOMAXPROCS", "SetDefaultGOMAXPROCS", "MemProfile", "BlockProfile", "MutexProfile", "ThreadCreateProfile", "GoroutineProfile", "SetBlockProfileRate", "SetMutexProfileFraction", "SetCPUProfileRate", "CPUProfile", "Stack", "Breakpoint", "LockOSThread", "UnlockOSThread", "cgocall", "nanotime", "walltime", "time_now", "getRandomData":

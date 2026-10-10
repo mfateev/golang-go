@@ -19,6 +19,9 @@ import (
 // ignored unless GODEBUG=cryptocustomrand=1 is set. This setting will be removed
 // in a future Go release. Instead, use [testing/cryptotest.SetGlobalRandom].
 func Prime(r io.Reader, bits int) (*big.Int, error) {
+	if isolateActive() {
+		isolateRejectEffect("crypto/rand.Prime")
+	}
 	if fips140only.Enforced() {
 		return nil, errors.New("crypto/rand: use of Prime is not allowed in FIPS 140-only mode")
 	}

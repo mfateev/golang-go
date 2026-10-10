@@ -11,3 +11,10 @@ func isolateActive() bool
 
 //go:linkname isolateRejectEffect runtime.isolateRejectEffect
 func isolateRejectEffect(string)
+
+//go:linkname isolateDeterministic runtime.isolateDeterministic
+func isolateDeterministic() bool
+
+//go:linkname isolateCryptoRandRead runtime.isolateCryptoRandRead
+//go:noescape
+func isolateCryptoRandRead([]byte) bool

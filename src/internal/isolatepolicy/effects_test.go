@@ -16,7 +16,7 @@ func TestEffectManifest(t *testing.T) {
 		"golang.org/x/sys/unix.RawSyscall", "net.(*Dialer).DialContext",
 		"net/http.(*Client).Do", "runtime.AddCleanup[go.shape.*uint8,go.shape.int]",
 		"weak.Pointer[go.shape.struct { p *example.org/a/b.Value }].Value",
-		"unique.Make[go.shape.string]", "time.LoadLocation", "crypto/rand.Read",
+		"unique.Make[go.shape.string]", "time.LoadLocation", "crypto/rand.Prime",
 	} {
 		if !isolatepolicy.ForbiddenSymbol(name) {
 			t.Errorf("allowed forbidden symbol %s", name)
@@ -27,6 +27,7 @@ func TestEffectManifest(t *testing.T) {
 		"net.ParseIP", "net/url.Parse", "net/http.NewRequest", "time.FixedZone", "time.LoadLocationFromTZData",
 		"time.AfterFunc", "math/rand.Int", "flag.NewFlagSet", "flag.(*FlagSet).Parse", "bytes.(*Buffer).Write",
 		"example.org/jobs.Work", "runtime.mallocgc", "reflect.Value.Call",
+		"crypto/rand.Read", "crypto/rand.Text", "crypto/rand.Int",
 	} {
 		if isolatepolicy.ForbiddenSymbol(name) {
 			t.Errorf("denied supported symbol %s", name)

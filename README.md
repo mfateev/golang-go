@@ -3,6 +3,25 @@
 Go is an open source programming language that makes it easy to build simple,
 reliable, and efficient software.
 
+## Isolate fork
+
+This fork adds statically linked isolates with private package state and optional
+deterministic execution. With `isolate.Config.Deterministic`, native goroutines
+use FIFO dispatch, supported map keys iterate in canonical order, and `select`
+shares a replay-seeded ChaCha8 stream with top-level `math/rand`, `math/rand/v2`
+and `crypto/rand` APIs. Set `isolate.Config.RandomSeed` before initialization to
+provide a stable 32-byte execution seed; the default is all zeros. Read-only
+services use scratch random state and cannot advance workflow randomness.
+
+**Security:** `crypto/rand` inside deterministic isolates produces predictable
+replay data, not cryptographic entropy. Do not use it for encryption keys,
+passwords, authentication tokens, cryptographic secrets or encryption nonces
+that require freshness on replay. Identical seeds and call sequences repeat
+identical bytes. Use ordinary host code for security-sensitive randomness;
+host `crypto/rand` retains OS entropy. `crypto/rand.Prime` and cryptographic key
+generation remain unsupported inside isolates. This POC changes its previous
+random/select sequences; replay compatibility with those sequences is deferred.
+
 ![Gopher image](https://golang.org/doc/gopher/fiveyears.jpg)
 *Gopher image by [Renee French][rf], licensed under [Creative Commons 4.0 Attribution license][cc4-by].*
 

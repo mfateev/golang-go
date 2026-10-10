@@ -67,8 +67,10 @@ type isolateReportPackage struct {
 var isolateOwnedStandardPackages = map[string]bool{
 	"encoding/binary":                  true,
 	"math":                             true,
+	"math/big":                         true,
 	"math/rand":                        true,
 	"math/rand/v2":                     true,
+	"crypto/rand":                      true,
 	"regexp":                           true,
 	"regexp/syntax":                    true,
 	"unicode":                          true,
@@ -264,7 +266,9 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 			}
 			programReachable[i] = append(programReachable[i], p.ImportPath)
 			allReachable[p.ImportPath] = p
-			if (processConverter[p.ImportPath] || processActivity[p.ImportPath]) && p.ImportPath != "go.temporal.io/sdk/converter" {
+			// UUID's reader and optional byte pool must be private when workflows
+			// use it too. Ordinary ownership/effect checks still apply to its code.
+			if (processConverter[p.ImportPath] || processActivity[p.ImportPath]) && p.ImportPath != "go.temporal.io/sdk/converter" && p.ImportPath != "github.com/google/uuid" {
 				continue
 			}
 			if p.Standard {
@@ -384,7 +388,9 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 		}
 		source.WriteString("}, []unsafe.Pointer{\n")
 		for _, path := range paths {
-			if isolateOwnedStandardPackages[path] {
+			// UUID caches its Reader and optionally a mutable random-byte pool.
+			// Read-only handlers need a fresh layout, just like standard caches.
+			if isolateOwnedStandardPackages[path] || path == "github.com/google/uuid" {
 				fmt.Fprintf(&source, "unsafe.Pointer(&isolatePackageDescriptor%d),\n", descriptorIndex[path])
 			}
 		}

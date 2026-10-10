@@ -7,57 +7,40 @@ package runtime
 import "unsafe"
 
 // isolateSelectRandn preserves ordinary randomized host selects. Inside an
-// isolate, SplitMix64 supplies a fixed, architecture-independent sequence.
-// The sequence is not a security primitive. Dispatch serializes consumers;
-// the atomic also permits safe runtime inspection of the sequence.
+// isolate, the shared replay-seeded generator supplies the shuffle draws.
 func isolateSelectRandn(gp *g, n uint32) uint32 {
 	group := gp.isolateGroup
 	if group == nil || !group.deterministic {
 		return cheaprandn(n)
 	}
-	sequence := uint64(0)
+	value := uint64(0)
 	if gp.isolateCallSelectNext != 0 {
 		if gp.isolateCallSelectRemaining == 0 {
 			throw("isolate: unexpected select in Call transport")
 		}
-		sequence = gp.isolateCallSelectNext
+		value = gp.isolateCallSelectValues[gp.isolateCallSelectNext-1]
 		gp.isolateCallSelectNext++
 		gp.isolateCallSelectRemaining--
-	} else if gp.isolateReadOnlyService {
-		gp.isolateReadOnlySelectSeq++
-		sequence = gp.isolateReadOnlySelectSeq
 	} else {
-		sequence = group.selectSeq.Add(1)
+		value = isolateRandomUint64(gp)
 	}
-	return uint32(isolateMix64(sequence) % uint64(n))
+	return uint32(value % uint64(n))
 }
 
-func isolateMix64(sequence uint64) uint64 {
-	x := sequence * 0x9e3779b97f4a7c15
-	x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9
-	x = (x ^ (x >> 27)) * 0x94d049bb133111eb
-	x ^= x >> 31
-	return x
-}
-
-// These streams are workflow randomness, not runtime hash or scheduler entropy.
-// Keeping them separate ensures allocations, GC, and selects cannot consume
-// application random values. They are deliberately not cryptographic sources.
+// Top-level math/rand APIs share the replay stream with crypto/rand and select.
+// Its publicly reproducible seed does not provide cryptographic security.
 //
 //go:linkname isolateRand
 func isolateRand() uint64 {
-	group := getg().isolateGroup
+	gp := getg()
+	group := gp.isolateGroup
 	if group == nil || !group.deterministic {
 		return rand()
 	}
-	if gp := getg(); gp.isolateReadOnlyOwner != 0 {
-		gp.isolateReadOnlyRandSeq++
-		return isolateMix64(gp.isolateReadOnlyRandSeq)
-	}
-	return isolateMix64(group.randSeq.Add(1))
+	return isolateRandomUint64(gp)
 }
 
-// math/rand retains its Go 1 generator and byte-read remainder in an opaque,
+// math/rand retains its distribution facade and byte-read remainder in an opaque,
 // GC-visible pointer. FIFO dispatch serializes initialization and all consumers.
 // The pointer belongs to the group, so returning to it after suspension or a
 // second Run must preserve the stream rather than reseeding it.
@@ -109,12 +92,10 @@ func isolateCallSelectBegin() {
 	if gp.isolateCallSelectNext != 0 {
 		throw("isolate: nested Call transport")
 	}
-	if gp.isolateReadOnlyService {
-		gp.isolateReadOnlySelectSeq += 4
-		gp.isolateCallSelectNext = gp.isolateReadOnlySelectSeq - 3
-	} else {
-		gp.isolateCallSelectNext = gp.isolateGroup.selectSeq.Add(4) - 3
+	for i := range gp.isolateCallSelectValues {
+		gp.isolateCallSelectValues[i] = isolateRandomUint64(gp)
 	}
+	gp.isolateCallSelectNext = 1
 	gp.isolateCallSelectRemaining = 4
 }
 

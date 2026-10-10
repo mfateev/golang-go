@@ -352,7 +352,7 @@ func globalRand() *Rand {
 	return r
 }
 
-//go:linkname runtime_rand runtime.rand
+//go:linkname runtime_rand runtime.isolateRand
 func runtime_rand() uint64
 
 // runtimeSource is an implementation of Source64 that uses the runtime

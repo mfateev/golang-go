@@ -120,6 +120,18 @@ func resume(unsafe.Pointer)
 //go:linkname enableDeterminism runtime.isolateEnableDeterminism
 func enableDeterminism(unsafe.Pointer) bool
 
+// ConfigureRandom sets the deterministic byte-stream seed before any
+// initializer runs. An omitted seed is all zeros, suitable only for replay.
+func (b *Boundary) ConfigureRandom(seed [32]byte) error {
+	if !configureRandom(b.group, seed) {
+		return errors.New("isolate: random seed requires deterministic mode before initialization")
+	}
+	return nil
+}
+
+//go:linkname configureRandom runtime.isolateConfigureRandom
+func configureRandom(unsafe.Pointer, [32]byte) bool
+
 // ConfigureTime gives this boundary a host-controlled clock and a Call
 // operation for durable timers. It must run before program initialization.
 func (b *Boundary) ConfigureTime(unixNano int64, timerOp uint32) error {

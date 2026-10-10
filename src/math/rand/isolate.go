@@ -20,10 +20,10 @@ func isolateGlobalRand() (*Rand, bool) {
 	if p != nil {
 		return (*Rand)(p), true
 	}
-	// Each deterministic instance starts at seed 1, independently of the
-	// host generator, GODEBUG, and the runtime's hashing and select streams.
-	r := New(new(lockedSource))
-	r.Seed(1)
+	// The runtime source draws from the same replay-seeded stream as
+	// math/rand/v2, crypto/rand and select. Its Read mutex also protects Rand's
+	// byte remainder when native goroutines take turns through FIFO dispatch.
+	r := New(new(runtimeSource))
 	isolateSetRandLegacy(unsafe.Pointer(r))
 	return r, true
 }

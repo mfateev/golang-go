@@ -36,16 +36,16 @@ type isolateRevocationGroup struct {
 	exit             func(int)    // Trusted host callback, installed before instance execution.
 	ownershipHandler func(string) // Trusted process reporter, installed by the managed host.
 	ownershipFault   atomic.Pointer[isolateOwnershipFault]
-	wakeStarted      atomic.Uint32      // One waiter scan even when fault fencing precedes host notification.
-	clockSet         atomic.Bool        // Host-injected workflow time is available.
-	clockNS          atomic.Int64       // Unix nanoseconds; runtime scheduler time stays real.
-	timerSleep       func(int64) error  // Trusted durable-timer transport, installed before entry.
-	writeLog         func(byte, []byte) // Trusted copied-byte Call transport, installed before entry.
-	selectSeq        atomic.Uint64      // Reproducible select shuffle, independent of the M.
-	randSeq          atomic.Uint64      // math/rand/v2 stream, separate from select polling.
-	randLegacy       unsafe.Pointer     // Lazily created isolate-owned math/rand generator.
-	deterministic    bool               // Set before any group member is attached.
-	dispatchLock     mutex              // Leaf lock: only non-allocating queue/token operations.
+	wakeStarted      atomic.Uint32       // One waiter scan even when fault fencing precedes host notification.
+	clockSet         atomic.Bool         // Host-injected workflow time is available.
+	clockNS          atomic.Int64        // Unix nanoseconds; runtime scheduler time stays real.
+	timerSleep       func(int64) error   // Trusted durable-timer transport, installed before entry.
+	writeLog         func(byte, []byte)  // Trusted copied-byte Call transport, installed before entry.
+	randLegacy       unsafe.Pointer      // Lazily created isolate-owned math/rand generator.
+	randomSeed       [32]byte            // Host-supplied replay seed, set before initialization.
+	random           *isolateRandomState // Shared deterministic random stream.
+	deterministic    bool                // Set before any group member is attached.
+	dispatchLock     mutex               // Leaf lock: only non-allocating queue/token operations.
 	dispatchToken    guintptr
 	dispatchQueue    gQueue
 	dispatchJoining  int32 // Pending host-group admission, protected by dispatchLock.
@@ -613,11 +613,11 @@ type g struct {
 	isolateResourceRunStart    int64
 	isolateHeapReservation     uint64
 	isolateCallSelectNext      uint64 // Four poll draws reserved before a Call transport park.
+	isolateCallSelectValues    [4]uint64
 	isolateCallSelectRemaining uint32
 	isolateMetadataDepth       uint32 // Audited process metadata service nesting; never inherited.
-	isolateReadOnlySelectSeq   uint64
-	isolateReadOnlyRandSeq     uint64
 	isolateReadOnlyRandLegacy  unsafe.Pointer
+	isolateReadOnlyRandom      *isolateRandomState
 	isolateReadOnlyOwner       uintptr // Workflow memory may be borrowed for reads, never writes.
 	isolateMetadataOwner       uintptr // Original caller owner, including a read-only scratch owner.
 	isolateReadOnlyService     bool

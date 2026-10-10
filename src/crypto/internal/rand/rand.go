@@ -20,6 +20,9 @@ type defaultReader = drbg.DefaultReader
 type reader struct{ defaultReader }
 
 func (r reader) Read(b []byte) (n int, err error) {
+	if isolateCryptoRandRead(b) {
+		return len(b), nil
+	}
 	if isolateActive() {
 		isolateRejectEffect("crypto/rand.Reader")
 	}
@@ -39,6 +42,10 @@ func (r reader) Read(b []byte) (n int, err error) {
 // latter can be set by applications outside of tests. These applications then
 // risk breaking between Go releases, if the way the Reader is used changes.
 var Reader io.Reader = reader{}
+
+// DefaultReader returns the stateless default reader without borrowing a
+// process-owned mutable interface during isolate package initialization.
+func DefaultReader() io.Reader { return reader{} }
 
 // SetTestingReader overrides all calls to [drbg.Read]. The Read method of
 // r must never return an error or return short.
