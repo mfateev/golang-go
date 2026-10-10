@@ -37,7 +37,7 @@ func (h Handle) Signature() reflect.Type { return reflect.TypeOf(h.entry.Functio
 // package state factory. The dispatcher decodes bytes, invokes the function,
 // and reports completion using the SDK's own communication protocol.
 func (h Handle) Program(dispatch func()) Program {
-	return Program{name: h.Name(), entry: isolatebridge.ProgramEntry{Main: dispatch, NewState: h.entry.NewState}}
+	return Program{name: h.Name(), entry: isolatebridge.ProgramEntry{MetadataVersion: h.entry.MetadataVersion, Main: dispatch, NewState: h.entry.NewState}}
 }
 
 // ProgramWithHandle supplies a dispatcher with a copy of the compiler-created
@@ -77,7 +77,7 @@ func (h Handle) ProgramWithSupport(support Handle, dispatch func(Handle, Handle)
 	if dispatch == nil || h.entry.StateDescriptors == nil || support.entry.StateDescriptors == nil {
 		return Program{}
 	}
-	return Program{name: h.Name(), entry: isolatebridge.ProgramEntry{
+	return Program{name: h.Name(), entry: isolatebridge.ProgramEntry{MetadataVersion: h.entry.MetadataVersion,
 		Main:     func() { dispatch(h, support) },
 		NewState: func() (func(func()), error) { return newSupportedState(h.entry, support.entry) },
 	}}
@@ -103,7 +103,7 @@ func (h Handle) ProgramWithSupports(supports []Handle, dispatch func(Handle, []H
 		}
 		entries = append(entries, support.entry)
 	}
-	return Program{name: h.Name(), entry: isolatebridge.ProgramEntry{
+	return Program{name: h.Name(), entry: isolatebridge.ProgramEntry{MetadataVersion: h.entry.MetadataVersion,
 		Main: func() {
 			// This trusted wrapper allocates under the current isolate owner.
 			private := append([]Handle(nil), supports...)

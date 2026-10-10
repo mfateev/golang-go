@@ -86,8 +86,12 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/compiler-default.log"
             exit 1
           fi
-          if ! ./bin/go test cmd/go -run 'TestScript/build_isolate_(write|functions|support|programs|metadata|heap|fault|ownership|effects|lifecycle|resources|nilinterface|structeq|fork)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
+          if ! ./bin/go test cmd/internal/isolatepolicy cmd/go -run 'TestTemporalSDKSource|TestScript/build_isolate_(contract|write|functions|support|programs|metadata|heap|fault|ownership|effects|lifecycle|resources|nilinterface|structeq|fork)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/compiler.log"
+            exit 1
+          fi
+          if ! ./bin/go test -tags=phase0_e4 internal/isolateproto -run TestPackageMetadataVersionBeforeLayout -count=1 > "$POC_LOG_DIR/metadata-version.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/metadata-version.log"
             exit 1
           fi
           ./bin/go clean -cache
@@ -226,6 +230,13 @@ jobs:
               fi
             done
           done
+      - name: SDK upgrade and rollback replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd sdk-go-poc
+          export COMPATIBILITY_LOG_DIR="$POC_LOG_DIR/compatibility"
+          ./example/compatibility/check.sh
       - name: Preserve all output
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

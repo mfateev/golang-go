@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/build"
+	"internal/isolateabi"
 	"os"
 	"path/filepath"
 	"slices"
@@ -40,9 +41,12 @@ var buildIsolateDirs isolateDirsFlag
 var buildIsolateReport string
 
 type isolateBuildReport struct {
-	FormatVersion int                    `json:"format_version"`
-	Programs      []isolateReportProgram `json:"programs"`
-	Packages      []isolateReportPackage `json:"packages"`
+	FormatVersion      int                    `json:"format_version"`
+	MetadataVersion    int                    `json:"metadata_version"`
+	APIVersion         int                    `json:"api_version"`
+	DeterminismVersion int                    `json:"determinism_version"`
+	Programs           []isolateReportProgram `json:"programs"`
+	Packages           []isolateReportPackage `json:"packages"`
 }
 
 type isolateReportProgram struct {
@@ -304,8 +308,20 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 			if trusted.path == isolatepolicy.TemporalSDKModule && strings.HasPrefix(p.ImportPath, trusted.path+"/contrib/") {
 				continue
 			}
-			if p.Module == nil || p.Module.Path != trusted.path || p.Module.Version != trusted.version || p.Module.Replace != nil || cfg.BuildMod == "vendor" {
-				base.Fatalf("isolate: metadata services require %s@%s without a replacement, nested module, or vendored source; audit the service manifest before upgrading", trusted.path, trusted.version)
+			validSource := p.Module != nil && p.Module.Path == trusted.path && p.Module.Version == trusted.version && p.Module.Replace == nil
+			if trusted.path == isolatepolicy.TemporalSDKModule && p.Module != nil && p.Module.Path == trusted.path {
+				var replacementPath, replacementVersion string
+				if p.Module.Replace != nil {
+					replacementPath, replacementVersion = p.Module.Replace.Path, p.Module.Replace.Version
+				}
+				validSource = isolatepolicy.TemporalSDKSource(p.Module.Version, replacementPath, replacementVersion)
+			}
+			if !validSource || cfg.BuildMod == "vendor" {
+				var forkHint string
+				if trusted.path == isolatepolicy.TemporalSDKModule {
+					forkHint = "; the audited replacement " + isolatepolicy.TemporalSDKForkModule + "@" + isolatepolicy.TemporalSDKForkVersion + " is also supported"
+				}
+				base.Fatalf("isolate: metadata services require %s@%s without a replacement, nested module, or vendored source%s; audit the service manifest before upgrading", trusted.path, trusted.version, forkHint)
 			}
 			metadataServices = true
 		}
@@ -408,12 +424,12 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 	source.WriteString("func init() {\n")
 	if len(functions) == 0 {
 		for i, p := range programs {
-			fmt.Fprintf(&source, "isolatebridge.RegisterProgram(%s, isolatebridge.ProgramEntry{Main: isolateProgramMain%d, NewState: isolateProgramState%d})\n", strconv.Quote(p.Name), i, i)
+			fmt.Fprintf(&source, "isolatebridge.RegisterProgram(%s, isolatebridge.ProgramEntry{MetadataVersion:%d, Main: isolateProgramMain%d, NewState: isolateProgramState%d})\n", strconv.Quote(p.Name), isolateabi.MetadataVersion, i, i)
 		}
 	} else {
 		for i, fn := range functions {
 			root := slices.Index(loaded, fn.Package)
-			fmt.Fprintf(&source, "isolatebridge.RegisterFunction(isolatebridge.FunctionEntry{Name:%q, Function:isolateFunctionValue%d(), Invoke:isolateFunctionInvoke%d, NewState:isolateProgramState%d, StateDescriptors:isolateProgramDescriptors%d})\n", fn.fullName(), i, i, root, root)
+			fmt.Fprintf(&source, "isolatebridge.RegisterFunction(isolatebridge.FunctionEntry{MetadataVersion:%d, Name:%q, Function:isolateFunctionValue%d(), Invoke:isolateFunctionInvoke%d, NewState:isolateProgramState%d, StateDescriptors:isolateProgramDescriptors%d})\n", isolateabi.MetadataVersion, fn.fullName(), i, i, root, root)
 		}
 	}
 	source.WriteString("}\nfunc main() { isolateHostMain() }\n")
@@ -492,7 +508,7 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 	a := b.AutoAction(ld, ModeInstall, ModeBuild, pmain)
 	b.Do(ctx, a)
 	if reportPath != "" {
-		report := isolateBuildReport{FormatVersion: 1}
+		report := isolateBuildReport{FormatVersion: 1, MetadataVersion: isolateabi.MetadataVersion, APIVersion: isolateabi.APIVersion, DeterminismVersion: isolateabi.DeterminismVersion}
 		if len(functions) == 0 {
 			for i, program := range programs {
 				paths := slices.Clone(programReachable[i])

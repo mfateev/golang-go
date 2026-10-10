@@ -26,7 +26,7 @@ func TestEffectFaultRevokesInitializationAndGoroutines(t *testing.T) {
 				runtime.GC()
 			}
 			name := "effect-fault-" + strconv.FormatUint(ownerTestSequence.Add(1), 10)
-			isolatebridge.RegisterProgram(name, isolatebridge.ProgramEntry{
+			isolatebridge.RegisterProgram(name, isolatebridge.ProgramEntry{MetadataVersion: isolate.MetadataVersion,
 				NewState: func() (func(func()), error) {
 					if stage == "initializer" {
 						violate()
@@ -90,7 +90,7 @@ func TestEffectFaultDuringMetadataCleanup(t *testing.T) {
 	var applicationDeferred atomic.Bool
 	cleanup := make(chan struct{})
 	name := "effect-metadata-" + strconv.FormatUint(ownerTestSequence.Add(1), 10)
-	isolatebridge.RegisterProgram(name, isolatebridge.ProgramEntry{
+	isolatebridge.RegisterProgram(name, isolatebridge.ProgramEntry{MetadataVersion: isolate.MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			defer func() { applicationDeferred.Store(true); _ = recover() }()

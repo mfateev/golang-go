@@ -23,6 +23,9 @@ type Program struct {
 // Name returns the stable configured program name or marked function name.
 func (p Program) Name() string { return p.name }
 
+// MetadataVersion returns the compiler metadata contract for this program.
+func (p Program) MetadataVersion() uint32 { return p.entry.MetadataVersion }
+
 // LookupProgram finds a program selected by go build -isolate-dir.
 func LookupProgram(name string) (Program, bool) {
 	entry, ok := isolatebridge.LookupProgram(name)

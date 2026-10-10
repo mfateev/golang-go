@@ -5,7 +5,9 @@
 package isolatebridge
 
 import (
+	"internal/isolateabi"
 	"reflect"
+	"strconv"
 	"sync"
 	"unsafe"
 )
@@ -22,10 +24,11 @@ type Value struct {
 // Invoke calls the original function directly, without reflect.Call. Decode
 // and encode run in the same isolate and must not retain another owner's data.
 type FunctionEntry struct {
-	Name     string
-	Function any
-	Invoke   func(decode, encode func(...Value) error) error
-	NewState func() (func(func()), error)
+	MetadataVersion uint32
+	Name            string
+	Function        any
+	Invoke          func(decode, encode func(...Value) error) error
+	NewState        func() (func(func()), error)
 	// StateDescriptors returns a fresh slice of immutable compiler descriptors.
 	// Support functions can join a program without sharing package globals.
 	StateDescriptors func() (packages, readOnlyLibraries []unsafe.Pointer)
@@ -38,6 +41,9 @@ var functions = struct {
 
 // RegisterFunction is called by the generated host before the user's main.
 func RegisterFunction(entry FunctionEntry) {
+	if entry.MetadataVersion != isolateabi.MetadataVersion {
+		panic("isolate: incompatible function metadata version " + strconv.FormatUint(uint64(entry.MetadataVersion), 10) + ", runtime requires " + strconv.Itoa(isolateabi.MetadataVersion) + "; rebuild with a compatible toolchain")
+	}
 	v := reflect.ValueOf(entry.Function)
 	if entry.Name == "" || v.Kind() != reflect.Func || v.IsNil() || entry.Invoke == nil || entry.NewState == nil {
 		panic("isolate: incomplete function entry")

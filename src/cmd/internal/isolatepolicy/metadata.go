@@ -17,6 +17,16 @@ const TemporalAPIVersion = "v1.63.6"
 const TemporalSDKModule = "go.temporal.io/sdk"
 const TemporalSDKVersion = "v1.49.0"
 
+const TemporalSDKForkModule = "github.com/mfateev/temporal-go-sdk"
+const TemporalSDKForkVersion = "v1.49.0-isolates.1"
+
+// TemporalSDKSource accepts only the upstream baseline and its audited patch.
+// Local directories and other fork revisions cannot inherit metadata privileges.
+func TemporalSDKSource(version, replacementPath, replacementVersion string) bool {
+	return version == TemporalSDKVersion && ((replacementPath == "" && replacementVersion == "") ||
+		(replacementPath == TemporalSDKForkModule && replacementVersion == TemporalSDKForkVersion))
+}
+
 const OTelTraceModule = "go.opentelemetry.io/otel/trace"
 const OTelVersion = "v1.44.0"
 

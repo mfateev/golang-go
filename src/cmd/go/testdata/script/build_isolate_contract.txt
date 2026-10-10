@@ -1,0 +1,55 @@
+# The generated entry records and package layouts carry the build tool's ABI
+# version; the public runtime contract is available without creating an isolate.
+[short] skip
+[compiler:gccgo] skip
+go build -isolate-report report.json -o check$GOEXE ./host
+grep '"metadata_version": 1' report.json
+grep '"api_version": 1' report.json
+grep '"determinism_version": 1' report.json
+exec ./check$GOEXE
+stdout '^isolate contracts passed$'
+
+-- go.mod --
+module example.org/contracts
+go 1.26
+-- jobs/jobs.go --
+package jobs
+
+import "isolate"
+
+//go:isolate
+func Check() error {
+ _, err := isolate.Call(1, []byte("ok"))
+ return err
+}
+-- host/main.go --
+package main
+
+import (
+ "fmt"
+ "isolate"
+ "time"
+ "example.org/contracts/jobs"
+)
+
+func main() {
+ h, ok := isolate.LookupFunction(jobs.Check)
+ if !ok || h.MetadataVersion()!=1 {panic("missing versioned handle")}
+ if isolate.CurrentContract()!=(isolate.Contract{Metadata:1,API:1,Determinism:1}) {panic("unexpected runtime contract")}
+ p:=h.ProgramWithHandle(func(h isolate.Handle){
+  if err:=h.Invoke(func(...isolate.Value)error{return nil},func(...isolate.Value)error{return nil});err!=nil {panic(err)}
+ })
+ if p.MetadataVersion()!=1 {panic("program dropped metadata version")}
+ now:=time.Unix(0,0)
+ i,err:=isolate.New(isolate.Config{Program:p,Deterministic:true,InitialTime:&now,TimerOp:2})
+ if err!=nil {panic(err)}
+ if err=i.Start();err!=nil {panic(err)}
+ select {
+ case c:=<-i.Commands():
+  if string(c.Payload)!="ok" {panic("wrong result")}
+  c.Reply(nil,nil)
+ case <-i.Done():panic(i.Wait())
+ }
+ if err=i.Wait();err!=nil {panic(err)}
+ fmt.Println("isolate contracts passed")
+}

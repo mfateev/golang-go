@@ -9,6 +9,7 @@ package isolateproto
 import (
 	"cmp"
 	"fmt"
+	"internal/isolateabi"
 	"slices"
 	"unsafe"
 )
@@ -21,11 +22,12 @@ type packageDependency struct {
 // packageDescriptor is the compiler-owned metadata for one selected package.
 // Discovery and selection are still supplied by the build.
 type packageDescriptor struct {
-	Path           string
-	Key            unsafe.Pointer
-	TypeSlot       unsafe.Pointer
-	DependencyTask unsafe.Pointer
-	InitTask       unsafe.Pointer
+	MetadataVersion uint64
+	Path            string
+	Key             unsafe.Pointer
+	TypeSlot        unsafe.Pointer
+	DependencyTask  unsafe.Pointer
+	InitTask        unsafe.Pointer
 }
 
 // PackageInstance is one set of independent package globals for the tagged
@@ -51,6 +53,10 @@ func NewPackageInstance(descriptors []unsafe.Pointer, readOnlyLibraries ...[]uns
 	for i, descriptor := range descriptors {
 		if descriptor == nil {
 			return nil, fmt.Errorf("isolateproto: nil package descriptor at index %d", i)
+		}
+		// Read the fixed prefix before interpreting any version-specific fields.
+		if version := *(*uint64)(descriptor); version != isolateabi.MetadataVersion {
+			return nil, fmt.Errorf("isolateproto: incompatible package metadata version %d, runtime requires %d; rebuild with a compatible toolchain", version, isolateabi.MetadataVersion)
 		}
 		ordered[i] = *(*packageDescriptor)(descriptor)
 	}

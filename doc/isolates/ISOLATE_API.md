@@ -7,6 +7,31 @@ Two surfaces: what the **host** calls to create and drive isolates, and what
 code **inside** an isolate sees. The second is the interesting one, because the
 whole point of the preceding decisions is that it should look like ordinary Go.
 
+## Integration versions
+
+`isolate.CurrentContract()` returns `{Metadata: 1, API: 1, Determinism: 1}`.
+These are independent compatibility versions, not source revisions.
+`Handle.MetadataVersion()` and `Program.MetadataVersion()` report the numeric
+producer version emitted by the build tool. Function/program registration rejects
+unsupported metadata before publication. Package descriptors start with a fixed
+eight-byte version prefix, checked before strings, pointer layouts or initialization
+records are read. Zero is invalid. Ordinary host-only programs are unaffected.
+
+The isolate build report adds `metadata_version`, `api_version` and
+`determinism_version` alongside its existing report format version. Consumers
+should validate expected contracts before starting an instance. Generic isolates
+do not depend on Temporal or impose an application protocol: host applications
+version their own copied-byte operations. The Temporal POC separately versions
+its startup protocol and SDK bindings.
+
+Metadata versions change for incompatible generated descriptor layouts; API
+versions change for incompatible isolate boundary semantics; determinism versions
+change for observable execution changes. Determinism 1 uses the current shared
+random/select stream. A future implementation must explicitly support an older
+version to accept it; advertising the same number alone is not a replay proof.
+See [Integration contracts](./INTEGRATION_CONTRACTS_PLAN.md) for the compatibility
+checks and deployment policy.
+
 ---
 
 ## The claim

@@ -1,6 +1,6 @@
 # Productization plan for Go isolates and the Temporal SDK
 
-Status: proposed release plan; POC baseline updated 2026-10-07. This follows the trusted Temporal POC in
+Status: proposed release plan; POC baseline updated 2026-10-10. This follows the trusted Temporal POC in
 [TEMPORAL_POC.md](./TEMPORAL_POC.md) and the runtime contract in
 [ISOLATE_API.md](./ISOLATE_API.md).
 
@@ -116,10 +116,25 @@ with copied observer events. Limit violations fail the Workflow Task. Full local
 Go, SDK/sample, real-server, 10,000-instance density and all four native platform
 checks passed on 2026-10-07, with all 24 native replay results unchanged. See
 [Resource controls](./RESOURCE_CONTROLS_PLAN.md) for scope and validation.
-Feature **7 (complete Temporal integration)** is in progress. Feature 3 remains deferred.
-Custom converter support retains
-its separate feature 8 gate. The validated determinism contract still excludes
-its documented unsupported operations.
+Feature **7 (complete Temporal integration)** is complete for the agreed POC
+scope: SDK-compatible feature and interceptor APIs, native concurrency, queries
+and validators that cannot mutate workflow state, completed-query retention,
+child workflows, continuations, versioning, local activities, external operations,
+sessions, Nexus and tracing sinks. SideEffect APIs remain intentionally excluded;
+documented native Go API differences and limitations remain release constraints.
+Feature **8 (converter support)** is complete for the agreed POC split:
+worker-configured isolate serializer factories and host-owned codecs, with
+serialization contexts and structured failure transport. Custom failure
+converters, batch codecs and arbitrary converter I/O inside isolates remain
+excluded. See the SDK README and INTERCEPTORS.md for contracts and checks.
+Feature **9 (stable integration contracts)** versions compiler metadata, the
+isolate API, determinism and the startup byte protocol independently. The
+Temporal SDK integration uses supported hooks in an audited, pinned SDK fork
+instead of private field access. Upgrade/rollback replay checks keep both older
+and candidate histories. See [Integration contracts](./INTEGRATION_CONTRACTS_PLAN.md).
+Feature 3 remains deferred. The validated determinism contract still excludes
+its documented unsupported operations. Operational visibility is the next
+feature; these completed POC subsets do not by themselves imply release readiness.
 
 See [Native isolate determinism](./NATIVE_DETERMINISM_PLAN.md) for the supported
 operations and reproducibility contract. Unsupported map key kinds and
@@ -171,6 +186,37 @@ the provisional timeout-only activity API. Preserve existing worker/client
 registration behavior and ordinary workflow support. Continue delegating history
 processing and Temporal command semantics to the host Go SDK; the isolate byte
 protocol carries the corresponding operations and structured outcomes.
+
+### Feature 7 read-only query enforcement (2026-10-08)
+
+Implemented requirement: query handlers must not change workflow state. Invoke them
+at the existing suspension boundary, when all workflow goroutines are already
+blocked, and keep workflow execution and host-event delivery suspended until
+the query finishes. A separate pause mechanism is not required.
+
+- Permit reads of existing workflow state and mutation of local variables and
+  objects allocated during the query. A local pointer, slice, map, or interface
+  alias to existing state does not make that state writable.
+- Allocate temporary query objects under a distinct query owner. Allow the
+  query to borrow workflow state for reads, without granting writes or allowing
+  query-owned references to escape into workflow state.
+- Enforce the restriction through compiler checks and runtime mutation checks,
+  including indirect and reflected writes, map/slice updates, atomics, and
+  channel or lock operations that change existing workflow objects or wake
+  blocked workflow goroutines. Reject mutations before they occur.
+- Reject activities, durable timers, and other workflow commands or external
+  effects. Serialize the query result across the copied-byte boundary, then
+  release temporary state and stop any query helpers before resuming workflows.
+- An attempted mutation fails the query without changing workflow state or
+  completing the Workflow Execution. Define safe query-failure cleanup so the
+  existing state remains usable for subsequent queries and workflow tasks.
+
+Acceptance tests must cover allowed local computation, mutation through aliases
+and callbacks, runtime mutation helpers, attempted goroutine wakeups, command
+rejection, and repeated queries followed by normal workflow execution. These
+are enforcement requirements, not a documentation-only read-only convention.
+Completed workflow state with registered queries is retained until eviction, as
+agreed on 2026-10-08. These rules apply whenever state is available for querying.
 
 ## Milestones and gates
 
@@ -288,9 +334,9 @@ platforms, including the new deterministic sync.Map.Range and iter.Pull paths.
   default converter inside the isolate for nil, byte, and ordinary JSON
   values. The default converter has instance state; its dependency graph and the host
   activity SDK graph are checked, with narrow audited metadata services. General
-  protobuf message values still require their value-path audit. TODO: support the worker's configured custom converter, its
-  payload codecs and serialization context, and validate boundary types and
-  conversion errors.
+  protobuf message values still require their value-path audit. Worker-configured
+  isolate serializers, host codecs and serialization contexts are implemented;
+  custom failure converters and batch codecs retain separate support gates.
   Test real worker/server execution, exported history replay, worker restart,
   eviction, and upgrades from an older worker build. Keep activities and other
   I/O in the host.
@@ -331,7 +377,7 @@ platforms, including the new deterministic sync.Map.Range and iter.Pull paths.
 
 ## Release labels and deferred work
 
-The current serial adapter remains a **technical preview**. A **trusted beta**
+The current concurrent adapter remains a **technical preview**. A **trusted beta**
 requires milestones 0–4 for a deliberately bounded workload. A **trusted
 production release** also requires milestones 5–6 and an operations policy
 for pending kills. A release for hostile tenants is a separate gate: a sound
@@ -339,6 +385,43 @@ Tier 1 standard-library audit, complete cross-owner containment, resource
 limits, and a proven bound for forceful whole-isolate termination. Snapshot
 and restore, dynamic loading, and same-import-path dependency versions do not
 block the trusted release.
+
+### Future enhancement: generic library integration adapters
+
+Explore a standard runtime integration interface for libraries such as protobuf
+that combine shared metadata, process-wide caches, and isolate-owned values.
+Implement the mechanism once, then describe each supported library through a
+versioned, audited adapter instead of adding library-specific compiler rules.
+This is a proposal, not an implemented extension API or a trusted-release gate.
+
+An adapter would declare:
+
+- Immutable metadata roots and the precise regions isolates may read.
+- Controlled runtime services for accessing mutable process-owned caches.
+- Callback boundaries that restore ordinary isolate ownership and effect
+  restrictions before invoking application code.
+- Supported library versions and internal layouts, with incompatible versions
+  rejected rather than granted broader access.
+
+Existing general ownership checks would remain active. Cache services could
+temporarily inspect explicitly borrowed caller data, but could not retain
+isolate pointers in shared state. Application messages, decoded values, and
+clone destinations must remain isolate-owned. Registration must be restricted
+to trusted adapters; a package-wide exemption or arbitrary permission elevation
+would undermine containment. Mutable caches also need review for deterministic
+observable behavior, beyond memory ownership alone.
+
+For protobuf, an adapter could describe message metadata and controlled cache
+operations so cloning and failure conversion work without sharing mutable
+message contents. Validation should cover host-plus-two-isolate execution,
+concurrent cache initialization, callback permissions, and pointer retention.
+
+Libraries with suitable hooks could call the runtime interface directly.
+Libraries with private caches and no hooks may need a small library patch or
+generic compiler interception support implemented once. Avoid promising that
+every unmodified library can be integrated through configuration alone. The
+goal is reusable enforcement with per-library adapters; each library's sharing,
+initialization, callback, and effect behavior still requires an audit.
 
 ## First five implementation tasks
 

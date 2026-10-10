@@ -5,6 +5,7 @@
 package pkginit
 
 import (
+	"internal/isolateabi"
 	"slices"
 
 	"cmd/compile/internal/base"
@@ -200,7 +201,8 @@ func MakeTask() {
 		descSym.Def = desc
 		descLSym := desc.Linksym()
 		descLSym.Set(obj.AttrLinkname, true)
-		descOff := objw.SymPtr(descLSym, 0, staticdata.StringSym(base.Pos, types.LocalPkg.Path), 0)
+		descOff := objw.UintN(descLSym, 0, isolateabi.MetadataVersion, 8)
+		descOff = objw.SymPtr(descLSym, descOff, staticdata.StringSym(base.Pos, types.LocalPkg.Path), 0)
 		descOff = objw.Uintptr(descLSym, descOff, uint64(len(types.LocalPkg.Path)))
 		descOff = objw.SymPtr(descLSym, descOff, typecheck.Lookup("isolateLayoutKey").Linksym(), 0)
 		descOff = objw.SymPtr(descLSym, descOff, typecheck.Lookup("isolateLayoutType").Linksym(), 0)

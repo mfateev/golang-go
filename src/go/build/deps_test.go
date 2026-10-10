@@ -54,6 +54,7 @@ var depsRules = `
 	  internal/goexperiment,
 	  internal/goos,
 	  internal/goversion,
+	  internal/isolateabi,
 	  internal/isolatepolicy,
 	  internal/nettrace,
 	  internal/platform,
@@ -871,15 +872,15 @@ var depsRules = `
 	< testing/internal/testdeps;
 
 	# Experimental isolate API and host-loop reference model.
-	context, encoding/binary, encoding/json, errors, fmt, math,
+	context, encoding/binary, encoding/json, errors, fmt, internal/isolateabi, math,
 	runtime, sort, sync, sync/atomic, time
 	< internal/isolateproto;
 
 	# Experimental source-level isolate API and trusted host transport.
-	bytes, errors, reflect, runtime, strconv, strings, sync, sync/atomic, unsafe
+	bytes, errors, internal/isolateabi, reflect, runtime, strconv, strings, sync, sync/atomic, unsafe
 	< internal/isolatebridge;
 
-	context, errors, internal/isolatebridge, internal/isolateproto, reflect, strconv, sync, sync/atomic, time
+	context, errors, internal/isolateabi, internal/isolatebridge, internal/isolateproto, reflect, strconv, sync, sync/atomic, time
 	< isolate;
 
 	# Test-only packages can have anything they want
