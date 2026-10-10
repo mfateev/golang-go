@@ -15,7 +15,11 @@ Legacy runtime probes can retain ordinary dispatch for their revocation tests.
   string keys. Named types are supported. Deleted keys are skipped and values
   are read when visited; keys inserted after iteration starts are excluded.
   Pointer, uintptr, interface, boolean, floating point, complex, and composite key iteration is
-  rejected inside isolates, including empty maps. Hashing stays unchanged:
+  rejected inside isolates, including empty maps. The audited exception is the
+  pinned Temporal SDK `SearchAttributeKey` interface: its seven SDK key types
+  are sorted by attribute name and value type, excluding `reflect.Type`
+  descriptor addresses. Exact type/layout checks reject custom key implementations;
+  this does not enable arbitrary interface-key maps. Hashing stays unchanged:
   sorting removes the architecture-dependent table layout from observed order.
 - Each isolate has one execution token and a FIFO runnable queue. A parent
   continues after `go`; children enter the queue in creation order. Blocking

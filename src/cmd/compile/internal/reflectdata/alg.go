@@ -110,6 +110,9 @@ func hashFunc(sig string) *ir.Func {
 		},
 	))
 	sym.Def = fn.Nname
+	// These algorithms are compiler-generated pointer operations, not application
+	// unsafe code. Heap/string/interface ownership instrumentation still applies.
+	fn.Pragma |= ir.IsolateEffectAudited
 	fn.Pragma |= ir.Noinline // TODO(mdempsky): We need to emit this during the unified frontend instead, to allow inlining.
 	typecheck.DeclFunc(fn)
 	np := fn.Dcl[0]
@@ -351,6 +354,9 @@ func eqFunc(sig string) *ir.Func {
 		},
 	))
 	sym.Def = fn.Nname
+	// These algorithms are compiler-generated pointer operations, not application
+	// unsafe code. Heap/string/interface ownership instrumentation still applies.
+	fn.Pragma |= ir.IsolateEffectAudited
 	fn.Pragma |= ir.Noinline // TODO(mdempsky): We need to emit this during the unified frontend instead, to allow inlining.
 	typecheck.DeclFunc(fn)
 	np := fn.Dcl[0]

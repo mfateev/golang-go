@@ -746,7 +746,7 @@ func (it *Iter) Init(typ *abi.MapType, m *Map) {
 	it.typ = typ
 	deterministic := isolateMapOwner() != 0 && isolateDeterministic()
 	if deterministic {
-		isolateCheckKeyKind(typ.Key.Kind())
+		isolateCheckKeyKind(typ.Key)
 	}
 	if m != nil {
 		m.checkIsolateRead()

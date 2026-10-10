@@ -1,0 +1,64 @@
+# Compiler-generated struct/array hashing and equality use pointer operations
+# but must remain callable in isolates. Application unsafe guards still apply.
+[short] skip
+[compiler:gccgo] skip
+go build -o check$GOEXE ./host
+exec ./check$GOEXE
+stdout '^generated equality and hash passed$'
+[race] go build -race -o check-race$GOEXE ./host
+[race] exec ./check-race$GOEXE
+[race] stdout '^generated equality and hash passed$'
+
+-- go.mod --
+module example.org/structeq
+go 1.26
+-- jobs/jobs.go --
+package jobs
+
+import "reflect"
+
+type key struct { Name string; Kind int32; Type reflect.Type }
+
+//go:isolate
+func Probe() (string,error) {
+ a:=key{"owned",3,reflect.TypeFor[int64]()}
+ b:=key{"owned",3,reflect.TypeFor[int64]()}
+ var x,y any=a,b
+ if x!=y { panic("interface struct equality changed") }
+ values:=map[key]int{a:7}
+ if values[b]!=7 { panic("struct hashing/lookup changed") }
+ pair:=[2]key{a,b}
+ pairs:=map[[2]key]int{pair:9}
+ if pairs[[2]key{b,a}]!=9 { panic("array hashing/lookup changed") }
+ return "ok",nil
+}
+-- host/main.go --
+package main
+
+import (
+ "fmt"
+ "isolate"
+ "example.org/structeq/jobs"
+)
+
+func main(){
+ handle,ok:=isolate.LookupFunction(jobs.Probe)
+ if !ok { panic("missing marked function") }
+ program:=handle.ProgramWithHandle(func(handle isolate.Handle){
+  if err:=handle.Invoke(func(...isolate.Value)error{return nil},func(values ...isolate.Value)error{
+   _,err:=isolate.Call(1,[]byte(values[0].Value.(string)))
+   return err
+  });err!=nil{panic(err)}
+ })
+ instance,err:=isolate.New(isolate.Config{Program:program,Deterministic:true})
+ if err!=nil{panic(err)}
+ if err:=instance.Start();err!=nil{panic(err)}
+ select {
+ case command:=<-instance.Commands():
+  if string(command.Payload)!="ok"{panic("wrong result")}
+  command.Reply(nil,nil)
+ case <-instance.Done():panic(instance.Wait())
+ }
+ if err:=instance.Wait();err!=nil{panic(err)}
+ fmt.Println("generated equality and hash passed")
+}

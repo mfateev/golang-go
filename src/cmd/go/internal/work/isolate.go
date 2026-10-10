@@ -557,6 +557,10 @@ func isolateTrustedRuntimePackage(path string) bool {
 // providers use only its value/context API, never the automatic/global provider.
 func isolateOwnedObservabilityPackage(path string) bool {
 	switch path {
+	// The active read-only interceptor chain must be scratch-owned even when
+	// a query closure passes a context captured from the writable workflow.
+	case "github.com/mfateev/sdk-go-poc/internal/interceptorscope":
+		return true
 	// OpenTracing's context key, error values, optional global tracer and ext
 	// tag descriptors are ordinary private package state. Replay their startup
 	// in query/validator scratch layouts too; grant no process-state access.

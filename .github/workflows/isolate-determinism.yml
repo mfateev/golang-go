@@ -86,7 +86,7 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/compiler-default.log"
             exit 1
           fi
-          if ! ./bin/go test cmd/go -run 'TestScript/build_isolate_(write|functions|support|programs|metadata|heap|fault|ownership|effects|lifecycle|resources|nilinterface|fork)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
+          if ! ./bin/go test cmd/go -run 'TestScript/build_isolate_(write|functions|support|programs|metadata|heap|fault|ownership|effects|lifecycle|resources|nilinterface|structeq|fork)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/compiler.log"
             exit 1
           fi
@@ -180,7 +180,7 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/api-race.log"
             exit 1
           fi
-          for probe in interceptors tracing; do
+          for probe in interceptors tracing workflowmetadata; do
             if ! ../golang-go/bin/go build -race "${ownership_gcflags[@]}" -o "$RUNNER_TEMP/isolate-$probe-race" ./example/$probe/check > "$POC_LOG_DIR/$probe-race-build.log" 2>&1; then
               tail -n 100 "$POC_LOG_DIR/$probe-race-build.log"
               exit 1

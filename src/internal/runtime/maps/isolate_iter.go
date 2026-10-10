@@ -9,8 +9,11 @@ import (
 	"unsafe"
 )
 
-func isolateCheckKeyKind(kind abi.Kind) {
-	switch kind {
+func isolateCheckKeyKind(typ *abi.Type) {
+	if isolateSearchAttributeKeyType(typ) {
+		return
+	}
+	switch typ.Kind() {
 	case abi.String, abi.Int, abi.Int8, abi.Int16, abi.Int32, abi.Int64,
 		abi.Uint, abi.Uint8, abi.Uint16, abi.Uint32, abi.Uint64:
 		return
@@ -29,15 +32,25 @@ func (it *Iter) initIsolateKeys() {
 	for raw.Next(); raw.Key() != nil; raw.Next() {
 		key := unsafe.Add(storage, uintptr(len(keys))*it.typ.Key.Size_)
 		typedmemmove(it.typ.Key, key, raw.Key())
+		if isolateSearchAttributeKeyType(it.typ.Key) {
+			isolateSearchAttributeKey(it.typ.Key, key)
+		}
 		keys = append(keys, key)
 	}
-	isolateSortKeys(keys, it.typ.Key.Kind())
+	isolateSortKeys(keys, it.typ.Key)
 	it.isolateKeys = keys
 }
 
 // Heap sort avoids importing sort (which depends on the map runtime itself).
-func isolateSortKeys(keys []unsafe.Pointer, kind abi.Kind) {
-	less := func(i, j int) bool { return isolateKeyLess(kind, keys[i], keys[j]) }
+func isolateSortKeys(keys []unsafe.Pointer, typ *abi.Type) {
+	less := func(i, j int) bool {
+		if isolateSearchAttributeKeyType(typ) {
+			a, ak := isolateSearchAttributeKey(typ, keys[i])
+			b, bk := isolateSearchAttributeKey(typ, keys[j])
+			return a < b || a == b && ak < bk
+		}
+		return isolateKeyLess(typ.Kind(), keys[i], keys[j])
+	}
 	sift := func(root, end int) {
 		for {
 			child := root*2 + 1
@@ -90,3 +103,11 @@ func isolateKeyLess(kind abi.Kind, a, b unsafe.Pointer) bool {
 	}
 	panic("isolate: unsupported map key kind")
 }
+
+// These helpers validate the pinned SDK layout without calling SDK methods.
+//
+//go:linkname isolateSearchAttributeKeyType
+func isolateSearchAttributeKeyType(typ *abi.Type) bool
+
+//go:linkname isolateSearchAttributeKey
+func isolateSearchAttributeKey(typ *abi.Type, key unsafe.Pointer) (string, int32)
