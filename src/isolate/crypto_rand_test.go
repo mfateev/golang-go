@@ -190,6 +190,32 @@ func TestCryptoRandHostReaderUnchanged(t *testing.T) {
 	}
 }
 
+type failingRandomReader struct{}
+type failingRandomError struct{}
+
+func (failingRandomError) Error() string { panic("reader error formatter must not run") }
+
+func (failingRandomReader) Read([]byte) (int, error) {
+	return 0, failingRandomError{}
+}
+
+func TestDeterministicCryptoRandReaderFailure(t *testing.T) {
+	// Trusted boundary probes do not redirect package globals; restore the host
+	// Reader after checking that the error cannot reach runtime.fatal.
+	original := crand.Reader
+	defer func() { crand.Reader = original }()
+	b := deterministicBoundary(t)
+	b.Run(func() {
+		crand.Reader = failingRandomReader{}
+		defer func() {
+			if got := recover(); got != "isolate: forbidden operation crypto/rand.Read: random reader failed" {
+				t.Fatalf("reader failure panic=%v", got)
+			}
+		}()
+		_, _ = crand.Read(make([]byte, 17))
+	})
+}
+
 func TestDeterministicCryptoRandPrimeRejected(t *testing.T) {
 	b := deterministicBoundary(t)
 	b.Run(func() {

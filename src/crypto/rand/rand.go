@@ -75,6 +75,12 @@ func Read(b []byte) (n int, err error) {
 		copy(b, bb)
 	}
 	if err != nil {
+		if isolateActive() {
+			// Preserve the host's fatal semantics without allowing a failing
+			// application-owned reader to terminate the host from an isolate.
+			// Do not invoke an arbitrary error's Error method while reporting.
+			isolateRejectEffect("crypto/rand.Read: random reader failed")
+		}
 		fatal("crypto/rand: failed to read random data (see https://go.dev/issue/66821): " + err.Error())
 		panic("unreachable") // To be sure.
 	}
