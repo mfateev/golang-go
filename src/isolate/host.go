@@ -38,7 +38,7 @@ func LookupProgram(name string) (Program, bool) {
 // Config selects one program.
 type Config struct {
 	Program       Program
-	Deterministic bool // FIFO native goroutines and deterministic select/map iteration.
+	Deterministic bool // FIFO native goroutines within each priority and deterministic select/map iteration.
 	// RandomSeed seeds select and top-level math/rand, math/rand/v2 and
 	// crypto/rand before initialization.
 	// The same seed replays the same bytes. Zero is a fixed default; supply a
@@ -612,4 +612,24 @@ func (i *Isolate) ResumeReadOnly() error {
 		return errors.New("isolate: instance not started")
 	}
 	return i.executionError(i.boundary.ResumeReadOnly())
+}
+
+// ResumeInbound admits only SDK input-delivery services and their children.
+// Channel receivers and other application continuations remain queued. Service
+// Commands and call Suspend until input delivery is idle before calling Resume.
+func (i *Isolate) ResumeInbound() error {
+	if i == nil || !i.started.Load() {
+		return errors.New("isolate: instance not started")
+	}
+	return i.executionError(i.boundary.ResumeInbound())
+}
+
+// ResumePriority admits only high-priority writable goroutines. Ordinary
+// continuations remain queued. Service Commands and call Suspend until priority
+// work is idle before calling Resume. Read-only services require ResumeReadOnly.
+func (i *Isolate) ResumePriority() error {
+	if i == nil || !i.started.Load() {
+		return errors.New("isolate: instance not started")
+	}
+	return i.executionError(i.boundary.ResumePriority())
 }

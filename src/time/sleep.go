@@ -92,6 +92,14 @@ type isolateTimer struct {
 	active     bool
 }
 
+// Timer waiters publish input into native channels before workflow goroutines
+// resume. The role is installed before publication to deterministic dispatch.
+func (state *isolateTimer) startWait(d Duration, generation uint64) {
+	previous := runtime_isolateSetInboundService(true)
+	defer runtime_isolateSetInboundService(previous)
+	go state.wait(d, generation)
+}
+
 func (state *isolateTimer) wait(d Duration, generation uint64) {
 	if err := runtime_isolateTimerSleep(int64(d)); err != nil {
 		panic("time: durable timer failed: " + err.Error())
@@ -107,6 +115,10 @@ func (state *isolateTimer) fire(generation uint64) {
 	}
 	state.active = false
 	if state.c == nil {
+		// AfterFunc runs user code in an ordinary goroutine, outside the input
+		// delivery role inherited by this timer waiter.
+		previous := runtime_isolateSetInboundService(false)
+		defer runtime_isolateSetInboundService(previous)
 		go state.f() // This waiter already runs under the isolate owner.
 		return
 	}
@@ -147,7 +159,7 @@ func (state *isolateTimer) reset(d Duration) bool {
 	if d <= 0 && state.c != nil {
 		state.fire(generation)
 	} else {
-		go state.wait(d, generation)
+		state.startWait(d, generation)
 	}
 	return wasActive
 }
@@ -216,7 +228,7 @@ func NewTimer(d Duration) *Timer {
 		if d <= 0 {
 			state.fire(1)
 		} else {
-			go state.wait(d, 1)
+			state.startWait(d, 1)
 		}
 		return t
 	}
@@ -292,7 +304,7 @@ func AfterFunc(d Duration, f func()) *Timer {
 		state := &isolateTimer{f: f, generation: 1, active: true}
 		t := &Timer{iso: state}
 		t.self = t
-		go state.wait(d, 1)
+		state.startWait(d, 1)
 		return t
 	}
 	if runtime_isolateActive() {
@@ -317,6 +329,9 @@ func runtime_isolateClockEnabled() bool
 
 //go:linkname runtime_isolateTimerSleep runtime.isolateTimerSleep
 func runtime_isolateTimerSleep(int64) error
+
+//go:linkname runtime_isolateSetInboundService runtime.isolateSetInboundService
+func runtime_isolateSetInboundService(bool) bool
 
 func goFunc(arg any, seq uintptr, delta int64) {
 	go arg.(func())()

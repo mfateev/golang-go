@@ -51,3 +51,33 @@ func ReadOnlyCall(op uint32, payload []byte) ([]byte, error) {
 
 // IsReadOnly reports execution in a query or update validator.
 func IsReadOnly() bool { return isolatebridge.InReadOnly() }
+
+// GoInbound starts an SDK input-delivery service. In a deterministic instance,
+// the host can admit this goroutine and its children with ResumeInbound while
+// application continuations remain fenced. The service uses the workflow heap
+// and ordinary channels. Outside deterministic dispatch it is an ordinary go
+// statement. Application workflow code should use ordinary goroutines instead.
+func GoInbound(fn func()) { isolatebridge.StartInbound(fn) }
+
+// RunInbound invokes an SDK input hook in the delivery scope. Goroutines it
+// starts inherit the inbound role, including native channel adapters installed
+// by interceptors. The calling goroutine's previous role is restored on return.
+func RunInbound(fn func()) { isolatebridge.RunInbound(fn) }
+
+// Priority controls cooperative scheduling within a deterministic isolate.
+type Priority uint8
+
+const (
+	PriorityNormal Priority = iota
+	PriorityHigh
+)
+
+// GoWithPriority starts fn with the specified scheduling priority. Runnable
+// high-priority goroutines run before normal ones whenever an execution token
+// is released. Each priority preserves FIFO readiness order. Priority persists
+// across blocking and resumption, but children started with go use normal
+// priority. It does not preempt a running goroutine or bypass host admission
+// restrictions. Outside deterministic dispatch it is an ordinary go statement.
+func GoWithPriority(priority Priority, fn func()) {
+	isolatebridge.StartPriority(uint8(priority), fn)
+}

@@ -4656,6 +4656,9 @@ func gdestroy(gp *g) {
 	gp.isolateReadOnlyOwner = 0
 	gp.isolateMetadataOwner = 0
 	gp.isolateReadOnlyService = false
+	gp.isolateInboundService = false
+	gp.isolatePriority = 0
+	gp.isolateSpawnPriority = 0
 	gp.isolateOwner = 0
 	gp.isolateCallSelectNext = 0
 	gp.isolateCallSelectRemaining = 0
@@ -5563,6 +5566,9 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	newg.isolateReadOnlyOwner = 0
 	newg.isolateMetadataOwner = 0
 	newg.isolateReadOnlyService = false
+	newg.isolateInboundService = false
+	newg.isolatePriority = 0
+	newg.isolateSpawnPriority = 0
 	newg.isolateOwner = 0
 	newg.isolateMetadataDepth = 0
 	newg.isolatePrinting = false
@@ -5586,6 +5592,8 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 		newg.isolateOwner = callergp.isolateOwner
 		newg.isolateBoundary = callergp.isolateBoundary
 		newg.isolateGroup = callergp.isolateGroup
+		newg.isolateInboundService = callergp.isolateInboundService
+		newg.isolatePriority = callergp.isolateSpawnPriority
 		if newg.isolateGroup != nil {
 			newg.isolateGroup.live.Add(1)
 			isolateAttachChildResourceStack(newg)

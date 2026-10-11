@@ -23,39 +23,42 @@ import (
 // semaphore waits, and permanent parks; their runtime cleanup still runs on
 // the resumed goroutine.
 type isolateRevocationGroup struct {
-	readOnlyAlloc    *isolateAllocHandle // Scratch owner for queries and update validators.
-	dispatchReadOnly bool                // Only read-only service goroutines may dispatch; dispatchLock.
-	alloc            *isolateAllocHandle // GC-visible lifetime; registry keeps no group pointer.
-	resources        *isolateResourceHandle
-	resourceFault    *isolateOwnershipFault // Preallocated process record, publishable from g0.
-	resourceNotified atomic.Uint32
-	admission        atomic.Uint64
-	live             atomic.Int32
-	running          atomic.Int32 // Goroutines associated with an M, including syscalls.
-	runnable         atomic.Int32 // Conservative count of group Gs in or entering _Grunnable.
-	exit             func(int)    // Trusted host callback, installed before instance execution.
-	ownershipHandler func(string) // Trusted process reporter, installed by the managed host.
-	ownershipFault   atomic.Pointer[isolateOwnershipFault]
-	wakeStarted      atomic.Uint32       // One waiter scan even when fault fencing precedes host notification.
-	clockSet         atomic.Bool         // Host-injected workflow time is available.
-	clockNS          atomic.Int64        // Unix nanoseconds; runtime scheduler time stays real.
-	timerSleep       func(int64) error   // Trusted durable-timer transport, installed before entry.
-	writeLog         func(byte, []byte)  // Trusted copied-byte Call transport, installed before entry.
-	randLegacy       unsafe.Pointer      // Lazily created isolate-owned math/rand generator.
-	randomSeed       [32]byte            // Host-supplied replay seed, set before initialization.
-	random           *isolateRandomState // Shared deterministic random stream.
-	deterministic    bool                // Set before any group member is attached.
-	dispatchLock     mutex               // Leaf lock: only non-allocating queue/token operations.
-	dispatchToken    guintptr
-	dispatchQueue    gQueue
-	dispatchJoining  int32 // Pending host-group admission, protected by dispatchLock.
-	dispatchPaused   bool
-	dispatchWaiter   guintptr // Host waiting for exact idle suspension.
-	drainWaiters     gList    // Process goroutines waiting for revoked group cleanup; dispatchLock.
-	pollLock         mutex
-	pollWaits        *g
-	parkLock         mutex
-	parkWaits        *g
+	readOnlyAlloc         *isolateAllocHandle // Scratch owner for queries and update validators.
+	dispatchInbound       bool                // Only inbound delivery services may dispatch; dispatchLock.
+	dispatchPriority      bool                // Only high-priority writable goroutines may dispatch; dispatchLock.
+	dispatchReadOnly      bool                // Only read-only service goroutines may dispatch; dispatchLock.
+	alloc                 *isolateAllocHandle // GC-visible lifetime; registry keeps no group pointer.
+	resources             *isolateResourceHandle
+	resourceFault         *isolateOwnershipFault // Preallocated process record, publishable from g0.
+	resourceNotified      atomic.Uint32
+	admission             atomic.Uint64
+	live                  atomic.Int32
+	running               atomic.Int32 // Goroutines associated with an M, including syscalls.
+	runnable              atomic.Int32 // Conservative count of group Gs in or entering _Grunnable.
+	exit                  func(int)    // Trusted host callback, installed before instance execution.
+	ownershipHandler      func(string) // Trusted process reporter, installed by the managed host.
+	ownershipFault        atomic.Pointer[isolateOwnershipFault]
+	wakeStarted           atomic.Uint32       // One waiter scan even when fault fencing precedes host notification.
+	clockSet              atomic.Bool         // Host-injected workflow time is available.
+	clockNS               atomic.Int64        // Unix nanoseconds; runtime scheduler time stays real.
+	timerSleep            func(int64) error   // Trusted durable-timer transport, installed before entry.
+	writeLog              func(byte, []byte)  // Trusted copied-byte Call transport, installed before entry.
+	randLegacy            unsafe.Pointer      // Lazily created isolate-owned math/rand generator.
+	randomSeed            [32]byte            // Host-supplied replay seed, set before initialization.
+	random                *isolateRandomState // Shared deterministic random stream.
+	deterministic         bool                // Set before any group member is attached.
+	dispatchLock          mutex               // Leaf lock: only non-allocating queue/token operations.
+	dispatchToken         guintptr
+	dispatchQueue         gQueue
+	dispatchPriorityQueue gQueue
+	dispatchJoining       int32 // Pending host-group admission, protected by dispatchLock.
+	dispatchPaused        bool
+	dispatchWaiter        guintptr // Host waiting for exact idle suspension.
+	drainWaiters          gList    // Process goroutines waiting for revoked group cleanup; dispatchLock.
+	pollLock              mutex
+	pollWaits             *g
+	parkLock              mutex
+	parkWaits             *g
 }
 
 // defined constants
@@ -620,6 +623,9 @@ type g struct {
 	isolateReadOnlyRandom      *isolateRandomState
 	isolateReadOnlyOwner       uintptr // Workflow memory may be borrowed for reads, never writes.
 	isolateMetadataOwner       uintptr // Original caller owner, including a read-only scratch owner.
+	isolateInboundService      bool
+	isolatePriority            uint8
+	isolateSpawnPriority       uint8 // Explicit priority for direct children; not inherited transitively.
 	isolateReadOnlyService     bool
 	isolateOwner               uintptr                 // monotonic trusted instance ID for future heap ownership
 	isolateBoundary            unsafe.Pointer          // provisional host transport for Call

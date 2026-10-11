@@ -16,6 +16,7 @@ func isolateMarkReadOnlyService() {
 		panic("isolate: read-only service requires deterministic dispatch")
 	}
 	gp.isolateReadOnlyService = true
+	gp.isolateInboundService = false
 }
 
 // The host prepares a separate allocation owner before delivering a query or
@@ -60,14 +61,27 @@ func isolateCheckReadOnlyBlock() {
 	}
 }
 
-// These queue operations preserve the relative FIFO order of every workflow
-// goroutine. A query cannot consume or release their execution token.
-func isolateDispatchHasReadyLocked(group *isolateRevocationGroup) bool {
-	if !group.dispatchReadOnly {
-		return !group.dispatchQueue.empty()
+// Queue operations preserve FIFO order within each priority. Filtered dispatch
+// cannot consume another role's execution token or reorder its continuations.
+func isolateDispatchPushLocked(group *isolateRevocationGroup, gp *g) {
+	if gp.isolatePriority != 0 {
+		group.dispatchPriorityQueue.pushBack(gp)
+	} else {
+		group.dispatchQueue.pushBack(gp)
 	}
-	for p := group.dispatchQueue.head; p != 0; p = p.ptr().schedlink {
-		if p.ptr().isolateReadOnlyService {
+}
+
+func isolateDispatchHasReadyLocked(group *isolateRevocationGroup) bool {
+	return isolateDispatchQueueHasReadyLocked(group, &group.dispatchPriorityQueue) ||
+		isolateDispatchQueueHasReadyLocked(group, &group.dispatchQueue)
+}
+
+func isolateDispatchQueueHasReadyLocked(group *isolateRevocationGroup, queue *gQueue) bool {
+	if !group.dispatchReadOnly && !group.dispatchInbound && !group.dispatchPriority {
+		return !queue.empty()
+	}
+	for p := queue.head; p != 0; p = p.ptr().schedlink {
+		if isolateDispatchEligible(group, p.ptr()) {
 			return true
 		}
 	}
@@ -75,20 +89,27 @@ func isolateDispatchHasReadyLocked(group *isolateRevocationGroup) bool {
 }
 
 func isolateDispatchPopLocked(group *isolateRevocationGroup) *g {
-	if !group.dispatchReadOnly {
-		return group.dispatchQueue.pop()
+	if next := isolateDispatchQueuePopLocked(group, &group.dispatchPriorityQueue); next != nil {
+		return next
+	}
+	return isolateDispatchQueuePopLocked(group, &group.dispatchQueue)
+}
+
+func isolateDispatchQueuePopLocked(group *isolateRevocationGroup, queue *gQueue) *g {
+	if !group.dispatchReadOnly && !group.dispatchInbound && !group.dispatchPriority {
+		return queue.pop()
 	}
 	var kept gQueue
 	var next *g
 	for {
-		next = group.dispatchQueue.pop()
-		if next == nil || next.isolateReadOnlyService {
+		next = queue.pop()
+		if next == nil || isolateDispatchEligible(group, next) {
 			break
 		}
 		kept.pushBack(next)
 	}
-	kept.pushBackAll(group.dispatchQueue)
-	group.dispatchQueue = kept
+	kept.pushBackAll(*queue)
+	*queue = kept
 	return next
 }
 
@@ -105,6 +126,8 @@ func isolateFreezeWorkflow(p unsafe.Pointer) {
 		var waiter *g
 		lock(&group.dispatchLock)
 		group.dispatchReadOnly = true
+		group.dispatchInbound = false
+		group.dispatchPriority = false
 		if group.dispatchToken == 0 && !isolateDispatchHasReadyLocked(group) && group.dispatchWaiter != 0 && group.dispatchJoining == 0 {
 			group.dispatchPaused = true
 			waiter = group.dispatchWaiter.ptr()
@@ -129,6 +152,8 @@ func isolateResumeReadOnly(p unsafe.Pointer) {
 			throw("isolate: read-only dispatch requires suspension")
 		}
 		group.dispatchReadOnly = true
+		group.dispatchInbound = false
+		group.dispatchPriority = false
 		group.dispatchPaused = false
 		next := isolateDispatchPopLocked(group)
 		if next != nil {

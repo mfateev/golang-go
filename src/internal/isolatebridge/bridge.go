@@ -582,3 +582,50 @@ func resumeReadOnly(unsafe.Pointer)
 
 //go:linkname InReadOnly runtime.isolateInReadOnly
 func InReadOnly() bool
+
+// StartInbound starts a delivery service with its scheduling role inherited
+// before publication to the deterministic dispatcher.
+func StartInbound(fn func()) { RunInbound(func() { go fn() }) }
+
+// RunInbound gives goroutines started by an SDK input hook the delivery role.
+func RunInbound(fn func()) {
+	previous := setInboundService(true)
+	defer setInboundService(previous)
+	fn()
+}
+
+func (b *Boundary) ResumeInbound() error {
+	if !b.deterministic || b.Stopped() {
+		return errors.New("isolate: invalid inbound dispatch")
+	}
+	resumeInbound(b.group)
+	return nil
+}
+
+//go:linkname setInboundService runtime.isolateSetInboundService
+func setInboundService(bool) bool
+
+//go:linkname resumeInbound runtime.isolateResumeInbound
+func resumeInbound(unsafe.Pointer)
+
+// StartPriority assigns priority before the child is published to dispatch.
+// The child's spawn priority remains normal, so ordinary children do not inherit it.
+func StartPriority(priority uint8, fn func()) {
+	previous := setSpawnPriority(priority)
+	defer setSpawnPriority(previous)
+	go fn()
+}
+
+func (b *Boundary) ResumePriority() error {
+	if !b.deterministic || b.Stopped() {
+		return errors.New("isolate: invalid priority dispatch")
+	}
+	resumePriority(b.group)
+	return nil
+}
+
+//go:linkname setSpawnPriority runtime.isolateSetSpawnPriority
+func setSpawnPriority(uint8) uint8
+
+//go:linkname resumePriority runtime.isolateResumePriority
+func resumePriority(unsafe.Pointer)
