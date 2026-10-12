@@ -10,6 +10,8 @@ stdout PASS
 -- go.mod --
 module example.com/isolate-tests
 go 1.26
+require github.com/stretchr/testify v0.0.0
+replace github.com/stretchr/testify => ./testify
 -- a/a.go --
 package a
 var State = 7
@@ -19,6 +21,7 @@ import (
  "isolate"
  "os"
  "testing"
+ "github.com/stretchr/testify/suite"
 )
 //go:isolate
 func internalEntry(v int) (int, error) { State++; return State+v,nil }
@@ -27,6 +30,7 @@ func TestMain(m *testing.M) {
  os.Exit(m.Run())
 }
 func TestInternalEntry(t *testing.T) {
+ suite.Run()
  h,ok:=isolate.LookupFunction(internalEntry)
  if !ok || h.Signature().NumIn()!=1 { t.Fatal("internal entry missing or wrong signature") }
  if State!=7 {t.Fatal("registration ran workflow code")}
@@ -53,11 +57,28 @@ package b
 import (
  "isolate"
  "testing"
+ "github.com/stretchr/testify/testmock"
 )
 func TestImportedEntry(t *testing.T) {
+ if testmock.New()!=7 {t.Fatal("late test-only dependency missing")}
  if _,ok:=isolate.LookupFunction(Entry);!ok {t.Fatal("ordinary source entry missing")}
 }
 -- c/c.go --
 package c
 //go:isolate
 func Entry() error {return nil}
+-- testify/go.mod --
+module github.com/stretchr/testify
+go 1.26
+-- testify/suite/suite.go --
+package suite
+import (
+ "fmt"
+ "os"
+)
+// Host test helpers must not become workflow package state.
+//go:noinline
+func Run() { fmt.Fprintln(os.Stderr, "host suite") }
+-- testify/testmock/mock.go --
+package testmock
+func New() int {return 7}

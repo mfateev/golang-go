@@ -252,7 +252,14 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 		effectEntries = isolateTestEntries
 	}
 	forcedGcflags = append(forcedGcflags, "-d=isolateeffectentries="+strings.Join(effectEntries, ":"))
-	implicit := load.PackagesAndErrors(ld, ctx, load.PackageOpts{}, []string{"unsafe", "runtime", "internal/isolatebridge", "internal/isolateproto"})
+	// Runtime support is a set of implicit imports, not a new command's roots.
+	// Keep the module loader's complete graph so later test binaries can resolve
+	// dependencies that appear only in their test files.
+	var implicit []*load.Package
+	for _, path := range []string{"unsafe", "runtime", "internal/isolatebridge", "internal/isolateproto"} {
+		var stack load.ImportStack
+		implicit = append(implicit, load.LoadPackageWithFlags(ld, path, host.Dir, &stack, nil, 0))
+	}
 	load.CheckPackageErrors(implicit)
 	if len(functions) != 0 {
 		for _, p := range loaded {
@@ -331,7 +338,7 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 			switch p.ImportPath {
 			case "go.temporal.io/sdk/converter":
 				processGraph = processConverter
-			case "go.opentelemetry.io/otel/trace", "go.temporal.io/sdk/activity", "go.temporal.io/sdk/temporal", "go.temporal.io/sdk/workflow", "go.temporal.io/sdk/client", "go.temporal.io/sdk/interceptor", "go.temporal.io/sdk/interceptor/tracing", "go.temporal.io/sdk/testsuite", "go.temporal.io/sdk/worker":
+			case "go.opentelemetry.io/otel/trace", "go.temporal.io/sdk/activity", "go.temporal.io/sdk/temporal", "go.temporal.io/sdk/workflow", "go.temporal.io/sdk/client", "go.temporal.io/sdk/interceptor", "go.temporal.io/sdk/interceptor/tracing", "go.temporal.io/sdk/testsuite", "go.temporal.io/sdk/worker", "github.com/stretchr/testify/suite":
 				processGraph = processActivity
 			default:
 				continue

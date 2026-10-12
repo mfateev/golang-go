@@ -1,0 +1,32 @@
+# A generic aggregate return converts a shape address to the concrete type.
+# Ownership probes must pass its address using the pointer ABI.
+go build -gcflags=all=-d=isolateheap=2,isolatemetadata=1 -o move.exe .
+exec ./move.exe
+
+-- go.mod --
+module example.com/generic-move
+go 1.26
+-- main.go --
+package main
+
+type record struct {
+ Name, Description string
+ Kind byte
+ Unit, Number string
+}
+type cache[T any] struct{}
+
+//go:noinline
+func (*cache[T]) Lookup(fallback func() T) T {return fallback()}
+
+//go:noinline
+func lookup(id record) record {
+ var c cache[record]
+ return c.Lookup(func() record {return id})
+}
+
+func main() {
+ want:=record{Name:"metric",Description:"copied",Kind:3,Unit:"seconds",Number:"int64"}
+ got:=lookup(want)
+ if got!=want {panic("generic aggregate move changed value")}
+}

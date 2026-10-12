@@ -1715,6 +1715,12 @@ func (s *state) moveWhichMayOverlap(t *types.Type, dst, src *ssa.Value, mayOverl
 }
 
 func (s *state) isolateStableMoveSource(t *types.Type, src *ssa.Value) *ssa.Value {
+	// A generic shape conversion can wrap an aggregate's address in a Copy
+	// carrying the aggregate type. Move accepts that representation, but a
+	// runtime ownership probe must derive its ABI from the underlying pointer.
+	for src.Op == ssaop.OpCopy && !src.Type.IsPtrShaped() {
+		src = src.Args[0]
+	}
 	origin := src
 	for origin.Op == ssaop.OpOffPtr || origin.Op == ssaop.OpCopy {
 		origin = origin.Args[0]
