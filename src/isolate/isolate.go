@@ -52,6 +52,10 @@ func ReadOnlyCall(op uint32, payload []byte) ([]byte, error) {
 // IsReadOnly reports execution in a query or update validator.
 func IsReadOnly() bool { return isolatebridge.InReadOnly() }
 
+// IsActive reports execution inside an isolate, including initialization and
+// read-only services. It exposes no instance identity or host-owned memory.
+func IsActive() bool { return isolatebridge.Active() }
+
 // MarkServiceGoroutine excludes the calling SDK helper from workflow stack
 // traces without changing its scheduling. Children do not inherit this marker,
 // so application handlers started by a service remain visible. Read-only and

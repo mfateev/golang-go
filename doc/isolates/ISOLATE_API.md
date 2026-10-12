@@ -32,6 +32,15 @@ version to accept it; advertising the same number alone is not a replay proof.
 See [Integration contracts](./INTEGRATION_CONTRACTS_PLAN.md) for the compatibility
 checks and deployment policy.
 
+`go test` discovers marked functions in dependencies and both internal and
+external test source files. Registration runs before `TestMain`; normal test
+linking, execution and caching remain available, including multi-package runs
+and `go test -c`. Marked test builds currently require the default gc mode without
+`-cover`. Host harness packages remain process-owned. Native workflow state and
+copied test-reference handles retain ordinary ownership checks.
+`isolate.IsActive()` lets a transport-backed handle select its host or isolate
+path without exposing the host boundary pointer.
+
 ---
 
 ## The claim

@@ -722,6 +722,11 @@ func runTest(ctx context.Context, cmd *base.Command, args []string) {
 
 	pkgOpts := load.PackageOpts{ModResolveTests: true}
 	pkgs = load.PackagesAndErrors(moduleLoader, ctx, pkgOpts, pkgArgs)
+	if !slices.Contains(cfg.BuildContext.BuildTags, "phase0_e4") && work.TestHasIsolates(ctx, moduleLoader, pkgOpts, pkgs) {
+		cfg.BuildContext.BuildTags = append(cfg.BuildContext.BuildTags, "phase0_e4")
+		load.InvalidatePackageCache(moduleLoader)
+		pkgs = load.PackagesAndErrors(moduleLoader, ctx, pkgOpts, pkgArgs)
+	}
 	// We *don't* call load.CheckPackageErrors here because we want to report
 	// loading errors as per-package test setup errors later.
 	if len(pkgs) == 0 {
@@ -1196,6 +1201,11 @@ func builderTest(ld *modload.Loader, b *work.Builder, ctx context.Context, pkgOp
 	if perr != nil {
 		return nil, nil, nil, perr, perr.Error
 	}
+	testMain := pmain
+	pmain, err = work.PrepareIsolateTest(ctx, ld, b, pmain)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 
 	// If imported is true then this package is imported by some
 	// package being tested. Make building the test version of the
@@ -1211,13 +1221,14 @@ func builderTest(ld *modload.Loader, b *work.Builder, ctx context.Context, pkgOp
 
 	// Set testdir to compile action's objdir.
 	// so that the default file path stripping applies to _testmain.go.
-	testDir := b.CompileAction(work.ModeBuild, work.ModeBuild, pmain).Objdir
+	testDir := b.CompileAction(work.ModeBuild, work.ModeBuild, testMain).Objdir
 	if err := b.BackgroundShell().Mkdir(testDir); err != nil {
 		return nil, nil, nil, nil, err
 	}
 
-	pmain.Dir = testDir
+	testMain.Dir = testDir
 	pmain.Internal.OmitDebug = !testC && !testNeedBinary()
+	testMain.Internal.OmitDebug = pmain.Internal.OmitDebug
 	if pmain.ImportPath == "runtime.test" {
 		// The runtime package needs a symbolized binary for its tests.
 		// See runtime/unsafepoint_test.go.
@@ -1227,7 +1238,7 @@ func builderTest(ld *modload.Loader, b *work.Builder, ctx context.Context, pkgOp
 	if !cfg.BuildN {
 		// writeTestmain writes _testmain.go,
 		// using the test description gathered in t.
-		if err := os.WriteFile(testDir+"_testmain.go", *pmain.Internal.TestmainGo, 0666); err != nil {
+		if err := os.WriteFile(testDir+"_testmain.go", *testMain.Internal.TestmainGo, 0666); err != nil {
 			return nil, nil, nil, nil, err
 		}
 	}

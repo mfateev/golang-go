@@ -178,6 +178,61 @@ func runBuildIsolates(ctx context.Context, args []string) {
 // buildStaticIsolates shares state selection and entry generation between
 // legacy directory programs and compiler-discovered function entries.
 func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, host *load.Package, programs []isolatecfg.Program, loaded []*load.Package, functions []isolateFunction) {
+	prepareStaticIsolates(ctx, ld, b, host, programs, loaded, functions, false)
+}
+
+// TestHasIsolates includes declarations and imports from both kinds of test
+// package. Call before creating build actions so phase0_e4 can be reloaded.
+func TestHasIsolates(ctx context.Context, ld *modload.Loader, opts load.PackageOpts, packages []*load.Package) bool {
+	for _, p := range packages {
+		if p.Standard {
+			continue
+		}
+		// TestPackagesFor resolves test imports in place. Discovery must not
+		// feed expanded vendor paths back into the actual test package load.
+		copy := *p
+		copy.TestImports = slices.Clone(p.TestImports)
+		copy.XTestImports = slices.Clone(p.XTestImports)
+		_, ptest, pxtest, perr := load.TestPackagesFor(ld, ctx, opts, &copy, nil)
+		if perr != nil {
+			continue // The test command reports setup errors per package.
+		}
+		roots := []*load.Package{ptest}
+		if pxtest != nil {
+			roots = append(roots, pxtest)
+		}
+		functions, err := discoverIsolateFunctions(roots)
+		if err != nil || len(functions) != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+var isolateTestPackages, isolateTestEntries []string
+
+// PrepareIsolateTest wraps the generated testing main with isolate registration.
+// The caller retains the test command's ordinary linking, caching and execution.
+func PrepareIsolateTest(ctx context.Context, ld *modload.Loader, b *Builder, host *load.Package) (*load.Package, error) {
+	functions, err := discoverIsolateFunctions(host.Internal.Imports)
+	if err != nil || len(functions) == 0 {
+		return host, err
+	}
+	if cfg.BuildCover || cfg.BuildN || cfg.BuildContext.Compiler != "gc" || cfg.BuildBuildmode != "default" {
+		return nil, fmt.Errorf("go test with //go:isolate requires the default gc build mode without -n or -cover")
+	}
+	var roots []*load.Package
+	var programs []isolatecfg.Program
+	for _, fn := range functions {
+		if !slices.Contains(roots, fn.Package) {
+			roots = append(roots, fn.Package)
+			programs = append(programs, isolatecfg.Program{Name: fn.Package.ImportPath, Dir: fn.Package.Dir})
+		}
+	}
+	return prepareStaticIsolates(ctx, ld, b, host, programs, roots, functions, true), nil
+}
+
+func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, host *load.Package, programs []isolatecfg.Program, loaded []*load.Package, functions []isolateFunction, testing bool) *load.Package {
 	// Effect checks are compulsory throughout the linked graph, including
 	// host-initialized dependencies. Host execution returns through each guard.
 	forcedGcflags = append(forcedGcflags, "-d=isolateeffects=1")
@@ -189,6 +244,12 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 		for _, p := range loaded {
 			effectEntries = append(effectEntries, p.ImportPath+".main")
 		}
+	}
+	if testing {
+		isolateTestEntries = append(isolateTestEntries, effectEntries...)
+		slices.Sort(isolateTestEntries)
+		isolateTestEntries = slices.Compact(isolateTestEntries)
+		effectEntries = isolateTestEntries
 	}
 	forcedGcflags = append(forcedGcflags, "-d=isolateeffectentries="+strings.Join(effectEntries, ":"))
 	implicit := load.PackagesAndErrors(ld, ctx, load.PackageOpts{}, []string{"unsafe", "runtime", "internal/isolatebridge", "internal/isolateproto"})
@@ -210,6 +271,24 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 				p.Imports = append(p.Imports, dep.ImportPath)
 				p.Internal.RawImports = append(p.Internal.RawImports, dep.ImportPath)
 				p.Internal.Imports = append(p.Internal.Imports, dep)
+			}
+			// A package without tests may already have a compile action when
+			// a later test binary discovers its marked entries. Its generated
+			// invoker needs the same implicit imports as a newly planned action.
+			export := b.BuildExportAction(ModeBuild, ModeBuild, p)
+			for _, dep := range p.Internal.Imports {
+				if !slices.ContainsFunc(export.Deps, func(a *Action) bool { return a.Package == dep }) {
+					export.Deps = append(export.Deps, b.BuildExportAction(ModeBuild, ModeBuild, dep))
+				}
+			}
+			if vet := b.actionCache[cacheKey{"vet", p}]; vet != nil {
+				for _, dep := range p.Internal.Imports {
+					a := b.vetAction(ld, ModeBuild, ModeBuild, dep)
+					if !slices.Contains(vet.Deps, a) {
+						vet.Deps = append(vet.Deps, a)
+					}
+				}
+				b.addTransitiveCompileActions(vet, export)
 			}
 		}
 	}
@@ -252,7 +331,7 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 			switch p.ImportPath {
 			case "go.temporal.io/sdk/converter":
 				processGraph = processConverter
-			case "go.opentelemetry.io/otel/trace", "go.temporal.io/sdk/activity", "go.temporal.io/sdk/temporal", "go.temporal.io/sdk/workflow", "go.temporal.io/sdk/client", "go.temporal.io/sdk/interceptor", "go.temporal.io/sdk/interceptor/tracing":
+			case "go.opentelemetry.io/otel/trace", "go.temporal.io/sdk/activity", "go.temporal.io/sdk/temporal", "go.temporal.io/sdk/workflow", "go.temporal.io/sdk/client", "go.temporal.io/sdk/interceptor", "go.temporal.io/sdk/interceptor/tracing", "go.temporal.io/sdk/testsuite", "go.temporal.io/sdk/worker":
 				processGraph = processActivity
 			default:
 				continue
@@ -271,6 +350,12 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 			}
 			programReachable[i] = append(programReachable[i], p.ImportPath)
 			allReachable[p.ImportPath] = p
+			// Test declarations also import the host harness. Its registries,
+			// worker configuration and bridge state must not replay inside the
+			// workflow. Workflow APIs and typed reference handles stay private.
+			if p != root && (p.ImportPath == "github.com/mfateev/sdk-go-poc/testsuite" || p.ImportPath == "github.com/mfateev/sdk-go-poc/worker" || p.ImportPath == "github.com/mfateev/sdk-go-poc/temporalbridge") {
+				continue
+			}
 			// UUID's reader and optional byte pool must be private when workflows
 			// use it too. Ordinary ownership/effect checks still apply to its code.
 			if (processConverter[p.ImportPath] || processActivity[p.ImportPath]) && p.ImportPath != "go.temporal.io/sdk/converter" && p.ImportPath != "github.com/google/uuid" && !isolateOwnedObservabilityPackage(p.ImportPath) && !isolateOwnedProtobufPackage(p.ImportPath) {
@@ -344,7 +429,16 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 	}
 	slices.Sort(selectedPaths)
 	slices.Sort(startupSkip)
-	forcedGcflags = append(forcedGcflags, "-d=isolatepackages="+strings.Join(selectedPaths, ":"))
+	compilerPaths := selectedPaths
+	if testing {
+		// Shared dependencies are built once for a multi-package go test. Keep
+		// their descriptors for every test binary planned in this invocation.
+		isolateTestPackages = append(isolateTestPackages, selectedPaths...)
+		slices.Sort(isolateTestPackages)
+		isolateTestPackages = slices.Compact(isolateTestPackages)
+		compilerPaths = isolateTestPackages
+	}
+	forcedGcflags = append(forcedGcflags, "-d=isolatepackages="+strings.Join(compilerPaths, ":"))
 
 	var imports []*load.Package
 	seenImports := make(map[string]bool, len(imports))
@@ -471,6 +565,8 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 			Gcflags:    entryGcflags,
 			Imports:    imports,
 			RawImports: importPaths,
+			Ldflags:    host.Internal.Ldflags,
+			OmitDebug:  host.Internal.OmitDebug,
 		},
 	}
 	pmain.DefaultGODEBUG = host.DefaultGODEBUG
@@ -481,6 +577,9 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 	pmain.Dir = objdir
 	if err := os.WriteFile(filepath.Join(objdir, "_isolate_main.go"), []byte(source.String()), 0666); err != nil {
 		base.Fatal(err)
+	}
+	if testing {
+		return pmain
 	}
 	if cfg.BuildO == "" {
 		cfg.BuildO = host.DefaultExecName() + cfg.ExeSuffix
@@ -549,6 +648,7 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 			base.Fatal(err)
 		}
 	}
+	return pmain
 }
 
 // Value codecs and pools belong to the caller. Descriptor builders and default

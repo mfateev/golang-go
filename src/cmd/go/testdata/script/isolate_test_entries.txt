@@ -1,0 +1,63 @@
+# Both internal and external test declarations are registered before TestMain.
+# Separate marked packages share descriptors in a multi-package invocation.
+go test ./...
+stdout '^ok\s+example.com/isolate-tests/a'
+stdout '^ok\s+example.com/isolate-tests/b'
+go test -c -o a.test ./a
+exec ./a.test -test.run TestInternalEntry
+stdout PASS
+
+-- go.mod --
+module example.com/isolate-tests
+go 1.26
+-- a/a.go --
+package a
+var State = 7
+-- a/a_test.go --
+package a
+import (
+ "isolate"
+ "os"
+ "testing"
+)
+//go:isolate
+func internalEntry(v int) (int, error) { State++; return State+v,nil }
+func TestMain(m *testing.M) {
+ if _,ok:=isolate.LookupFunction(internalEntry);!ok { panic("internal entry missing before TestMain") }
+ os.Exit(m.Run())
+}
+func TestInternalEntry(t *testing.T) {
+ h,ok:=isolate.LookupFunction(internalEntry)
+ if !ok || h.Signature().NumIn()!=1 { t.Fatal("internal entry missing or wrong signature") }
+ if State!=7 {t.Fatal("registration ran workflow code")}
+}
+-- a/external_test.go --
+package a_test
+import (
+ "example.com/isolate-tests/c"
+ "isolate"
+ "testing"
+)
+//go:isolate
+func externalEntry() error { return nil }
+func TestExternalEntry(t *testing.T) {
+ if _,ok:=isolate.LookupFunction(externalEntry);!ok {t.Fatal("external entry missing")}
+ if _,ok:=isolate.LookupFunction(c.Entry);!ok {t.Fatal("dependency without tests missing")}
+}
+-- b/b.go --
+package b
+//go:isolate
+func Entry() error { return nil }
+-- b/b_test.go --
+package b
+import (
+ "isolate"
+ "testing"
+)
+func TestImportedEntry(t *testing.T) {
+ if _,ok:=isolate.LookupFunction(Entry);!ok {t.Fatal("ordinary source entry missing")}
+}
+-- c/c.go --
+package c
+//go:isolate
+func Entry() error {return nil}

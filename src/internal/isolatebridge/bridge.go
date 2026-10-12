@@ -423,6 +423,12 @@ func Current() *Boundary {
 	return (*Boundary)(p)
 }
 
+// Active reports private execution without exposing the host boundary pointer.
+func Active() bool { return active() }
+
+//go:linkname active runtime.isolateActive
+func active() bool
+
 // Call copies one request to the host and waits for its response.
 func (b *Boundary) Call(op uint32, payload []byte) ([]byte, error) {
 	b.stopIfRevoked()
