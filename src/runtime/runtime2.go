@@ -627,6 +627,7 @@ type g struct {
 	isolatePriority            uint8
 	isolateSpawnPriority       uint8 // Explicit priority for direct children; not inherited transitively.
 	isolateReadOnlyService     bool
+	isolateStackService        bool                    // SDK helper excluded from workflow stack dumps; not inherited.
 	isolateOwner               uintptr                 // monotonic trusted instance ID for future heap ownership
 	isolateBoundary            unsafe.Pointer          // provisional host transport for Call
 	isolateGroup               *isolateRevocationGroup // Phase 2B live count and first-dispatch experiment

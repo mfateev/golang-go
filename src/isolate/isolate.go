@@ -52,6 +52,12 @@ func ReadOnlyCall(op uint32, payload []byte) ([]byte, error) {
 // IsReadOnly reports execution in a query or update validator.
 func IsReadOnly() bool { return isolatebridge.InReadOnly() }
 
+// MarkServiceGoroutine excludes the calling SDK helper from workflow stack
+// traces without changing its scheduling. Children do not inherit this marker,
+// so application handlers started by a service remain visible. Read-only and
+// inbound services are already excluded. Application code should not call it.
+func MarkServiceGoroutine() { isolatebridge.MarkServiceGoroutine() }
+
 // GoInbound starts an SDK input-delivery service. In a deterministic instance,
 // the host can admit this goroutine and its children with ResumeInbound while
 // application continuations remain fenced. The service uses the workflow heap

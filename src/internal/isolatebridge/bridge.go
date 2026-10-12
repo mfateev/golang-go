@@ -247,6 +247,26 @@ func (b *Boundary) ReleaseAllocation() { releaseGroupAlloc(b.group) }
 // Snapshot samples without waiting for a running goroutine or stopping the world.
 func (b *Boundary) Snapshot() (uint64, int64, string) { return groupSnapshot(b.group) }
 
+// MarkServiceGoroutine excludes an SDK helper from workflow stack dumps.
+func MarkServiceGoroutine() { markServiceGoroutine() }
+
+//go:linkname markServiceGoroutine runtime.isolateMarkServiceGoroutine
+func markServiceGoroutine()
+
+// StackTrace returns workflow goroutine stacks without truncating the dump.
+func (b *Boundary) StackTrace() string {
+	for size := 64 << 10; ; size *= 2 {
+		buf := make([]byte, size)
+		n := groupStack(b.group, buf)
+		if n < len(buf) {
+			return string(buf[:n])
+		}
+	}
+}
+
+//go:linkname groupStack runtime.isolateGroupStack
+func groupStack(unsafe.Pointer, []byte) int
+
 //go:linkname lifecycleFaultDetails runtime.isolateLifecycleFaultDetails
 func lifecycleFaultDetails(unsafe.Pointer) (string, string, string)
 

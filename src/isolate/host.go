@@ -491,6 +491,13 @@ func (i *Isolate) Writes() <-chan *Message { return i.boundary.Writes() }
 // diagnostic; instance code cannot observe delivery or backend failures.
 func (i *Isolate) DroppedWrites() uint64 { return i.boundary.DroppedWrites() }
 
+// StackTrace returns the stacks of live workflow goroutines in this isolate.
+// SDK services, host goroutines and other isolates' goroutines are excluded.
+// It briefly stops the process's goroutines to read their stacks safely. Suspend
+// first to capture a stable workflow-task boundary. A drained isolate returns "".
+// This is a host operation and must not be called from isolate code.
+func (i *Isolate) StackTrace() string { return i.boundary.StackTrace() }
+
 // Suspend waits for every deterministic instance goroutine to block, then
 // fences dispatch. Service Commands concurrently until this returns. Deliver
 // host event replies while suspended, then call Resume to run the next task.

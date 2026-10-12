@@ -4656,6 +4656,7 @@ func gdestroy(gp *g) {
 	gp.isolateReadOnlyOwner = 0
 	gp.isolateMetadataOwner = 0
 	gp.isolateReadOnlyService = false
+	gp.isolateStackService = false
 	gp.isolateInboundService = false
 	gp.isolatePriority = 0
 	gp.isolateSpawnPriority = 0
@@ -5566,6 +5567,7 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	newg.isolateReadOnlyOwner = 0
 	newg.isolateMetadataOwner = 0
 	newg.isolateReadOnlyService = false
+	newg.isolateStackService = false
 	newg.isolateInboundService = false
 	newg.isolatePriority = 0
 	newg.isolateSpawnPriority = 0

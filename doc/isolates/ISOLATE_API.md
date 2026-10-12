@@ -264,13 +264,23 @@ Marked builds make ownership and effect checks mandatory across dependencies.
 The runtime uses owner-specific allocations under the shared Go collector and
 supports deterministic native goroutine dispatch and host-controlled time.
 
-The host API provides `New`, `NewContext`, `Start`, `Commands`, `Writes`, `Suspend`, `Resume`,
+The host API provides `New`, `NewContext`, `Start`, `Commands`, `Writes`, `Suspend`, `Resume`, `StackTrace`,
 `AdvanceTime`, `Kill`, `Done`, and `Wait`. Returning from the entry terminates its
 remaining goroutines. `Done` closes and `Wait` publishes the outcome only after
 all attached goroutines detach and supported waiter cleanup finishes. A nil
 `Kill(ctx)` establishes the same permanent fence: no later wakeup can execute
 instance code. A deadline leaves revocation in force and returns
 `KillPendingError`, including counts and a bounded best-effort stack/thread sample.
+
+`Isolate.StackTrace()` returns a Go stack dump of live workflow goroutines in
+that instance. Host goroutines, other instances, read-only/inbound services and
+helpers marked with `isolate.MarkServiceGoroutine()` are excluded. The marker
+affects diagnostics only and is not inherited by children, so application update
+handlers remain visible when started by an SDK service. SDK completion code marks
+the entry goroutine after the workflow returns. The dump grows its buffer to avoid
+dropping goroutines; a drained instance returns an empty string. It briefly stops
+the process to safely read stacks. Hosts should suspend the instance first for a
+stable task-boundary snapshot. The bounded termination sample remains separate.
 
 Recovered panics and child `runtime.Goexit` keep Go semantics. Unrecovered entry,
 initializer, or child panics return `PanicError` with copied phase/message/stack;
