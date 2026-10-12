@@ -18,7 +18,7 @@ const TemporalSDKModule = "go.temporal.io/sdk"
 const TemporalSDKVersion = "v1.49.0"
 
 const TemporalSDKForkModule = "github.com/mfateev/temporal-go-sdk"
-const TemporalSDKForkVersion = "v1.49.0-isolates.1"
+const TemporalSDKForkVersion = "v1.49.0-isolates.1.0.20261012175541-b87b0a1d5dda"
 
 // TemporalSDKSource accepts only the upstream baseline and its audited patch.
 // Local directories and other fork revisions cannot inherit metadata privileges.
