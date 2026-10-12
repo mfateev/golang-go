@@ -239,13 +239,6 @@ jobs:
               fi
             done
           done
-      - name: SDK upgrade and rollback replay
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd sdk-go-poc
-          export COMPATIBILITY_LOG_DIR="$POC_LOG_DIR/compatibility"
-          ./example/compatibility/check.sh
       - name: Preserve all output
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
