@@ -26,6 +26,16 @@ func Call(op uint32, payload []byte) ([]byte, error) {
 	return isolatebridge.Current().Call(op, payload)
 }
 
+// ControlCall is the SDK transport for task metadata on an inbound service.
+// It copies request/reply bytes like Call and uses fixed transport select order,
+// preserving the workflow's default random stream. It requires deterministic
+// execution in GoInbound or RunInbound and cannot be used by read-only handlers.
+// Application code should use Call; it cannot call ControlCall from a normal
+// workflow goroutine.
+func ControlCall(op uint32, payload []byte) ([]byte, error) {
+	return isolatebridge.Current().ControlCall(op, payload)
+}
+
 // Write sends observational output to the host without waiting for receipt or
 // acknowledgment. It copies payload into process-owned memory. The host reads
 // messages from Isolate.Writes; no response or delivery status enters the

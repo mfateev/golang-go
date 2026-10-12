@@ -99,6 +99,25 @@ func isolateCallSelectBegin() {
 	gp.isolateCallSelectRemaining = 4
 }
 
+// Input-service control messages are transport bookkeeping, not workflow draws.
+// Use a fixed poll order without advancing the shared replay random source.
+//
+//go:linkname isolateControlCallSelectBegin
+func isolateControlCallSelectBegin() {
+	gp := getg()
+	if gp.isolateGroup == nil || !gp.isolateGroup.deterministic || !gp.isolateInboundService || gp.isolateReadOnlyOwner != 0 {
+		panic("isolate: ControlCall requires a deterministic inbound service")
+	}
+	if gp.isolateCallSelectNext != 0 {
+		throw("isolate: nested Call transport")
+	}
+	for i := range gp.isolateCallSelectValues {
+		gp.isolateCallSelectValues[i] = 0
+	}
+	gp.isolateCallSelectNext = 1
+	gp.isolateCallSelectRemaining = 4
+}
+
 //go:linkname isolateCallSelectEnd
 func isolateCallSelectEnd() {
 	gp := getg()

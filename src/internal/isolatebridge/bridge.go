@@ -431,6 +431,14 @@ func active() bool
 
 // Call copies one request to the host and waits for its response.
 func (b *Boundary) Call(op uint32, payload []byte) ([]byte, error) {
+	return b.call(op, payload, false)
+}
+
+func (b *Boundary) ControlCall(op uint32, payload []byte) ([]byte, error) {
+	return b.call(op, payload, true)
+}
+
+func (b *Boundary) call(op uint32, payload []byte, control bool) ([]byte, error) {
 	b.stopIfRevoked()
 	b.pendingCalls.Add(1)
 	defer b.pendingCalls.Add(-1)
@@ -439,7 +447,11 @@ func (b *Boundary) Call(op uint32, payload []byte) ([]byte, error) {
 		panic("isolate: command ID exhausted")
 	}
 	c := newHostCommand(id, op, payload)
-	callSelectBegin()
+	if control {
+		controlCallSelectBegin()
+	} else {
+		callSelectBegin()
+	}
 	select {
 	case <-b.halt:
 		stopCall()
@@ -563,6 +575,9 @@ func leaveProcess(uintptr)
 
 //go:linkname callSelectBegin runtime.isolateCallSelectBegin
 func callSelectBegin()
+
+//go:linkname controlCallSelectBegin runtime.isolateControlCallSelectBegin
+func controlCallSelectBegin()
 
 //go:linkname callSelectEnd runtime.isolateCallSelectEnd
 func callSelectEnd()
