@@ -7096,6 +7096,15 @@ func (s *state) temp(pos src.XPos, t *types.Type) (*ir.Name, *ssa.Value) {
 		s.vars[memVar] = s.newValue1A(ssaop.OpVarDef, types.TypeMem, tmp, s.mem())
 	}
 	addr := s.addr(tmp)
+	if s.isolateHeapEnabled() && t.HasPointers() {
+		// Ownership probes can introduce safepoints before the caller fills
+		// this temporary, as in a large comma-ok type assertion. VarDef has
+		// already made its pointer fields live; initialize them before a
+		// probe can grow or scan the stack. Emit the zero without a probe.
+		zero := s.newValue2I(ssaop.OpZero, types.TypeMem, t.Size(), addr, s.mem())
+		zero.Aux = t
+		s.vars[memVar] = zero
+	}
 	return tmp, addr
 }
 

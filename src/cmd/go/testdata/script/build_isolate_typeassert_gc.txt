@@ -1,0 +1,123 @@
+# Ownership probes are GC safepoints. Large comma-ok type assertions must not
+# expose an uninitialized pointer temporary when a probe grows the stack.
+go build -gcflags=example.com/assert-gc=-d=isolateheap=2 -o check$GOEXE .
+exec ./check$GOEXE
+stdout '^aggregate type assertions survived stack growth and GC$'
+[race] go build -race -gcflags=example.com/assert-gc=-d=isolateheap=2 -o check-race$GOEXE .
+[race] exec ./check-race$GOEXE
+[race] stdout '^aggregate type assertions survived stack growth and GC$'
+go test -gcflags=example.com/assert-gc=-d=isolateheap=2 -count=20 .
+[race] go test -race -gcflags=example.com/assert-gc=-d=isolateheap=2 -count=20 .
+
+-- go.mod --
+module example.com/assert-gc
+go 1.26
+-- main.go --
+package main
+
+import (
+	"fmt"
+	"runtime"
+	"runtime/debug"
+)
+
+type record struct {
+	Pointers [32]*int
+	Words    [32]uintptr
+}
+
+//go:noinline
+func poison(depth int) {
+	var words [256]uintptr
+	for i := range words {
+		words[i] = 8
+	}
+	if depth > 0 {
+		poison(depth - 1)
+	}
+	runtime.KeepAlive(&words)
+}
+
+//go:noinline
+func assert(value any) (record, bool) {
+	result, ok := value.(record)
+	return result, ok
+}
+
+func main() {
+	debug.SetGCPercent(1)
+	for i := 0; i < 1000; i++ {
+		done := make(chan struct{})
+		go func() {
+			poison(3)
+			value := new(int)
+			*value = 17
+			original := record{}
+			original.Pointers[0] = value
+			original.Words[0] = 8
+			got, ok := assert(original)
+			if !ok || got != original {
+				panic("successful assertion changed value")
+			}
+			got, ok = assert("different type")
+			if ok || got != (record{}) {
+				panic("failed assertion did not return zero")
+			}
+			close(done)
+		}()
+		<-done
+	}
+	fmt.Println("aggregate type assertions survived stack growth and GC")
+}
+-- factory_test.go --
+package main
+
+import (
+	"isolate"
+	"runtime/debug"
+	"testing"
+)
+
+type factory struct {
+	Callback func() []byte
+	Replay   bool
+	Lookup   func(string) any
+	Dynamic  bool
+	Program  isolate.Program
+	Name     string
+	Function isolate.Handle
+	Hooks    [9]func()
+}
+
+type configuration struct{ value []byte }
+
+func (c *configuration) snapshot() []byte { return append([]byte(nil), c.value...) }
+
+//go:noinline
+func wrap(value any, c *configuration) any {
+	if result, ok := value.(factory); ok {
+		result.Callback = c.snapshot
+		return result
+	}
+	return value
+}
+
+func TestFactorySnapshot(t *testing.T) {
+	previous := debug.SetGCPercent(1)
+	defer debug.SetGCPercent(previous)
+	input := []byte("first")
+	c := configuration{value: input}
+	first := c.snapshot()
+	first[0] = 'x'
+	if string(c.snapshot()) != "first" {
+		t.Fatal("snapshot aliased input")
+	}
+	f := wrap(factory{}, &c).(factory)
+	c.value = []byte("later")
+	if string(f.Callback()) != "later" {
+		t.Fatal("factory lost configuration")
+	}
+	if got := wrap("unmatched", &c); got != "unmatched" {
+		t.Fatal("failed assertion changed interface")
+	}
+}
