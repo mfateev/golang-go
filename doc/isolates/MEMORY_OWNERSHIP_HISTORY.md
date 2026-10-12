@@ -861,3 +861,32 @@ and TZ=America/Los_Angeles, retained 195 observations and the unchanged SHA-256
 The native CI matrix includes the fatal compiler fixture, ownership stress,
 and error-retention regression; its new run is separate from the earlier
 native checkpoint cited above.
+
+## Generated protobuf value conversion
+
+The native SDK now uses the pinned Google protobuf binary/JSON value converters
+for generated open-API messages. Canonical `MessageInfo` headers and immutable
+`EnumInfo` records come from process builder registration. Accessors resolve those
+records by concrete Go type; reflection and binary coder caches copy the immutable
+header and initialize under the current owner. Application globals remain private.
+Generated descriptor initializers are identified by the audited builder call and
+run on the process side. Generated reset paths use a checked zero store in native
+execution. Effect guards still protect the original host body.
+
+Descriptor getters retain narrow service scopes, copy returned names/scalar
+defaults, and return opaque descriptor handles. Private synthetic descriptor/cache
+receivers retain their current owner instead of entering a process scope. Dependency
+resolution uses canonical descriptors rather than executing application callbacks
+under process privileges. Default registry handles remain opaque; custom resolvers
+and registry mutation are rejected.
+
+The SDK clones captured protobuf values into query scratch memory before conversion.
+This accommodates protobuf size caches without allowing workflow mutation. Generated
+application schemas exercise nested maps, repeated values, oneofs, well-known types,
+proto2 defaults and descriptor dependencies across files. Both SDK encodings,
+read-only conversion, mutation rejection, codecs and history replay are covered.
+Protobuf support extends the single current POC interface. Its API marker remains
+1; numeric markers can change freely during development and do not identify source
+revisions or promise compatibility with earlier implementations. Host and workflow
+binaries use the current toolchain. Gogo/dynamic/extension/weak/opaque representations
+remain outside scope.

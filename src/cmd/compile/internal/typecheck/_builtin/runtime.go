@@ -333,6 +333,12 @@ func isolateCheckHeapGlobalRead(*byte, uintptr, *byte, uintptr)
 func isolateCheckHeapAtomicCall(uintptr, *byte, *byte, *byte)
 func isolateCheckHeapSelect(*byte, int)
 func isolateCheckHeapStrings([]string)
+func isolatePublishProtoRegistry(value any)
+func isolateCopyMetadataReturnString(owner uintptr, value string) string
+func isolatePublishMetadataReturn(owner uintptr, value any) any
+func isolatePrivateMessageInfo(value any) any
+func isolateEnterMessageInfoMetadata(p unsafe.Pointer) uintptr
+func isolateLeaveMessageInfoMetadata(owner uintptr)
 func isolatePublishMessageInfos(any)
 func isolateCloneProto(any) any
 func isolatePublishErrorSentinel(any)
@@ -345,3 +351,11 @@ func isolateCheckHeapStackMove(*byte, *byte)
 func isolateCheckHeapCopy(*byte, int, *byte, int, uintptr)
 func isolateCheckHeapSliceCopy(*byte, *byte, int, *byte, int, bool)
 func isolateCheckHeapInterfaceEqual(*byte, *byte, *byte, bool)
+
+func isolateCanonicalProtoInfo(value any) any
+func isolatePublishEnumInfos(value any)
+
+func isolateCopyMetadataProtoValue(owner uintptr, value any) any
+func isolateCheckProtoResolver(value any)
+
+func isolateMetadataBorrowOwner() uintptr

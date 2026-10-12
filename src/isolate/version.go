@@ -12,9 +12,9 @@ const (
 	DeterminismVersion = isolateabi.DeterminismVersion
 )
 
-// Contract identifies independent integration contracts. Versions are exact;
-// a future release must explicitly implement an older version to accept it.
-// These versions describe compatibility, not a toolchain source revision.
+// Contract contains numeric sanity-check markers for the single current POC
+// interface. Markers can change freely during development. They do not identify
+// source revisions or select compatibility implementations.
 type Contract struct {
 	Metadata    uint32 `json:"metadata"`
 	API         uint32 `json:"api"`

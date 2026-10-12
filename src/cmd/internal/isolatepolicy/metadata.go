@@ -40,6 +40,20 @@ func MetadataScope(pkg, function string) bool {
 		return function == "(*MessageInfo).init" || function == "(*MessageInfo).initOnce" || function == "(*MessageInfo).Descriptor" || function == "needsInitCheck" || function == "(*ExtensionInfo).lazyInitSlow"
 	case ProtobufModule + "/internal/filedesc":
 		switch function {
+		case "(*Base).ParentFile", "(*Base).Parent", "(*Base).Index", "(*Base).Syntax", "(*Base).Name", "(*Base).FullName",
+			"(*Fields).Len", "(*Fields).Get", "(*Fields).ByNumber", "(*Oneofs).Len", "(*Oneofs).Get", "(*Oneof).IsSynthetic", "(*Oneof).Fields",
+			"(*Message).IsMessageSet", "(*Message).IsMapEntry", "(*Message).Oneofs", "(*Message).RequiredNumbers", "(*Message).ExtensionRanges",
+			"(*FieldRanges).Len", "(*FieldRanges).Get", "(*FieldRanges).Has", "(*FieldNumbers).Len", "(*FieldNumbers).Get",
+			"(*Fields).ByJSONName", "(*Fields).ByTextName", "(*OneofFields).Len", "(*OneofFields).Get", "(*OneofFields).ByNumber",
+			"(*Enum).Values", "(*Enum).IsClosed", "(*EnumValues).Len", "(*EnumValues).Get", "(*EnumValues).ByNumber", "(*EnumValues).ByName", "(*EnumValue).Number",
+			"(*Field).Number", "(*Field).Cardinality", "(*Field).Kind",
+			"(*Field).HasJSONName", "(*Field).JSONName", "(*Field).TextName",
+			"(*Field).HasPresence", "(*Field).HasOptionalKeyword", "(*Field).IsPacked",
+			"(*Field).IsList", "(*Field).IsMap", "(*Field).MapKey", "(*Field).MapValue",
+			"(*Field).HasDefault", "(*Field).Default", "(*Field).DefaultEnumValue",
+			"(*Field).ContainingOneof", "(*Field).ContainingMessage", "(*Field).Enum", "(*Field).Message",
+			"(*Field).IsMapEntry", "(*Field).EnforceUTF8", "(*Field).IsLazy":
+			return true
 		case "(*File).lazyInitOnce", "(*stringName).lazyInit",
 			"(*Message).Fields", "(*Fields).ByName",
 			"(*Names).lazyInit", "(*EnumRanges).lazyInit", "(*FieldRanges).lazyInit",
@@ -82,7 +96,7 @@ func RejectedMetadata(pkg, function string) bool {
 	case ProtobufModule + "/internal/filedesc":
 		switch function {
 		case "(*File).Options", "(*Enum).Options", "(*Message).Options", "(*Field).Options",
-			"(*Oneof).Options", "(*Extension).Options", "(*Service).Options", "(*Method).Options", "(*File).OptionImports":
+			"(*Message).ExtensionRangeOptions", "(*Oneof).Options", "(*Extension).Options", "(*Service).Options", "(*Method).Options", "(*File).OptionImports":
 			return true
 		}
 	}
@@ -93,6 +107,9 @@ func RejectedMetadata(pkg, function string) bool {
 // Only reads of the cell itself are allowed. This grants no read of arbitrary
 // receiver fields, mutation, array resizing, or private-reference publication.
 func MetadataGlobal(symbol string) bool {
+	if symbol == ProtobufModule+"/internal/order.IndexNameFieldOrder" || symbol == ProtobufModule+"/internal/order.GenericKeyOrder" {
+		return true
+	}
 	// These unexported arrays are fixed zero ID sentinels in the pinned OTel
 	// trace API. Reading their bytes exposes no heap object or mutable provider.
 	if symbol == OTelTraceModule+".nilTraceID" || symbol == OTelTraceModule+".nilSpanID" {

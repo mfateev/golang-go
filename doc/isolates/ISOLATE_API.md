@@ -721,3 +721,26 @@ task watchdogs and copied observer events through
 idle time does not consume a watchdog budget. No resource counters or policy are
 provided as deterministic workflow input. See
 [Resource controls](./RESOURCE_CONTROLS_PLAN.md) for accounting and validation.
+
+### Generated Google protobuf values
+
+`isolate.IsGeneratedProtobuf(value any) bool` reports canonical generated message
+provenance recorded by the pinned process builder. Values, pointers and decoding
+pointer slots are accepted. It grants no access to the object's storage. SDKs use
+this check before invoking generated value converters; unsupported representations
+remain subject to ordinary memory and effect checks.
+
+The compiler rewrites generated open-API message accessors to use canonical type
+metadata with private reflection/coder caches. Generated reset paths clear the
+caller-owned message without retaining a process cache. Enum metadata stays
+immutable. Descriptor dependencies resolve from canonical Go types without calling
+application code under metadata privileges. Codec pools and initialization state
+are private; query libraries initialize in scratch memory. Process descriptor
+strings and scalar defaults are copied back into the caller's owner.
+
+Protobuf support is part of the single current POC interface. The API marker is
+currently 1; markers can change freely during development and do not select older
+implementations. Marshal/unmarshal value paths retain ordinary ownership checks.
+Registry mutation, custom resolvers, dynamic messages, extensions, weak fields and
+opaque layouts are separate scope. Host protobuf operations keep their original
+implementations.

@@ -293,7 +293,9 @@ var reflectOffs struct {
 	isolateMessageInfoArrays map[unsafe.Pointer]isolateMessageInfoLayout
 	// Generated message and oneof wrapper types from the audited process builder.
 	// This is type provenance, never permission to read a message's storage.
-	isolateProtoValueTypes map[*abi.Type]bool
+	isolateProtoValueTypes  map[*abi.Type]bool
+	isolateProtoInfos       map[*abi.Type]any
+	isolateProtoGlobalTypes unsafe.Pointer
 }
 
 func reflectOffsLock() {

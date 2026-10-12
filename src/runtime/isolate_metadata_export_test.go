@@ -223,3 +223,12 @@ func IsolateItabBoundsForTest(value interface{ Marker() }) (unsafe.Pointer, uint
 }
 
 func IsolateRunningPanicDefersForTest() uint32 { return runningPanicDefers.Load() }
+
+func IsolatePrivateProtoScopeForTest(p unsafe.Pointer, fn func()) {
+	owner := isolateEnterMessageInfoMetadata(p)
+	defer isolateLeaveMessageInfoMetadata(owner)
+	fn()
+}
+func IsolateMetadataReturnStringForTest(owner uintptr, value string) string {
+	return isolateCopyMetadataReturnString(owner, value)
+}

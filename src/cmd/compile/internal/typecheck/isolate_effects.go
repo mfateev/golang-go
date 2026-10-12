@@ -107,7 +107,12 @@ func ScopeIsolateEffectsInBody(fn, source *ir.Func) {
 	})
 	if reason != "" {
 		fn.Pragma |= ir.Noinline | ir.IsolateEffectGuarded
-		fn.Body.Prepend(Stmt(Call(fn.Pos(), LookupRuntime("isolateRejectEffect"), []ir.Node{ir.NewString(fn.Pos(), reason)}, false)))
+		guard := Stmt(Call(fn.Pos(), LookupRuntime("isolateRejectEffect"), []ir.Node{ir.NewString(fn.Pos(), reason)}, false))
+		if isolateProtoNativePrefixes[fn] {
+			fn.Body = append(fn.Body[:1], append([]ir.Node{guard}, fn.Body[1:]...)...)
+		} else {
+			fn.Body.Prepend(guard)
+		}
 	}
 }
 

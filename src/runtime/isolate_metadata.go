@@ -23,6 +23,126 @@ func isolateMetadataBorrowOwner() uintptr {
 	return gp.isolateMetadataOwner
 }
 
+// Descriptor names are immutable process strings. Copy their bytes before a
+// metadata getter returns to its caller; this does not publish the backing graph.
+func isolateCopyMetadataReturnString(owner uintptr, value string) string {
+	if owner == ^uintptr(0) {
+		owner = getg().isolateOwner
+	}
+	if owner == 0 || len(value) == 0 {
+		return value
+	}
+	gp := getg()
+	previous := gp.isolateOwner
+	gp.isolateOwner = owner
+	defer func() { gp.isolateOwner = previous }()
+	return isolateCopyMetadataString(value)
+}
+
+// Copy string/byte defaults out of the pinned protoreflect.Value union.
+// Primitive defaults contain only type metadata and scalar bits. Composite
+// defaults are not legal protobuf scalar defaults and receive no privilege.
+func isolateCopyMetadataProtoValue(owner uintptr, value any) any {
+	if owner == ^uintptr(0) {
+		owner = getg().isolateOwner
+	}
+	if owner == 0 {
+		return value
+	}
+	e := efaceOf(&value)
+	if e._type == nil || e._type.Kind() != abi.Struct || toRType(e._type).pkgpath() != "google.golang.org/protobuf/reflect/protoreflect" || toRType(e._type).name() != "Value" {
+		throw("isolate: invalid protobuf default value")
+	}
+	type scalarValue struct {
+		typ *abi.Type
+		ptr unsafe.Pointer
+		num uint64
+	}
+	if e._type.Size_ != unsafe.Sizeof(scalarValue{}) {
+		throw("isolate: unexpected protobuf default layout")
+	}
+	source := *(*scalarValue)(e.data)
+	if source.typ != nil {
+		kind := source.typ.Kind()
+		if kind == abi.Pointer || kind == abi.Interface || kind == abi.Map || kind == abi.Struct {
+			isolateRejectEffect("unsupported composite protobuf default")
+		}
+	}
+	gp := getg()
+	previous := gp.isolateOwner
+	gp.isolateOwner = owner
+	defer func() { gp.isolateOwner = previous }()
+	if source.typ != nil && source.typ.Kind() == abi.String {
+		data := isolateCopyMetadataString(unsafe.String((*byte)(source.ptr), source.num))
+		source.ptr = unsafe.Pointer(unsafe.StringData(data))
+	} else if source.typ != nil && source.typ.Kind() == abi.Slice {
+		elem := (*slicetype)(unsafe.Pointer(source.typ)).Elem
+		if elem.Kind() != abi.Uint8 {
+			isolateRejectEffect("unsupported protobuf default slice")
+		}
+		data := make([]byte, source.num)
+		copy(data, unsafe.Slice((*byte)(source.ptr), source.num))
+		source.ptr = unsafe.Pointer(unsafe.SliceData(data))
+	}
+	cloned := newobject(e._type)
+	*(*scalarValue)(cloned) = source
+	result := value
+	efaceOf(&result).data = cloned
+	return result
+}
+
+// Descriptor interfaces are opaque handles to pinned library implementations.
+// Grant reference retention, never ordinary reads of their mutable lazy cells.
+func isolatePublishMetadataReturn(owner uintptr, value any) any {
+	if owner == 0 {
+		return value
+	}
+	e := efaceOf(&value)
+	if e._type == nil || e.data == nil {
+		return value
+	}
+	typ := e._type
+	if typ.Kind() != abi.Pointer {
+		return value
+	}
+	if toRType((*ptrtype)(unsafe.Pointer(typ)).Elem).pkgpath() != "google.golang.org/protobuf/internal/filedesc" {
+		return value
+	}
+	if s := spanOfHeap(uintptr(e.data)); s != nil && s.isolateAllocOwner == 0 {
+		previous := getg().isolateOwner
+		getg().isolateOwner = 0
+		defer func() { getg().isolateOwner = previous }()
+		reflectOffsLock()
+		if reflectOffs.isolateTypes == nil {
+			reflectOffs.isolateTypes = make(map[unsafe.Pointer]uintptr)
+		}
+		if _, exists := reflectOffs.isolateTypes[e.data]; !exists {
+			reflectOffs.isolateTypes[e.data] = 0
+		}
+		reflectOffsUnlock()
+	}
+	return value
+}
+
+func isolateEnterMessageInfoMetadata(p unsafe.Pointer) uintptr {
+	if isolateActive() && p != nil {
+		if s := spanOfHeap(uintptr(p)); s != nil && s.isolateAllocOwner != 0 {
+			if s.isolateAllocOwner != getg().isolateOwner {
+				isolateOwnershipViolation("isolate: foreign message info cache")
+			}
+			return ^uintptr(0) // Private cache initialization keeps the caller's owner.
+		}
+	}
+	isolateCheckMetadataReceiver(p)
+	return isolateEnterMetadata()
+}
+
+func isolateLeaveMessageInfoMetadata(owner uintptr) {
+	if owner != ^uintptr(0) {
+		isolateLeaveMetadata(owner)
+	}
+}
+
 // Audited metadata builders publish immutable types into process registries.
 // This is not a general escape hatch for application state or converters.
 // Enter before taking a service lock and defer Leave before deferring Unlock:

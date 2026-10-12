@@ -273,7 +273,7 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 			allReachable[p.ImportPath] = p
 			// UUID's reader and optional byte pool must be private when workflows
 			// use it too. Ordinary ownership/effect checks still apply to its code.
-			if (processConverter[p.ImportPath] || processActivity[p.ImportPath]) && p.ImportPath != "go.temporal.io/sdk/converter" && p.ImportPath != "github.com/google/uuid" && !isolateOwnedObservabilityPackage(p.ImportPath) {
+			if (processConverter[p.ImportPath] || processActivity[p.ImportPath]) && p.ImportPath != "go.temporal.io/sdk/converter" && p.ImportPath != "github.com/google/uuid" && !isolateOwnedObservabilityPackage(p.ImportPath) && !isolateOwnedProtobufPackage(p.ImportPath) {
 				continue
 			}
 			if p.Standard {
@@ -414,7 +414,7 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 		for _, path := range paths {
 			// UUID caches its Reader and optionally a mutable random-byte pool.
 			// Read-only handlers need a fresh layout, just like standard caches.
-			if isolateOwnedStandardPackages[path] || path == "github.com/google/uuid" || isolateOwnedObservabilityPackage(path) {
+			if isolateOwnedStandardPackages[path] || path == "github.com/google/uuid" || isolateOwnedObservabilityPackage(path) || isolateOwnedProtobufPackage(path) || path == "go.temporal.io/sdk/converter" {
 				fmt.Fprintf(&source, "unsafe.Pointer(&isolatePackageDescriptor%d),\n", descriptorIndex[path])
 			}
 		}
@@ -549,6 +549,20 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 			base.Fatal(err)
 		}
 	}
+}
+
+// Value codecs and pools belong to the caller. Descriptor builders and default
+// registries remain process services with pinned, narrow metadata privileges.
+func isolateOwnedProtobufPackage(path string) bool {
+	switch path {
+	case "google.golang.org/protobuf/proto", "google.golang.org/protobuf/encoding/protojson", "google.golang.org/protobuf/encoding/prototext",
+		"google.golang.org/protobuf/reflect/protoreflect",
+		"google.golang.org/protobuf/internal/impl", "google.golang.org/protobuf/internal/order",
+		"google.golang.org/protobuf/internal/detrand", "google.golang.org/protobuf/internal/errors",
+		"google.golang.org/protobuf/internal/encoding/json", "google.golang.org/protobuf/internal/encoding/text":
+		return true
+	}
+	return false
 }
 
 // Match the compiler's GOROOT-only implementation boundary. All other packages
