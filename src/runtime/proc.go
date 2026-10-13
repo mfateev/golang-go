@@ -3422,6 +3422,9 @@ func execute(gp *g, inheritTime bool) {
 	casgstatus(gp, _Grunnable, _Grunning)
 	if gp.isolateGroup != nil {
 		gp.isolateGroup.running.Add(1)
+		if raceenabled && gp.isolateGroup.deterministic {
+			isolateDispatchRaceSync(gp, true)
+		}
 	}
 	gp.waitsince = 0
 	gp.preempt = false

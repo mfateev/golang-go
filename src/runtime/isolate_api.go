@@ -218,6 +218,10 @@ func isolateAttachGroup(p unsafe.Pointer, ready chan struct{}) unsafe.Pointer {
 			isolateDiscardIfRevoked()
 		}
 		isolateDispatchEnterReady(gp, ready)
+		if raceenabled && next.deterministic {
+			// Joining an isolate can acquire its token without passing execute.
+			isolateDispatchRaceSync(gp, true)
+		}
 	}
 	return unsafe.Pointer(old)
 }

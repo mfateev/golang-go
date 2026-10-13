@@ -49,6 +49,7 @@ type isolateRevocationGroup struct {
 	deterministic         bool                // Set before any group member is attached.
 	dispatchLock          mutex               // Leaf lock: only non-allocating queue/token operations.
 	dispatchToken         guintptr
+	dispatchRace          uint64 // Race-detector clock for serialized execution-token transfers.
 	dispatchQueue         gQueue
 	dispatchPriorityQueue gQueue
 	dispatchJoining       int32 // Pending host-group admission, protected by dispatchLock.

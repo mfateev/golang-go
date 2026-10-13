@@ -192,6 +192,16 @@ func isolateGroupSnapshot(p unsafe.Pointer) (id uint64, thread int64, stack stri
 // acquires the merged clock before releasing private runners and callbacks.
 func isolateRaceReleaseCleanup(gp *g) {
 	if gp.isolateGroup != nil {
+		group := gp.isolateGroup
+		if group.deterministic {
+			lock(&group.dispatchLock)
+			if group.dispatchToken.ptr() == gp {
+				// racegoend destroys this G's clock before gdestroy transfers
+				// the token. Publish its final writes while the clock is live.
+				isolateDispatchRaceSync(gp, false)
+			}
+			unlock(&group.dispatchLock)
+		}
 		racereleasemergeg(gp, unsafe.Pointer(gp.isolateGroup))
 	}
 }

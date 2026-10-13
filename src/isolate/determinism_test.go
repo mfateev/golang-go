@@ -217,25 +217,20 @@ func TestDeterministicGoroutineFIFO(t *testing.T) {
 				t.Fatal(err)
 			}
 			var order []int
-			var mu sync.Mutex
+			// The deterministic dispatch token serializes these writes, including
+			// across Gosched and goroutine exit. No user mutex is required.
 			b.Run(func() {
 				var wg sync.WaitGroup
 				wg.Add(4)
 				for i := 0; i < 4; i++ {
 					go func() {
 						defer wg.Done()
-						mu.Lock()
 						order = append(order, i)
-						mu.Unlock()
 						runtime.Gosched()
-						mu.Lock()
 						order = append(order, i+10)
-						mu.Unlock()
 					}()
 				}
-				mu.Lock()
 				order = append(order, 99)
-				mu.Unlock()
 				wg.Wait()
 			})
 			if !slices.Equal(order, []int{99, 0, 1, 2, 3, 10, 11, 12, 13}) {

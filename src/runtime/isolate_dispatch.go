@@ -119,6 +119,12 @@ func isolateDispatchRelease(gp *g, requeue bool) {
 		unlock(&group.dispatchLock)
 		return // A joining member never owned the execution token.
 	}
+	if raceenabled && readgstatus(gp)&^_Gscan != _Gdead {
+		// Runtime locks are invisible to the race detector. Publish the outgoing
+		// member's clock before another member can acquire this execution token.
+		// An exiting G publishes in isolateRaceReleaseCleanup before racegoend.
+		isolateDispatchRaceSync(gp, false)
+	}
 	gp.isolateDispatchPark = false
 	if requeue {
 		if gp.isolateDispatchQueued {
