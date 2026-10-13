@@ -90,11 +90,23 @@ func isolateDispatchJoin(gp *g, p unsafe.Pointer) bool {
 	}
 	lock(&group.dispatchLock)
 	group.dispatchJoining--
-	ready := isolateDispatchReadyLocked(gp)
+	runnable := isolateDispatchReadyLocked(gp)
+	var waiter *g
+	if group.dispatchToken == 0 && group.dispatchJoining == 0 && group.dispatchWaiter != 0 && !isolateDispatchHasReadyLocked(group) {
+		// A counted join can finish without acquiring a token when this phase
+		// excludes it. No token holder will park to announce idleness, so the
+		// last such join must notify the host suspension waiter itself.
+		group.dispatchPaused = true
+		waiter = group.dispatchWaiter.ptr()
+		group.dispatchWaiter = 0
+	}
 	unlock(&group.dispatchLock)
-	if ready {
+	if runnable {
 		runqput(getg().m.p.ptr(), gp, false)
 		wakep()
+	}
+	if waiter != nil {
+		ready(waiter, 0, false)
 	}
 	return true
 }
