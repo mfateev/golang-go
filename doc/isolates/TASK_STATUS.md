@@ -49,6 +49,23 @@ four-platform suite is still running. Timeout diagnostics now report host
 handler duration and no longer assume that every task deadline means suspension
 failed.
 
+### Read-only worker deadline propagation (2026-10-13)
+
+The full [native CI run](https://github.com/mfateev/golang-go/actions/runs/38395592422)
+passed Linux amd64, Linux ARM and macOS ARM but failed the macOS Intel protobuf
+conversion query. That checker configured a 30-second worker task budget, while
+the read-only bridge independently imposed one second. Queries now retain the
+worker's most recent effective task budget, capped by the execution's
+`MaxTaskDuration`. Read-only work within a task inherits its remaining deadline
+and cancellation, so update validators cannot restart the task's clock. Cached
+and completed-workflow queries use fresh contexts without retaining the expired
+task context. Deadline failures capture the complete task scope before cleanup.
+
+A native cached-query regression fails under the previous one-second policy
+and passes with a configured three-second worker budget. Deadline/cancellation,
+resource-cap and diagnostic tests pass locally, including race checks. Broader
+SDK and native protobuf/replay validation is in progress.
+
 ### Integration progress
 
 The separate

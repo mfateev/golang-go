@@ -3,6 +3,11 @@ name: Isolate context diagnostics
 on:
   workflow_dispatch:
     inputs:
+      suite:
+        description: Focused regression suite
+        default: context
+        type: choice
+        options: [context, read-only]
       rounds:
         description: Scenario repetitions per variant (use 3 for a focused regression check)
         default: '30'
@@ -53,6 +58,7 @@ jobs:
             exit 1
           fi
       - name: Build context checker
+        if: ${{ inputs.suite != 'read-only' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -65,6 +71,7 @@ jobs:
             fi
           done
       - name: Context scenarios and saved-history replay
+        if: ${{ inputs.suite != 'read-only' }}
         shell: bash
         env:
           CONTEXT_ROUNDS: ${{ inputs.rounds || '30' }}
@@ -96,6 +103,28 @@ jobs:
             cat "$POC_LOG_DIR/replay.log"
             exit 1
           fi
+      - name: Read-only deadline and protobuf regression
+        if: ${{ inputs.suite == 'read-only' }}
+        shell: bash
+        env:
+          CONTEXT_ROUNDS: ${{ inputs.rounds || '30' }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$CONTEXT_ROUNDS" =~ ^[1-9][0-9]*$ ]]; then
+            echo "rounds must be a positive integer"
+            exit 1
+          fi
+          cd sdk-go-poc
+          for round in $(seq 1 "$CONTEXT_ROUNDS"); do
+            echo "Read-only deadline, protobuf APIs and replay: round $round"
+            if ! ../golang-go/bin/go test -failfast -timeout=10m -count=1 \
+              ./temporalbridge ./testsuite ./example/protobufvalues/check \
+              -run 'TestReadOnly|TestQueryUsesWorkerBudget|TestTaskTimeout|TestGeneratedProtobuf' \
+              > "$POC_LOG_DIR/read-only-$round.log" 2>&1; then
+              cat "$POC_LOG_DIR/read-only-$round.log"
+              exit 1
+            fi
+          done
       - name: Preserve all output
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
