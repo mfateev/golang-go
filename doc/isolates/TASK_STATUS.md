@@ -41,9 +41,13 @@ are classified before consulting the runtime itab registry. Private heap,
 process-global, and read-only metadata restrictions remain enforced.
 
 All 96 processes passed the same load after the fix. Local ownership/race,
-isolate, SDK context propagation, and saved-history replay checks passed. Native
-CI validation is pending. Timeout diagnostics now report host handler duration
-and no longer assume that every task deadline means suspension failed.
+isolate, full SDK, context propagation, and saved-history replay checks passed.
+The focused [native CI run](https://github.com/mfateev/golang-go/actions/runs/38395612358)
+passed on Linux amd64, macOS ARM, and macOS Intel, with three repetitions of all
+ten scenarios in each dispatch variant and saved-history replay. The broader
+four-platform suite is still running. Timeout diagnostics now report host
+handler duration and no longer assume that every task deadline means suspension
+failed.
 
 ### Integration progress
 
