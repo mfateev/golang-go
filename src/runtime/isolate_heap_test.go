@@ -497,6 +497,15 @@ func TestIsolateHeapMapKeys(t *testing.T) {
 }
 
 var isolateStaticCounter int
+var isolateStaticPointer *int
+var isolateStaticTable = [4]uint32{1, 2, 3, 4}
+
+func BenchmarkIsolateHeapProcessGlobal(b *testing.B) {
+	p := unsafe.Pointer(&isolateStaticTable[0])
+	for b.Loop() {
+		runtime.IsolateHeapAccessForTest(p, unsafe.Sizeof(isolateStaticTable), false)
+	}
+}
 
 func TestIsolateHeapStaticAndStack(t *testing.T) {
 	// Keep a foreign goroutine's stack alive without escaping one of its locals.
@@ -517,12 +526,20 @@ func TestIsolateHeapStaticAndStack(t *testing.T) {
 	}
 	global := unsafe.Pointer(&isolateStaticCounter)
 	check("", func() { runtime.IsolateHeapAccessForTest(global, unsafe.Sizeof(isolateStaticCounter), true) })
+	pointerGlobal := unsafe.Pointer(&isolateStaticPointer)
+	check("", func() { runtime.IsolateHeapAccessForTest(pointerGlobal, unsafe.Sizeof(isolateStaticPointer), true) })
+	tableGlobal := unsafe.Pointer(&isolateStaticTable)
+	check("", func() { runtime.IsolateHeapAccessForTest(tableGlobal, unsafe.Sizeof(isolateStaticTable), true) })
+	text := "immutable string"
+	p := unsafe.Pointer(unsafe.StringData(text))
+	check("", func() { runtime.IsolateHeapAccessForTest(p, uintptr(len(text)), false) })
+	check("isolate: write to read-only memory", func() { runtime.IsolateHeapAccessForTest(p, 1, true) })
 	runtime.IsolateMetadataRunForTest(group, owner, func() {
 		for _, write := range []bool{false, true} {
 			check("isolate: access to process global", func() { runtime.IsolateHeapAccessForTest(global, unsafe.Sizeof(isolateStaticCounter), write) })
+			check("isolate: access to process global", func() { runtime.IsolateHeapAccessForTest(pointerGlobal, unsafe.Sizeof(isolateStaticPointer), write) })
+			check("isolate: access to process global", func() { runtime.IsolateHeapAccessForTest(tableGlobal, unsafe.Sizeof(isolateStaticTable), write) })
 		}
-		text := "immutable string"
-		p := unsafe.Pointer(unsafe.StringData(text))
 		check("", func() { runtime.IsolateHeapAccessForTest(p, uintptr(len(text)), false) })
 		check("", func() { runtime.IsolateHeapReferenceForTest(nil, p) })
 		check("isolate: write to read-only memory", func() { runtime.IsolateHeapAccessForTest(p, 1, true) })

@@ -2,6 +2,11 @@ name: Isolate context diagnostics
 
 on:
   workflow_dispatch:
+    inputs:
+      rounds:
+        description: Scenario repetitions per variant (use 3 for a focused regression check)
+        default: '30'
+        type: string
 
 permissions:
   contents: read
@@ -11,7 +16,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        runner: [ubuntu-24.04, macos-15-intel]
+        runner: [ubuntu-24.04, macos-15, macos-15-intel]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     env:
@@ -61,14 +66,20 @@ jobs:
           done
       - name: Context scenarios and saved-history replay
         shell: bash
+        env:
+          CONTEXT_ROUNDS: ${{ inputs.rounds || '30' }}
         run: |
           set -euo pipefail
+          if [[ ! "$CONTEXT_ROUNDS" =~ ^[1-9][0-9]*$ ]]; then
+            echo "rounds must be a positive integer"
+            exit 1
+          fi
           cd sdk-go-poc
           # Each invocation exercises GOMAXPROCS 1, 2 and 8. Keep the checker's
           # existing 10-second task deadline; this job narrows the test scope.
           # Compare the new admission filters with ordinary Resume on the same
           # runtime. The overlay is diagnostic only, never a replacement worker.
-          for round in $(seq 1 30); do
+          for round in $(seq 1 "$CONTEXT_ROUNDS"); do
             for scenario in header-root child-derived mock-header local-header context-aware-converter per-context-converter per-context-only factory-error nil-propagator extract-error; do
               for variant in unfiltered current; do
                 echo "Round $round: $scenario ($variant)"

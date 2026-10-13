@@ -31,6 +31,13 @@ func isolateCheckHeapAccess(p unsafe.Pointer, size uintptr, write bool) {
 	if end < uintptr(p) {
 		isolateOwnershipViolation("isolate: heap access range overflow")
 	}
+	// Host code frequently reads constant tables in pointer-free process data
+	// (for example MD5's round constants). These linker bounds cannot overlap
+	// private heaps or runtime-published itabs. Avoid a span lookup and the
+	// metadata registry lock on every scalar table load.
+	if owner == 0 && uintptr(p) >= firstmoduledata.noptrdata && end < firstmoduledata.enoptrdata {
+		return
+	}
 	// Go pointers to another goroutine's locals escape to the heap. The only
 	// supported stack storage is this goroutine's complete current stack.
 	if uintptr(p) >= gp.stack.lo && end < gp.stack.hi {
@@ -112,12 +119,6 @@ func isolateStaticRange(addr, end uintptr) (known, readonly bool) {
 }
 
 func isolateCheckNonHeapAccess(addr, end uintptr, write bool) {
-	if isolateReadOnlyItabRange(addr, end) {
-		if write {
-			isolateOwnershipViolation("isolate: write to read-only memory")
-		}
-		return
-	}
 	if known, readonly := isolateStaticRange(addr, end); known {
 		if readonly {
 			if write {
@@ -129,6 +130,14 @@ func isolateCheckNonHeapAccess(addr, end uintptr, write bool) {
 			return // Process globals, including audited service state.
 		}
 		isolateOwnershipViolation("isolate: access to process global")
+	}
+	// Persistent runtime itabs are outside linker sections. Consult their
+	// synchronized registry only after excluding ordinary static storage.
+	if isolateReadOnlyItabRange(addr, end) {
+		if write {
+			isolateOwnershipViolation("isolate: write to read-only memory")
+		}
+		return
 	}
 	// Manual spans contain runtime stacks and runtime-managed storage, not
 	// application objects. No private goroutine may borrow another stack.

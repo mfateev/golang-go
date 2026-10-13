@@ -28,6 +28,25 @@ isolates. Driving use case is Temporal workflow isolation.
 
 ## Current Status
 
+### Host checksum deadline regression (2026-10-13)
+
+The macOS ARM [CI failure](https://github.com/mfateev/golang-go/actions/runs/38339264475)
+was reproduced with 96 concurrent fresh context-checker processes: 94 hit the
+unchanged 10-second task deadline. Suspension had finished; host activity setup
+was hashing the executable for the SDK build ID. A CPU profile attributed about
+94% of CPU time to ownership probes inside MD5, including a metadata-registry
+lock for every constant-table read. Host accesses wholly inside the linker's
+pointer-free data section now use its exact bounds, and other static accesses
+are classified before consulting the runtime itab registry. Private heap,
+process-global, and read-only metadata restrictions remain enforced.
+
+All 96 processes passed the same load after the fix. Local ownership/race,
+isolate, SDK context propagation, and saved-history replay checks passed. Native
+CI validation is pending. Timeout diagnostics now report host handler duration
+and no longer assume that every task deadline means suspension failed.
+
+### Integration progress
+
 The separate
 [`sdk-go-poc` repository](https://github.com/mfateev/sdk-go-poc/tree/task/modify-go-runtime-for-isolates)
 now contains a byte-oriented isolate workflow API and a Temporal Go SDK
