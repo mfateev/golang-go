@@ -55,6 +55,7 @@ type isolateRevocationGroup struct {
 	dispatchJoining       int32 // Pending host-group admission, protected by dispatchLock.
 	dispatchPaused        bool
 	dispatchWaiter        guintptr // Host waiting for exact idle suspension.
+	dispatchSuspender     guintptr // Host inside Suspend, including after its notification; dispatchLock.
 	drainWaiters          gList    // Process goroutines waiting for revoked group cleanup; dispatchLock.
 	pollLock              mutex
 	pollWaits             *g

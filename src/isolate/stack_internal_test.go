@@ -8,6 +8,7 @@ import (
 	"context"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -88,6 +89,20 @@ func TestStackTraceWorkflowGoroutines(t *testing.T) {
 				}
 				runtime.GC()
 			}
+			diagnostic := instance.TaskDiagnostics()
+			if len(diagnostic) <= 64<<10 {
+				t.Fatal("task diagnostic did not preserve the full large dump")
+			}
+			for _, included := range []string{"isolate.stackTraceService", "isolate.stackTraceInbound", "isolate.stackTraceSDKService", "isolate.stackTraceHandler", "TestStackTraceWorkflowGoroutines", "phase=normal paused=true", "token=0", "normal_queue=[] priority_queue=[]"} {
+				if !strings.Contains(diagnostic, included) {
+					t.Fatalf("task diagnostic omitted %q: %s", included, diagnostic)
+				}
+			}
+			for _, excluded := range []string{"isolate.stackTraceOther", "isolate.stackTraceHost"} {
+				if strings.Contains(diagnostic, excluded) {
+					t.Fatalf("task diagnostic included unrelated %q", excluded)
+				}
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			if err := instance.Kill(ctx); err != nil {
@@ -97,5 +112,83 @@ func TestStackTraceWorkflowGoroutines(t *testing.T) {
 				t.Fatalf("drained isolate retained stacks: %s", stack)
 			}
 		})
+	}
+}
+
+//go:noinline
+func taskDiagnosticBusy(release *atomic.Bool) {
+	for !release.Load() {
+	}
+}
+
+func TestTaskDiagnosticsActiveDispatcher(t *testing.T) {
+	old := runtime.GOMAXPROCS(2)
+	defer runtime.GOMAXPROCS(old)
+	var release atomic.Bool
+	defer release.Store(true)
+	instance := priorityInstance(t, func() {
+		go stackTraceChild()
+		GoWithPriority(PriorityHigh, stackTraceChild)
+		_, _ = Call(17, nil)
+		taskDiagnosticBusy(&release)
+		_, _ = Call(19, nil)
+	})
+	var root *Command
+	var children []*Command
+	for range 3 {
+		c := priorityCommand(t, instance)
+		if c.Op == 17 {
+			root = c
+		} else {
+			children = append(children, c)
+		}
+	}
+	if err := instance.Suspend(); err != nil {
+		t.Fatal(err)
+	}
+	root.Reply(nil, nil)
+	if err := instance.Resume(); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range children {
+		c.Reply(nil, nil)
+	}
+	suspended := make(chan error, 1)
+	go func() { suspended <- instance.Suspend() }()
+	deadline := time.Now().Add(2 * time.Second)
+	var snapshot string
+	for {
+		snapshot = instance.TaskDiagnostics()
+		if !strings.Contains(snapshot, "suspension_waiter=0") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("suspension waiter not registered: %s", snapshot)
+		}
+		runtime.Gosched()
+	}
+	for _, missing := range []string{"token=0", "normal_queue=[]", "priority_queue=[]"} {
+		if strings.Contains(snapshot, missing) {
+			t.Fatalf("active dispatcher omitted state %q: %s", missing, snapshot)
+		}
+	}
+	for _, included := range []string{"isolate.taskDiagnosticBusy", "isolate.(*Isolate).Suspend", "TestTaskDiagnosticsActiveDispatcher(", "priority=1 queued=true"} {
+		if !strings.Contains(snapshot, included) {
+			t.Fatalf("missing %q: %s", included, snapshot)
+		}
+	}
+	release.Store(true)
+	select {
+	case err := <-suspended:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("suspension helper did not finish")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := instance.Kill(ctx); err != nil {
+		t.Fatal(err)
 	}
 }

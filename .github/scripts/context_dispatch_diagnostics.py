@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Prepare temporary context-checker overlays for the focused CI comparison.
 
-Both binaries record all goroutine stacks if a scenario takes two seconds.
-The comparison changes only filtered Resume calls; it does not modify either
-repository or relax the workflow task deadline. Never use it in a worker build.
+The SDK records the focused task scope before timeout cleanup. This comparison
+changes only filtered Resume calls; it does not modify either repository or
+relax the workflow task deadline. Never use it in a worker build.
 """
 
 import argparse
@@ -25,21 +25,7 @@ def main():
     sdk, output = args.sdk.resolve(), args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
 
-    checker = sdk / "example/contextpropagation/check/main.go"
-    watched = replace_once(
-        checker.read_text(),
-        "func run(scenario string) {",
-        '''func run(scenario string) {
-    watchdog := time.AfterFunc(2*time.Second, func() {
-        buf := make([]byte, 1<<20)
-        n := runtime.Stack(buf, true)
-        fmt.Printf("DISPATCH WATCHDOG scenario=%s GOMAXPROCS=%d\\n%s\\n", scenario, runtime.GOMAXPROCS(0), buf[:n])
-    })
-    defer watchdog.Stop()''',
-    )
-    watched_path = output / "watched-checker.go"
-    watched_path.write_text(watched)
-    replacements = {str(checker): str(watched_path)}
+    replacements = {}
     (output / "current.json").write_text(json.dumps({"Replace": replacements}))
 
     bridge = sdk / "temporalbridge/bridge.go"

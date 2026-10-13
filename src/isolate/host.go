@@ -498,6 +498,14 @@ func (i *Isolate) DroppedWrites() uint64 { return i.boundary.DroppedWrites() }
 // This is a host operation and must not be called from isolate code.
 func (i *Isolate) StackTrace() string { return i.boundary.StackTrace() }
 
+// TaskDiagnostics captures dispatcher state, every goroutine in this isolate
+// (including SDK services), the calling host task goroutine and the host inside
+// Suspend. Capture it before Kill when investigating a stalled task. It stops
+// the world like StackTrace and grows its buffer to preserve the full output.
+// It excludes unrelated host goroutines and other isolates; identifying an
+// external GC worker or shared lock owner requires further dependency tracking.
+func (i *Isolate) TaskDiagnostics() string { return i.boundary.TaskDiagnostics() }
+
 // Suspend waits for every deterministic instance goroutine to block, then
 // fences dispatch. Service Commands concurrently until this returns. Deliver
 // host event replies while suspended, then call Resume to run the next task.

@@ -267,6 +267,20 @@ func (b *Boundary) StackTrace() string {
 //go:linkname groupStack runtime.isolateGroupStack
 func groupStack(unsafe.Pointer, []byte) int
 
+// TaskDiagnostics includes isolate services and related host task goroutines.
+func (b *Boundary) TaskDiagnostics() string {
+	for size := 64 << 10; ; size *= 2 {
+		buf := make([]byte, size)
+		n := taskStack(b.group, buf)
+		if n < len(buf) {
+			return string(buf[:n])
+		}
+	}
+}
+
+//go:linkname taskStack runtime.isolateTaskStack
+func taskStack(unsafe.Pointer, []byte) int
+
 //go:linkname lifecycleFaultDetails runtime.isolateLifecycleFaultDetails
 func lifecycleFaultDetails(unsafe.Pointer) (string, string, string)
 

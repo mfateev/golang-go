@@ -211,7 +211,16 @@ func isolateSuspend(p unsafe.Pointer) {
 	if getg().isolateGroup != nil {
 		panic("isolate: suspension is a host operation")
 	}
+	lock(&group.dispatchLock)
+	if group.dispatchSuspender != 0 {
+		throw("isolate: concurrent suspension callers")
+	}
+	group.dispatchSuspender.set(getg())
+	unlock(&group.dispatchLock)
 	gopark(isolateSuspendCommit, p, waitReasonZero, traceBlockGeneric, 1)
+	lock(&group.dispatchLock)
+	group.dispatchSuspender = 0
+	unlock(&group.dispatchLock)
 }
 
 func isolateSuspendCommit(gp *g, p unsafe.Pointer) bool {
