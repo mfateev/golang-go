@@ -116,7 +116,8 @@ func TestStackTraceWorkflowGoroutines(t *testing.T) {
 }
 
 //go:noinline
-func taskDiagnosticBusy(release *atomic.Bool) {
+func taskDiagnosticBusy(entered, release *atomic.Bool) {
+	entered.Store(true)
 	for !release.Load() {
 	}
 }
@@ -124,13 +125,13 @@ func taskDiagnosticBusy(release *atomic.Bool) {
 func TestTaskDiagnosticsActiveDispatcher(t *testing.T) {
 	old := runtime.GOMAXPROCS(2)
 	defer runtime.GOMAXPROCS(old)
-	var release atomic.Bool
+	var entered, release atomic.Bool
 	defer release.Store(true)
 	instance := priorityInstance(t, func() {
 		go stackTraceChild()
 		GoWithPriority(PriorityHigh, stackTraceChild)
 		_, _ = Call(17, nil)
-		taskDiagnosticBusy(&release)
+		taskDiagnosticBusy(&entered, &release)
 		_, _ = Call(19, nil)
 	})
 	var root *Command
@@ -158,9 +159,13 @@ func TestTaskDiagnosticsActiveDispatcher(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	var snapshot string
 	for {
-		snapshot = instance.TaskDiagnostics()
-		if !strings.Contains(snapshot, "suspension_waiter=0") {
-			break
+		// A reserved token and registered waiter do not prove that the root
+		// has resumed from Call yet. Observe entry into the busy fixture first.
+		if entered.Load() {
+			snapshot = instance.TaskDiagnostics()
+			if !strings.Contains(snapshot, "suspension_waiter=0") {
+				break
+			}
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("suspension waiter not registered: %s", snapshot)
@@ -172,7 +177,12 @@ func TestTaskDiagnosticsActiveDispatcher(t *testing.T) {
 			t.Fatalf("active dispatcher omitted state %q: %s", missing, snapshot)
 		}
 	}
-	for _, included := range []string{"isolate.taskDiagnosticBusy", "isolate.(*Isolate).Suspend", "TestTaskDiagnosticsActiveDispatcher(", "priority=1 queued=true"} {
+	// The runtime deliberately reports an unavailable stack for a goroutine
+	// still running on another thread at the snapshot boundary.
+	if !strings.Contains(snapshot, "isolate.taskDiagnosticBusy") && !strings.Contains(snapshot, "goroutine running on other thread; stack unavailable") {
+		t.Fatalf("busy token holder missing from snapshot: %s", snapshot)
+	}
+	for _, included := range []string{"isolate.(*Isolate).Suspend", "TestTaskDiagnosticsActiveDispatcher(", "priority=1 queued=true"} {
 		if !strings.Contains(snapshot, included) {
 			t.Fatalf("missing %q: %s", included, snapshot)
 		}

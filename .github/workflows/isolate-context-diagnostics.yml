@@ -57,6 +57,15 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/bootstrap.log"
             exit 1
           fi
+      - name: Active dispatcher diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd golang-go
+          if ! ./bin/go test -race isolate -run '^TestTaskDiagnosticsActiveDispatcher$' -count=100 > "$POC_LOG_DIR/active-dispatcher-race.log" 2>&1; then
+            cat "$POC_LOG_DIR/active-dispatcher-race.log"
+            exit 1
+          fi
       - name: Build context checker
         if: ${{ inputs.suite != 'read-only' }}
         shell: bash

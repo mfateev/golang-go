@@ -67,8 +67,12 @@ resource-cap and diagnostic tests pass locally, including race checks and the
 full SDK suite. The focused [native CI run](https://github.com/mfateev/golang-go/actions/runs/38468541692)
 passed three rounds of these regressions and protobuf API/replay checks on Linux
 amd64, macOS ARM and macOS Intel, using SDK revision `ff35d21`. The full
-four-platform CI run is being rerun with that updated SDK branch; its compiler
-and runtime revision is unchanged from the previous attempt.
+four-platform rerun then exposed a separate race in the active-dispatcher
+diagnostic test: token reservation and suspension-waiter registration were
+mistaken for proof that the root had entered its busy loop. The fixture now
+publishes an atomic entry handshake and allows the runtime's documented
+unavailable-stack report. The focused native job stresses this fixture with
+100 race-enabled repetitions before its SDK checks. Full CI remains pending.
 
 ### Integration progress
 
