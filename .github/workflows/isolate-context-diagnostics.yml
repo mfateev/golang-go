@@ -1,0 +1,88 @@
+name: Isolate context diagnostics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  context:
+    strategy:
+      fail-fast: true
+      matrix:
+        runner: [ubuntu-24.04, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: golang-go
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: mfateev/sdk-go-poc
+          ref: task/modify-go-runtime-for-isolates
+          path: sdk-go-poc
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.7'
+          cache: false
+      - name: Build the fork
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GOCACHE="$RUNNER_TEMP/context-go-cache"
+          export POC_LOG_DIR="$RUNNER_TEMP/context-logs"
+          echo "GOCACHE=$GOCACHE" >> "$GITHUB_ENV"
+          echo "POC_LOG_DIR=$POC_LOG_DIR" >> "$GITHUB_ENV"
+          mkdir -p "$POC_LOG_DIR"
+          export GOROOT_BOOTSTRAP="$(go env GOROOT)"
+          for repo in golang-go sdk-go-poc; do
+            git -C "$repo" rev-parse HEAD >> "$POC_LOG_DIR/revisions.txt"
+          done
+          cd golang-go/src
+          if ! ./make.bash > "$POC_LOG_DIR/bootstrap.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/bootstrap.log"
+            exit 1
+          fi
+      - name: Build context checker
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd sdk-go-poc
+          if ! ../golang-go/bin/go build -o "$RUNNER_TEMP/context-check" ./example/contextpropagation/check > "$POC_LOG_DIR/checker-build.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/checker-build.log"
+            exit 1
+          fi
+      - name: Context scenarios and saved-history replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd sdk-go-poc
+          # Each invocation exercises GOMAXPROCS 1, 2 and 8. Keep the checker's
+          # existing 10-second task deadline; this job narrows the test scope.
+          for round in 1 2 3; do
+            for scenario in header-root child-derived mock-header local-header context-aware-converter per-context-converter per-context-only factory-error nil-propagator extract-error; do
+              echo "Round $round: $scenario"
+              date -u '+%Y-%m-%dT%H:%M:%SZ'
+              if ! "$RUNNER_TEMP/context-check" -scenario "$scenario" > "$POC_LOG_DIR/$round-$scenario.log" 2>&1; then
+                cat "$POC_LOG_DIR/$round-$scenario.log"
+                exit 1
+              fi
+            done
+          done
+          echo "Saved-history replay"
+          if ! "$RUNNER_TEMP/context-check" -history-dir example/contextpropagation/testdata > "$POC_LOG_DIR/replay.log" 2>&1; then
+            cat "$POC_LOG_DIR/replay.log"
+            exit 1
+          fi
+      - name: Preserve all output
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: isolate-context-${{ matrix.runner }}
+          path: ${{ runner.temp }}/context-logs
+          if-no-files-found: warn
+          retention-days: 14

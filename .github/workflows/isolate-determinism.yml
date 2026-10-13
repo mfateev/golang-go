@@ -18,7 +18,7 @@ permissions:
 jobs:
   native-replay:
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel]
     runs-on: ${{ matrix.runner }}
@@ -66,9 +66,11 @@ jobs:
         run: |
           set -euo pipefail
           cd golang-go
+          # Stop on the first failed test; serialize packages so another package
+          # cannot keep the test command running after a failure.
           for cpu in default disabled; do
             if [ "$cpu" = disabled ]; then export GODEBUG=cpu.all=off; else unset GODEBUG; fi
-            if ! ./bin/go test math isolate -run 'TestIsolateMathOriginalRounding|TestIsolateRandFMA32|TestDeterministicMathBitPatterns' -count=1 > "$POC_LOG_DIR/math-$cpu.log" 2>&1; then
+            if ! ./bin/go test -failfast -p 1 math isolate -run 'TestIsolateMathOriginalRounding|TestIsolateRandFMA32|TestDeterministicMathBitPatterns' -count=1 > "$POC_LOG_DIR/math-$cpu.log" 2>&1; then
               cat "$POC_LOG_DIR/math-$cpu.log"
               exit 1
             fi
@@ -78,31 +80,31 @@ jobs:
         run: |
           set -euo pipefail
           cd golang-go
-          if ! ./bin/go test -short runtime isolate internal/isolatebridge internal/isolatepolicy go/build internal/trace context time sync iter reflect internal/runtime/maps math math/rand math/rand/v2 > "$POC_LOG_DIR/runtime.log" 2>&1; then
+          if ! ./bin/go test -failfast -p 1 -short runtime isolate internal/isolatebridge internal/isolatepolicy go/build internal/trace context time sync iter reflect internal/runtime/maps math math/rand math/rand/v2 > "$POC_LOG_DIR/runtime.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/runtime.log"
             exit 1
           fi
-          if ! GODEBUG=cpu.all=off ./bin/go test isolate -run TestDeterministic -count=5 > "$POC_LOG_DIR/cpu-disabled.log" 2>&1; then
+          if ! GODEBUG=cpu.all=off ./bin/go test -failfast -p 1 isolate -run TestDeterministic -count=5 > "$POC_LOG_DIR/cpu-disabled.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/cpu-disabled.log"
             exit 1
           fi
-          if ! ./bin/go test -race runtime isolate internal/isolatebridge -run 'TestLogging|TestWrite|TestResources|TestLifecycle|TestIsolateLifecycle|TestConcurrentStartKill|TestKill|TestMainExit|TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateReadOnly|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestEffectFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/race.log" 2>&1; then
+          if ! ./bin/go test -failfast -p 1 -race runtime isolate internal/isolatebridge -run 'TestLogging|TestWrite|TestResources|TestLifecycle|TestIsolateLifecycle|TestConcurrentStartKill|TestKill|TestMainExit|TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateReadOnly|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestEffectFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/race.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/race.log"
             exit 1
           fi
-          if ! GOEXPERIMENT=staticlockranking ./bin/go test -short runtime isolate internal/isolatebridge -run 'TestLogging|TestWrite|TestResources|TestLifecycle|TestIsolateLifecycle|TestConcurrentStartKill|TestKill|TestMainExit|TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateReadOnly|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestEffectFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/lockranking.log" 2>&1; then
+          if ! GOEXPERIMENT=staticlockranking ./bin/go test -failfast -p 1 -short runtime isolate internal/isolatebridge -run 'TestLogging|TestWrite|TestResources|TestLifecycle|TestIsolateLifecycle|TestConcurrentStartKill|TestKill|TestMainExit|TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateReadOnly|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestEffectFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates' -count=5 > "$POC_LOG_DIR/lockranking.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/lockranking.log"
             exit 1
           fi
-          if ! ./bin/go test cmd/internal/testdir -run 'Test/devirt.go$' -count=1 > "$POC_LOG_DIR/compiler-default.log" 2>&1; then
+          if ! ./bin/go test -failfast -p 1 cmd/internal/testdir -run 'Test/devirt.go$' -count=1 > "$POC_LOG_DIR/compiler-default.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/compiler-default.log"
             exit 1
           fi
-          if ! ./bin/go test cmd/internal/isolatepolicy cmd/go -run 'TestTemporalSDKSource|TestScript/build_isolate_(contract|write|functions|support|programs|metadata|heap|fault|ownership|effects|lifecycle|resources|nilinterface|structeq|typeassert_gc|fork)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
+          if ! ./bin/go test -failfast -p 1 cmd/internal/isolatepolicy cmd/go -run 'TestTemporalSDKSource|TestScript/build_isolate_(contract|write|functions|support|programs|metadata|heap|fault|ownership|effects|lifecycle|resources|nilinterface|structeq|typeassert_gc|fork)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/compiler.log"
             exit 1
           fi
-          if ! ./bin/go test -tags=phase0_e4 internal/isolateproto -run TestPackageMetadataVersionBeforeLayout -count=1 > "$POC_LOG_DIR/metadata-version.log" 2>&1; then
+          if ! ./bin/go test -failfast -p 1 -tags=phase0_e4 internal/isolateproto -run TestPackageMetadataVersionBeforeLayout -count=1 > "$POC_LOG_DIR/metadata-version.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/metadata-version.log"
             exit 1
           fi
@@ -112,7 +114,7 @@ jobs:
         run: |
           set -euo pipefail
           cd sdk-go-poc
-          if ! ../golang-go/bin/go test -timeout=20m ./... > "$POC_LOG_DIR/sdk.log" 2>&1; then
+          if ! ../golang-go/bin/go test -failfast -p 1 -timeout=20m ./... > "$POC_LOG_DIR/sdk.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/sdk.log"
             exit 1
           fi
@@ -221,7 +223,7 @@ jobs:
             exit 1
           fi
           cd ../samples-go-poc
-          if ! ../golang-go/bin/go test -timeout=20m ./... > "$POC_LOG_DIR/samples.log" 2>&1; then
+          if ! ../golang-go/bin/go test -failfast -p 1 -timeout=20m ./... > "$POC_LOG_DIR/samples.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/samples.log"
             exit 1
           fi
