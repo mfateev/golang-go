@@ -52,10 +52,13 @@ jobs:
         run: |
           set -euo pipefail
           cd sdk-go-poc
-          if ! ../golang-go/bin/go build -o "$RUNNER_TEMP/context-check" ./example/contextpropagation/check > "$POC_LOG_DIR/checker-build.log" 2>&1; then
-            tail -n 100 "$POC_LOG_DIR/checker-build.log"
-            exit 1
-          fi
+          python3 ../golang-go/.github/scripts/context_dispatch_diagnostics.py . "$RUNNER_TEMP/context-overlays"
+          for variant in unfiltered current; do
+            if ! ../golang-go/bin/go build -overlay="$RUNNER_TEMP/context-overlays/$variant.json" -o "$RUNNER_TEMP/context-check-$variant" ./example/contextpropagation/check > "$POC_LOG_DIR/checker-build-$variant.log" 2>&1; then
+              tail -n 100 "$POC_LOG_DIR/checker-build-$variant.log"
+              exit 1
+            fi
+          done
       - name: Context scenarios and saved-history replay
         shell: bash
         run: |
@@ -63,18 +66,22 @@ jobs:
           cd sdk-go-poc
           # Each invocation exercises GOMAXPROCS 1, 2 and 8. Keep the checker's
           # existing 10-second task deadline; this job narrows the test scope.
-          for round in 1 2 3; do
+          # Compare the new admission filters with ordinary Resume on the same
+          # runtime. The overlay is diagnostic only, never a replacement worker.
+          for round in $(seq 1 30); do
             for scenario in header-root child-derived mock-header local-header context-aware-converter per-context-converter per-context-only factory-error nil-propagator extract-error; do
-              echo "Round $round: $scenario"
-              date -u '+%Y-%m-%dT%H:%M:%SZ'
-              if ! "$RUNNER_TEMP/context-check" -scenario "$scenario" > "$POC_LOG_DIR/$round-$scenario.log" 2>&1; then
-                cat "$POC_LOG_DIR/$round-$scenario.log"
-                exit 1
-              fi
+              for variant in unfiltered current; do
+                echo "Round $round: $scenario ($variant)"
+                date -u '+%Y-%m-%dT%H:%M:%SZ'
+                if ! "$RUNNER_TEMP/context-check-$variant" -scenario "$scenario" > "$POC_LOG_DIR/$round-$scenario-$variant.log" 2>&1; then
+                  cat "$POC_LOG_DIR/$round-$scenario-$variant.log"
+                  exit 1
+                fi
+              done
             done
           done
           echo "Saved-history replay"
-          if ! "$RUNNER_TEMP/context-check" -history-dir example/contextpropagation/testdata > "$POC_LOG_DIR/replay.log" 2>&1; then
+          if ! "$RUNNER_TEMP/context-check-current" -history-dir example/contextpropagation/testdata > "$POC_LOG_DIR/replay.log" 2>&1; then
             cat "$POC_LOG_DIR/replay.log"
             exit 1
           fi
