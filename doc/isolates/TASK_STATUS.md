@@ -63,8 +63,12 @@ task context. Deadline failures capture the complete task scope before cleanup.
 
 A native cached-query regression fails under the previous one-second policy
 and passes with a configured three-second worker budget. Deadline/cancellation,
-resource-cap and diagnostic tests pass locally, including race checks. Broader
-SDK and native protobuf/replay validation is in progress.
+resource-cap and diagnostic tests pass locally, including race checks and the
+full SDK suite. The focused [native CI run](https://github.com/mfateev/golang-go/actions/runs/38468541692)
+passed three rounds of these regressions and protobuf API/replay checks on Linux
+amd64, macOS ARM and macOS Intel, using SDK revision `ff35d21`. The full
+four-platform CI run is being rerun with that updated SDK branch; its compiler
+and runtime revision is unchanged from the previous attempt.
 
 ### Integration progress
 
