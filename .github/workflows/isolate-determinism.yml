@@ -31,8 +31,6 @@ jobs:
     timeout-minutes: 15
     env:
       GOTOOLCHAIN: local
-      GOCACHE: ${{ runner.temp }}/isolate-go-cache
-      POC_LOG_DIR: ${{ runner.temp }}/isolate-logs
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -51,6 +49,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export GOCACHE="$RUNNER_TEMP/isolate-go-cache"
+          export POC_LOG_DIR="$RUNNER_TEMP/isolate-logs"
+          echo "GOCACHE=$GOCACHE" >> "$GITHUB_ENV"
+          echo "POC_LOG_DIR=$POC_LOG_DIR" >> "$GITHUB_ENV"
           mkdir -p "$POC_LOG_DIR"
           export GOROOT_BOOTSTRAP="$(go env GOROOT)"
           for repo in golang-go sdk-go-poc; do
