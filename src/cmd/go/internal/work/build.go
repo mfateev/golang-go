@@ -61,7 +61,7 @@ in the last two paragraphs. If the named output is an existing directory or
 ends with a slash or backslash, then any resulting executables
 will be written to that directory.
 
-Functions marked //go:isolate in a host's import graph are experimental isolate
+Functions marked //temporal:workflow in a host's import graph are experimental isolate
 entry points. An ordinary single-executable build generates typed invokers,
 function handles, and per-instance package state without directory configs.
 The function retains its Go signature; its SDK supplies the byte protocol.
@@ -503,7 +503,7 @@ func runBuild(ctx context.Context, cmd *base.Command, args []string) {
 	}
 	if len(functions) != 0 && len(pkgs) == 1 && pkgs[0].Name == "main" {
 		if cfg.BuildBuildmode != "default" || cfg.BuildContext.Compiler != "gc" || cfg.BuildN || cfg.BuildCover {
-			base.Fatalf("go build with //go:isolate requires the default gc build mode without -n or -cover")
+			base.Fatalf("go build with //temporal:workflow requires the default gc build mode without -n or -cover")
 		}
 		if !slices.Contains(cfg.BuildContext.BuildTags, "phase0_e4") {
 			cfg.BuildContext.BuildTags = append(cfg.BuildContext.BuildTags, "phase0_e4")
@@ -529,7 +529,7 @@ func runBuild(ctx context.Context, cmd *base.Command, args []string) {
 		return
 	}
 	if buildIsolateReport != "" {
-		base.Fatalf("-isolate-report requires at least one -isolate-dir or a //go:isolate function")
+		base.Fatalf("-isolate-report requires at least one -isolate-dir or a //temporal:workflow function")
 	}
 
 	explicitO := len(cfg.BuildO) > 0

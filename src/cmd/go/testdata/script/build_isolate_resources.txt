@@ -17,7 +17,7 @@ package jobs
 import "runtime"
 var state = make([]byte, 16<<10)
 
-//go:isolate
+//temporal:workflow
 func Work(mode byte) (byte, error) {
     state[0]++
     switch mode {

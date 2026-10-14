@@ -12,7 +12,7 @@ Status: proposed release plan; POC baseline updated 2026-10-10. This follows the
 ## Release target and current baseline
 
 The first supported release is for **reviewed Temporal workflow code**. A
-worker statically links workflow functions marked `//go:isolate`, runs many executions
+worker statically links workflow functions marked `//temporal:workflow`, runs many executions
 in one Go runtime, and sends external effects through the host and Temporal
 Go SDK. Replay must work across supported CPU architectures. The release must
 say which Go and standard-library APIs are supported and reject unsupported
@@ -329,7 +329,7 @@ platforms, including the new deterministic sync.Map.Range and iter.Pull paths.
   `internalbindings` and pins one SDK version. Establish a compatibility test
   matrix and either secure a supported extension point or maintain an
   isolated adapter with an explicit SDK upgrade gate.
-- Extend the POC's `//go:isolate` entry generation to `go run`, `go install`,
+- Extend the POC's `//temporal:workflow` entry generation to `go run`, `go install`,
   and test binaries, trim dependency selection with finer function reachability,
   and generalize the trusted SDK support-package classification. Marked
   functions now have generated typed invokers for any argument count and use

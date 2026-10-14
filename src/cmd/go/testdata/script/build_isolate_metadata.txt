@@ -92,7 +92,7 @@ func Value() int { return 1 }
 -- jobs/jobs.go --
 package jobs
 import "google.golang.org/protobuf/probe"
-//go:isolate
+//temporal:workflow
 func Work() (int, error) { return probe.Value(), nil }
 -- host/main.go --
 package main
@@ -101,7 +101,7 @@ func main() { jobs.Work() }
 
 -- pure/jobs.go --
 package pure
-//go:isolate
+//temporal:workflow
 func Work() (int, error) { return 1, nil }
 -- hostonly/main.go --
 package main

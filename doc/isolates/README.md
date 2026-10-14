@@ -1,7 +1,7 @@
 # Go isolates design work
 
 This directory contains the design and feasibility record for the experimental
-isolates branch. The compiler discovers `//go:isolate` functions and statically
+isolates branch. The compiler discovers `//temporal:workflow` functions and statically
 links their programs into one process. The runtime supplies private package
 state, memory ownership checks, deterministic scheduling and time, copied-byte
 host calls, effect restrictions, and whole-group lifecycle management. The

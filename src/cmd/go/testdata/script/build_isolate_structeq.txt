@@ -19,7 +19,7 @@ import "reflect"
 
 type key struct { Name string; Kind int32; Type reflect.Type }
 
-//go:isolate
+//temporal:workflow
 func Probe() (string,error) {
  a:=key{"owned",3,reflect.TypeFor[int64]()}
  b:=key{"owned",3,reflect.TypeFor[int64]()}

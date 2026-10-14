@@ -20,7 +20,7 @@ import "isolate"
 
 var state = []byte{7}
 
-//go:isolate
+//temporal:workflow
 func Work() {
     state[0]++
     isolate.Write(1, state)

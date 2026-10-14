@@ -17,7 +17,7 @@ package jobs
 
 import "isolate"
 
-//go:isolate
+//temporal:workflow
 func Check() error {
  _, err := isolate.Call(1, []byte("ok"))
  return err

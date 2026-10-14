@@ -21,7 +21,7 @@ import (
  "strconv"
  "unicode"
 )
-//go:isolate
+//temporal:workflow
 func Probe(mode byte) (string,error) {
  if mode==1 { unicode.L.R16[0].Lo=0 }
  if mode==2 { unicode.Categories["L"]=nil }

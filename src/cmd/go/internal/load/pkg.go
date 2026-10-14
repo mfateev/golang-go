@@ -237,7 +237,7 @@ type PackageInternal struct {
 	InternalImportOk  bool                // this package may be imported even though it is internal
 	BuildInfo         *debug.BuildInfo    // add this info to package main
 	TestmainGo        *[]byte             // content for _testmain.go
-	IsolateSource     []byte              // generated typed invokers for //go:isolate functions
+	IsolateSource     []byte              // generated typed invokers for //temporal:workflow functions
 	Embed             map[string][]string // //go:embed comment mapping
 	OrigImportPath    string              // original import path before adding '_test' suffix
 	PGOProfile        string              // path to PGO profile

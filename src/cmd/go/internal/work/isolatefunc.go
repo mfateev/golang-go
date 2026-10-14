@@ -47,7 +47,7 @@ func discoverIsolateFunctions(hosts []*load.Package) ([]isolateFunction, error) 
 			if err != nil {
 				return nil, err
 			}
-			if !bytes.Contains(data, []byte("//go:isolate")) {
+			if !bytes.Contains(data, []byte("//temporal:workflow")) {
 				continue
 			}
 			fset := token.NewFileSet()
@@ -79,9 +79,9 @@ func discoverIsolateFunctions(hosts []*load.Package) ([]isolateFunction, error) 
 				}
 				var marker *ast.Comment
 				for _, comment := range fn.Doc.List {
-					if isIsolateDirective(comment.Text) {
-						if marker != nil || strings.TrimSpace(comment.Text) != "//go:isolate" {
-							return nil, fmt.Errorf("%s: expected one //go:isolate directive without arguments", fset.Position(comment.Pos()))
+					if isWorkflowDirective(comment.Text) {
+						if marker != nil || strings.TrimSpace(comment.Text) != "//temporal:workflow" {
+							return nil, fmt.Errorf("%s: expected one //temporal:workflow directive without arguments", fset.Position(comment.Pos()))
 						}
 						marker = comment
 					}
@@ -91,7 +91,7 @@ func discoverIsolateFunctions(hosts []*load.Package) ([]isolateFunction, error) 
 				}
 				claimed[marker] = true
 				fail := func(reason string) error {
-					return fmt.Errorf("%s: //go:isolate %s", fset.Position(marker.Pos()), reason)
+					return fmt.Errorf("%s: //temporal:workflow %s", fset.Position(marker.Pos()), reason)
 				}
 				if fn.Recv != nil || fn.Type.TypeParams != nil || fn.Body == nil || fn.Name.Name == "main" || fn.Name.Name == "init" {
 					return nil, fail("requires a concrete, top-level function with a body other than main or init")
@@ -118,8 +118,8 @@ func discoverIsolateFunctions(hosts []*load.Package) ([]isolateFunction, error) 
 			}
 			for _, group := range parsed.Comments {
 				for _, comment := range group.List {
-					if isIsolateDirective(comment.Text) && !claimed[comment] {
-						return nil, fmt.Errorf("%s: //go:isolate must immediately precede a function declaration", fset.Position(comment.Pos()))
+					if isWorkflowDirective(comment.Text) && !claimed[comment] {
+						return nil, fmt.Errorf("%s: //temporal:workflow must immediately precede a function declaration", fset.Position(comment.Pos()))
 					}
 				}
 			}
@@ -129,8 +129,8 @@ func discoverIsolateFunctions(hosts []*load.Package) ([]isolateFunction, error) 
 	return functions, nil
 }
 
-func isIsolateDirective(text string) bool {
-	return text == "//go:isolate" || strings.HasPrefix(text, "//go:isolate ") || strings.HasPrefix(text, "//go:isolate\t")
+func isWorkflowDirective(text string) bool {
+	return text == "//temporal:workflow" || strings.HasPrefix(text, "//temporal:workflow ") || strings.HasPrefix(text, "//temporal:workflow\t")
 }
 
 func isolateFieldTypes(fields *ast.FieldList) []ast.Expr {

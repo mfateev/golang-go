@@ -37,7 +37,7 @@ package jobs
 
 import "example.org/isolatefault/dispatch"
 
-//go:isolate
+//temporal:workflow
 func Probe(p *int, mode int) {
     defer func() {
         _ = recover()

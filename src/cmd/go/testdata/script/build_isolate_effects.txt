@@ -40,12 +40,12 @@ func main() {}
 -- bad/bad.go --
 package bad
 import "os"
-//go:isolate
+//temporal:workflow
 func Work() { _, _ = os.ReadFile("sentinel") }
 -- badunsafe/bad.go --
 package badunsafe
 import "unsafe"
-//go:isolate
+//temporal:workflow
 func Work() { _ = unsafe.String((*byte)(nil), 0) }
 -- jobs/jobs.go --
 package jobs
@@ -59,7 +59,7 @@ import (
 )
 func init() { fmt.Print("initializer") }
 
-//go:isolate
+//temporal:workflow
 func Work(mode string) {
  defer func() {
   if recover() != nil { _, _ = isolate.Call(3, nil) }

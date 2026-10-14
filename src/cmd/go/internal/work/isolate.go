@@ -219,7 +219,7 @@ func PrepareIsolateTest(ctx context.Context, ld *modload.Loader, b *Builder, hos
 		return host, err
 	}
 	if cfg.BuildCover || cfg.BuildN || cfg.BuildContext.Compiler != "gc" || cfg.BuildBuildmode != "default" {
-		return nil, fmt.Errorf("go test with //go:isolate requires the default gc build mode without -n or -cover")
+		return nil, fmt.Errorf("go test with //temporal:workflow requires the default gc build mode without -n or -cover")
 	}
 	var roots []*load.Package
 	var programs []isolatecfg.Program

@@ -29,7 +29,7 @@ import (
 var state = make([]byte, 1<<20)
 func Decode(data []byte, dst any) error { return json.Unmarshal(data, dst) }
 
-//go:isolate
+//temporal:workflow
 func Work(mode string) (string, error) {
     state[0]++
     switch mode {

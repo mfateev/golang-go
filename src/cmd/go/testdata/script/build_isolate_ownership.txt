@@ -39,7 +39,7 @@ import (
  "isolate"
 )
 var counter = 41
-//go:isolate
+//temporal:workflow
 func Probe(mode byte) (string,error) {
  if mode == 1 { return textproto.CanonicalMIMEHeaderKey("content-type"),nil }
  if mode == 2 { fmt.Print("forbidden private output"); return "unexpected",nil }
@@ -140,7 +140,7 @@ package main
 import _ "unsafe"
 //go:linkname enter runtime.isolateEnterMetadata
 func enter() uintptr
-//go:isolate
+//temporal:workflow
 func Probe() { enter() }
 func main() {}
 

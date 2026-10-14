@@ -267,7 +267,7 @@ name belongs in persisted instance metadata, while a separate build artifact
 identity identifies the exact code and dependencies needed for replay.
 
 The source-level `isolate` package implements copied-byte `Call` through a
-per-goroutine boundary. `//go:isolate` functions are the current entry mechanism;
+per-goroutine boundary. `//temporal:workflow` functions are the current entry mechanism;
 the directory/configuration form above remains available for runtime probes.
 Marked builds make ownership and effect checks mandatory across dependencies.
 The runtime uses owner-specific allocations under the shared Go collector and

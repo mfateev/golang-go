@@ -192,7 +192,9 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/compiler-default.log"
             exit 1
           fi
-          if ! ./bin/go test -failfast cmd/internal/isolatepolicy cmd/go -run 'TestTemporalSDKSource|TestScript/build_isolate_(contract|write|functions|support|programs|readonly_libraries|metadata|heap|fault|ownership|effects|lifecycle|resources|nilinterface|structeq|typeassert_gc|fork)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
+          # All parallel script tests share one deadline, including cold builds.
+          # Reserve enough time for Intel macOS while keeping a bounded timeout.
+          if ! ./bin/go test -failfast -timeout=15m cmd/internal/isolatepolicy cmd/go -run 'TestTemporalSDKSource|TestScript/build_isolate_(contract|write|functions|support|programs|readonly_libraries|metadata|heap|fault|ownership|effects|lifecycle|resources|nilinterface|structeq|typeassert_gc|fork)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/compiler.log"
             exit 1
           fi

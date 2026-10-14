@@ -103,7 +103,7 @@
 // ends with a slash or backslash, then any resulting executables
 // will be written to that directory.
 //
-// Functions marked //go:isolate in a host's import graph are experimental isolate
+// Functions marked //temporal:workflow in a host's import graph are experimental isolate
 // entry points. An ordinary single-executable build generates typed invokers,
 // function handles, and per-instance package state without directory configs.
 // The function retains its Go signature; its SDK supplies the byte protocol.

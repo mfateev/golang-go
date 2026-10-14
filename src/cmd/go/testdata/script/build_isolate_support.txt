@@ -19,13 +19,13 @@ func init() { Counter++ }
 package support
 import "example.org/isolatesupport/shared/v1.2.0"
 var Count = 10
-//go:isolate
+//temporal:workflow
 func Factory() (int,error) { Count++; shared.Counter++; return Count+shared.Counter,nil }
 -- entry/entry.go --
 package entry
 import "example.org/isolatesupport/shared/v1.2.0"
 var Count = 1
-//go:isolate
+//temporal:workflow
 func Work(input int) (int,error) { Count++; shared.Counter++; return input+Count+shared.Counter,nil }
 -- host/main.go --
 package main

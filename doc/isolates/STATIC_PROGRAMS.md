@@ -8,7 +8,7 @@ remain pending. Dynamic loading is a
 
 ## Function entry points
 
-The source API now marks ordinary Go functions with `//go:isolate`. Build a
+The source API now marks ordinary Go functions with `//temporal:workflow`. Build a
 host executable with an ordinary `go build`; the build discovers marked
 functions in its import graph and generates their invokers, handles, and
 package-state factories. No workflow `main`, config, or directory flag is
@@ -16,7 +16,7 @@ required. A package may contain multiple marked functions and ordinary
 functions. Each marked function keeps its Go signature:
 
 ```go
-//go:isolate
+//temporal:workflow
 func Orders(input OrderRequest) (OrderResult, error) {
     // Ordinary Go workflow code and SDK-mediated host operations.
 }

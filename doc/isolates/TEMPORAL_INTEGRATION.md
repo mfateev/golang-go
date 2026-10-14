@@ -1,7 +1,7 @@
 # Temporal integration: features 7 and 8
 
 The POC uses Temporal Go SDK v1.49.0 host bindings with statically compiled
-`//go:isolate` workflow functions. Native contexts, goroutines, channels,
+`//temporal:workflow` workflow functions. Native contexts, goroutines, channels,
 select and deterministic time replace SDK execution constructs. Ordinary SDK
 workflows and host activities retain their registration and execution behavior.
 

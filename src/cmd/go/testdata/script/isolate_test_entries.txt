@@ -23,7 +23,7 @@ import (
  "testing"
  "github.com/stretchr/testify/suite"
 )
-//go:isolate
+//temporal:workflow
 func internalEntry(v int) (int, error) { State++; return State+v,nil }
 func TestMain(m *testing.M) {
  if _,ok:=isolate.LookupFunction(internalEntry);!ok { panic("internal entry missing before TestMain") }
@@ -42,7 +42,7 @@ import (
  "isolate"
  "testing"
 )
-//go:isolate
+//temporal:workflow
 func externalEntry() error { return nil }
 func TestExternalEntry(t *testing.T) {
  if _,ok:=isolate.LookupFunction(externalEntry);!ok {t.Fatal("external entry missing")}
@@ -50,7 +50,7 @@ func TestExternalEntry(t *testing.T) {
 }
 -- b/b.go --
 package b
-//go:isolate
+//temporal:workflow
 func Entry() error { return nil }
 -- b/b_test.go --
 package b
@@ -65,7 +65,7 @@ func TestImportedEntry(t *testing.T) {
 }
 -- c/c.go --
 package c
-//go:isolate
+//temporal:workflow
 func Entry() error {return nil}
 -- testify/go.mod --
 module github.com/stretchr/testify

@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package isolate provides the host communication operations available to
-// code running inside an isolate. Functions marked //go:isolate are discovered
+// code running inside an isolate. Functions marked //temporal:workflow are discovered
 // by go build and exposed as handles; legacy package main programs remain
 // available for runtime probes.
 //

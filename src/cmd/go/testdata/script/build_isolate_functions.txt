@@ -24,11 +24,15 @@ stdout 'signature preserved'
 
 # Invalid directives fail during discovery, rather than silently running on host.
 ! go build ./badgeneric
-stderr '//go:isolate requires a concrete, top-level function'
+stderr '//temporal:workflow requires a concrete, top-level function'
 ! go build ./badvariadic
-stderr '//go:isolate does not support variadic arguments'
+stderr '//temporal:workflow does not support variadic arguments'
 ! go build ./badplacement
-stderr '//go:isolate must immediately precede a function declaration'
+stderr '//temporal:workflow must immediately precede a function declaration'
+! go build ./badarguments
+stderr 'expected one //temporal:workflow directive without arguments'
+! go build ./badduplicate
+stderr 'expected one //temporal:workflow directive without arguments'
 
 -- go.mod --
 module example.org/isolatefunctiontest
@@ -47,7 +51,7 @@ var counter = 41
 type Request struct { Name string }
 type Response struct { Message string; Counter int }
 
-//go:isolate
+//temporal:workflow
 func Work(request Request, suffix string, delay time.Duration) (Response, error) {
     data, err := json.Marshal(request)
     if err != nil { return Response{}, err }
@@ -56,7 +60,7 @@ func Work(request Request, suffix string, delay time.Duration) (Response, error)
     return Response{request.Name + ":" + suffix, counter}, nil
 }
 
-//go:isolate
+//temporal:workflow
 func other() error { return nil }
 
 func PlainCounter() int { counter++; return counter }
@@ -134,16 +138,27 @@ func main() {
 }
 -- badgeneric/main.go --
 package main
-//go:isolate
+//temporal:workflow
 func Bad[T any](arg T) error { return nil }
 func main() {}
 -- badvariadic/main.go --
 package main
-//go:isolate
+//temporal:workflow
 func Bad(args ...string) error { return nil }
 func main() {}
 -- badplacement/main.go --
 package main
-//go:isolate
+//temporal:workflow
 var Bad = 1
+func main() {}
+-- badarguments/main.go --
+package main
+//temporal:workflow extra
+func Bad() error { return nil }
+func main() {}
+-- badduplicate/main.go --
+package main
+//temporal:workflow
+//temporal:workflow
+func Bad() error { return nil }
 func main() {}

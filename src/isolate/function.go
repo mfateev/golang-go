@@ -15,7 +15,7 @@ import (
 // they must remain behind its copied-byte communication boundary.
 type Value = isolatebridge.Value
 
-// Handle identifies a function marked //go:isolate in a dependency of the
+// Handle identifies a function marked //temporal:workflow in a dependency of the
 // host. A normal go build discovers the marker and creates its metadata.
 // The function retains its original Go signature.
 type Handle struct{ entry isolatebridge.FunctionEntry }
