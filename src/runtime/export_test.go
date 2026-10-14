@@ -2188,3 +2188,7 @@ func FuncNamePiecesForPrint(name string) (string, string, string, string, string
 }
 
 var InHeapOrStack = inHeapOrStack
+
+func IsolateEffectFlagsForTest(pc uintptr) abi.FuncFlag {
+	return findfunc(pc).flag
+}

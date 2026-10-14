@@ -6,7 +6,6 @@ package runtime
 
 import (
 	"internal/abi"
-	"internal/isolatepolicy"
 	"internal/runtime/sys"
 	"unsafe"
 )
@@ -46,15 +45,14 @@ func isolateCheckEffectCallSlow(pc, caller uintptr) {
 		isolateRejectEffect("unclassified native call")
 		return
 	}
-	name := funcname(fn)
-	if isolatepolicy.UnsafeReflectionSymbol(name) {
+	if fn.flag&abi.FuncFlagIsolateUnsafeReflection != 0 {
 		calling := findfunc(caller)
 		if !calling.valid() || calling.flag&(abi.FuncFlagIsolateEffectAudited|abi.FuncFlagIsolateMetadataTrusted) == 0 {
-			isolateRejectEffect(name)
+			isolateRejectEffect(funcname(fn))
 		}
 	}
-	if isolatepolicy.ForbiddenSymbol(name) || fn.flag&abi.FuncFlagIsolateEffectForbidden != 0 || fn.flag&abi.FuncFlagAsm != 0 && fn.flag&abi.FuncFlagIsolateEffectAudited == 0 {
-		isolateRejectEffect(name)
+	if fn.flag&abi.FuncFlagIsolateEffectForbidden != 0 || fn.flag&abi.FuncFlagAsm != 0 && fn.flag&abi.FuncFlagIsolateEffectAudited == 0 {
+		isolateRejectEffect(funcname(fn))
 	}
 }
 

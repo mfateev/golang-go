@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"internal/abi"
 	"internal/buildcfg"
+	"internal/isolatepolicy"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -887,6 +888,16 @@ func writeFuncs(ctxt *Link, sb *loader.SymbolBuilder, funcs []loader.Sym, inlSym
 		var flag abi.FuncFlag
 		if fi.Valid() {
 			flag = fi.FuncFlag()
+		}
+		// Classify the final name written to funcnametab, including linkname
+		// aliases and ABI/method wrappers. This is the same manifest used by
+		// runtime call guards, evaluated once instead of on every dispatch.
+		name := ldr.SymName(s)
+		if isolatepolicy.ForbiddenSymbol(name) {
+			flag |= abi.FuncFlagIsolateEffectForbidden
+		}
+		if isolatepolicy.UnsafeReflectionSymbol(name) {
+			flag |= abi.FuncFlagIsolateUnsafeReflection
 		}
 		off = sb.SetUint8(ctxt.Arch, off, uint8(flag))
 

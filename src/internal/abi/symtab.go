@@ -63,12 +63,17 @@ const (
 	// name alone cannot grant this privilege.
 	FuncFlagIsolateMetadataTrusted
 
-	// External ABI wrappers cannot make application assembly or foreign code
-	// callable from an isolate through a function value or reflection.
+	// Calls forbidden by the linked-name policy, or external ABI wrappers for
+	// application assembly/foreign code, remain forbidden through function
+	// values and reflection.
 	FuncFlagIsolateEffectForbidden
 
 	// Verified standard-library/native implementation; grants no metadata scope.
 	FuncFlagIsolateEffectAudited
+
+	// The linked symbol names an unsafe reflection accessor. Calling it still
+	// requires verified provenance on the caller, independently of this flag.
+	FuncFlagIsolateUnsafeReflection
 )
 
 // A FuncID identifies particular functions that need to be treated
