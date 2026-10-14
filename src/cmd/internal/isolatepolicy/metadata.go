@@ -196,7 +196,7 @@ func RuntimeHook(pkg, function string) bool {
 func MetadataCallbackPackage(pkg string) bool {
 	switch pkg {
 	case "runtime", "reflect", "sync", "sync/atomic", "bytes", "strings",
-		"strconv", "fmt", "errors", "sort", "cmp", "slices", "maps", "iter", "unicode":
+		"strconv", "fmt", "errors", "sort", "cmp", "slices", "maps", "iter", "unicode", "regexp/syntax":
 		return true
 	}
 	for _, prefix := range []string{"runtime/", "internal/", "encoding/", "unicode/", ProtobufModule + "/", TemporalAPIModule + "/"} {

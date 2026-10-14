@@ -29,3 +29,7 @@ is an earlier reference model, not the implementation used by the SDK.
 
 Run shell commands in these documents from the repository root unless a
 different working directory is stated.
+## Cached isolate memory
+
+See [memory density](MEMORY_DENSITY.md) for measured startup and retained-memory
+costs, read-only library sharing, and future span/ownership/GC designs.

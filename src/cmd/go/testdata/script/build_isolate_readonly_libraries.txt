@@ -1,0 +1,104 @@
+# Shared library backing data is frozen; variable bindings remain private.
+[short] skip
+[compiler:gccgo] skip
+go build -o frozen$GOEXE ./host
+exec ./frozen$GOEXE
+stdout '^frozen library tables shared; host and isolate bindings remain private$'
+[race] go build -race -o frozen-race$GOEXE ./host
+[race] exec ./frozen-race$GOEXE
+[race] stdout '^frozen library tables shared; host and isolate bindings remain private$'
+
+-- go.mod --
+module example.org/frozenlibraries
+go 1.26
+-- jobs/jobs.go --
+package jobs
+import (
+ "fmt"
+ "isolate"
+ "regexp"
+ "regexp/syntax"
+ "strconv"
+ "unicode"
+)
+//go:isolate
+func Probe(mode byte) (string,error) {
+ if mode==1 { unicode.L.R16[0].Lo=0 }
+ if mode==2 { unicode.Categories["L"]=nil }
+ if mode==3 {
+  parsed,err:=syntax.Parse(".",0);if err!=nil {panic(err)}
+  program,err:=syntax.Compile(parsed);if err!=nil {panic(err)}
+  for index:=range program.Inst {
+   if len(program.Inst[index].Rune)>0 { program.Inst[index].Rune[0]='Z' }
+  }
+  unicode.L=&unicode.RangeTable{R16:[]unicode.Range16{{Lo:'A',Hi:'A',Stride:1}}}
+  unicode.L.R16[0].Hi='B'
+  unicode.Categories=map[string]*unicode.RangeTable{"private":unicode.L}
+  unicode.Categories["second"]=unicode.L
+  if !unicode.Is(unicode.L,'B') || len(unicode.Categories)!=2 { panic("private table replacement") }
+  return "private",nil
+ }
+ if unicode.Categories["L"]!=unicode.L || !unicode.Is(unicode.L,'A') { panic("host mutation leaked") }
+ if !regexp.MustCompile(`\p{L}+`).MatchString("漢字") || strconv.Quote("é")!=`"é"` { panic("library behavior") }
+ // Exercise deterministic iteration of a shared map and reads of its values.
+ for _,table:=range unicode.Categories { if table==nil { panic("nil category") } }
+ return fmt.Sprintf("%p",unicode.L),nil
+}
+func Program(h isolate.Handle) isolate.Program {
+ return h.ProgramWithHandle(func(h isolate.Handle) {
+  input,err:=isolate.Call(1,nil);if err!=nil {panic(err)}
+  err=h.Invoke(func(args ...isolate.Value) error {*args[0].Pointer.(*byte)=input[0];return nil},
+   func(results ...isolate.Value) error {_,err:=isolate.Call(2,[]byte(results[0].Value.(string)));return err})
+  if err!=nil {panic(err)}
+ })
+}
+-- host/main.go --
+package main
+import (
+ "context"
+ "errors"
+ "fmt"
+ "isolate"
+ "runtime"
+ "time"
+ "unicode"
+ "example.org/frozenlibraries/jobs"
+)
+func main() {
+ handle,ok:=isolate.LookupFunction(jobs.Probe);if !ok {panic("missing handle")}
+ // The canonical snapshot must not expose this mutable host backing data.
+ unicode.L.R16[0].Lo++
+ unicode.Categories["L"]=nil
+ run:=func(mode byte) (string,error) {
+  ctx,cancel:=context.WithTimeout(context.Background(),30*time.Second);defer cancel()
+  now:=time.Unix(1700000000,0).UTC()
+  instance,err:=isolate.NewContext(ctx,isolate.Config{Program:jobs.Program(handle),Deterministic:true,InitialTime:&now,TimerOp:3});if err!=nil{return "",err}
+  defer instance.Kill(ctx)
+  if err:=instance.Start();err!=nil{return "",err}
+  for {
+   select {
+   case command:=<-instance.Commands():
+    if command==nil {return "",instance.Wait()}
+    if err:=instance.Suspend();err!=nil{return "",err}
+    if command.Op==2 {return string(command.Payload),nil}
+    if command.Op!=1 {panic("unexpected operation")}
+    command.Reply([]byte{mode},nil)
+    if err:=instance.Resume();err!=nil{return "",err}
+   case <-instance.Done():return "",instance.Wait()
+   case <-ctx.Done():return "",ctx.Err()
+   }
+  }
+ }
+ identity,err:=run(0);if err!=nil{panic(err)}
+ runtime.GC()
+ if next,err:=run(0);err!=nil || next!=identity {panic(fmt.Sprintf("snapshot reuse: %s %v",next,err))}
+ for _,mode:=range []byte{1,2} {
+  _,err:=run(mode)
+  var ownership *isolate.OwnershipError
+  if !errors.As(err,&ownership) {panic(fmt.Sprintf("mutation %d: %v",mode,err))}
+ }
+ if value,err:=run(3);err!=nil || value!="private" {panic(fmt.Sprintf("private binding: %s %v",value,err))}
+ if value,err:=run(0);err!=nil || value!=identity {panic(fmt.Sprintf("isolate mutation leaked: %s %v",value,err))}
+ if unicode.Categories["L"]!=nil {panic("isolate changed host")}
+ fmt.Println("frozen library tables shared; host and isolate bindings remain private")
+}

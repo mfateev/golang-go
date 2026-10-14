@@ -90,6 +90,15 @@ only core machinery and sanitizer/cgo hooks.
 
 ## Shared immutable metadata and audited services
 
+The generated process entry also prepares independent frozen snapshots of
+`unicode`, `regexp/syntax`, and `strconv`. Instance and read-only scratch layouts
+copy private global bindings while sharing their audited table backing data.
+Normal host globals remain separate. Writes to shared maps/ranges/slices are
+rejected; read-only handler violations panic without revoking the workflow.
+Replacing an instance binding with private data remains supported. See
+[cached memory density](./MEMORY_DENSITY.md) for measurements and deferred
+allocator, object-ownership, GC-accounting and copy-on-write designs.
+
 Only linker-defined read-only ranges and explicitly published canonical
 metadata can be shared. Owner zero is not an immutable classification. Shared
 reflection metadata includes precise type headers, function parameter arrays,

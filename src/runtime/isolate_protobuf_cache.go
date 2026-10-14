@@ -25,6 +25,7 @@ type isolateProtoInitialization struct {
 	info        any
 	allocations *isolateProtoAllocation
 	parent      *isolateProtoInitialization
+	library     bool // Audited GOROOT snapshot, using the same allocation recorder.
 }
 
 type isolateProtoSnapshot struct {
@@ -68,7 +69,10 @@ func isolateRecordProtoAllocation(p unsafe.Pointer, size uintptr, typ *abi.Type)
 	gp.isolateProtoInit = state
 }
 
-func isolateProtoCacheBuilding() bool { return getg().isolateProtoInit != nil }
+func isolateProtoCacheBuilding() bool {
+	state := getg().isolateProtoInit
+	return state != nil && !state.library
+}
 
 // Called immediately before initDone's release store, while initMu is held.
 // Publication uses a copy of the registry so subsequent reads require no lock.

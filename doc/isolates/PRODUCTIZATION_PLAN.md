@@ -1,5 +1,10 @@
 # Productization plan for Go isolates and the Temporal SDK
 
+For the measured cached-isolate memory costs and proposed allocation/GC work,
+see [memory density](./MEMORY_DENSITY.md). Read-only library backing data is
+shared; mixed-owner spans, per-object ownership, root-attributed accounting,
+and transparent copy-on-write remain future work.
+
 Status: proposed release plan; POC baseline updated 2026-10-10. This follows the trusted Temporal POC in
 [TEMPORAL_POC.md](./TEMPORAL_POC.md) and the runtime contract in
 [ISOLATE_API.md](./ISOLATE_API.md).

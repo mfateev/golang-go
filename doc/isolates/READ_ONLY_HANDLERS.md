@@ -14,7 +14,10 @@ scratch values remain writable and may retain read-only workflow references;
 workflow values cannot retain scratch references.
 
 Audited standard-library layouts and caches are initialized under the scratch
-owner. Application package layouts retain the original read-only references.
+owner. Frozen Unicode, regexp syntax and strconv layouts instead copy private
+bindings while sharing their audited immutable backing data. Mutation of those
+shared maps, ranges and slices panics in the handler without revoking the
+workflow. Application package layouts retain the original read-only references.
 Reflection's audited metadata service remembers the actual caller owner, and
 can borrow both scratch and workflow values without publishing them into
 process caches. Query select and random counters are separate from workflow

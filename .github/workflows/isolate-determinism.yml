@@ -83,11 +83,22 @@ jobs:
         run: |
           set -euo pipefail
           cd golang-go
-          if ! ./bin/go test -race -failfast -count=1 -timeout=2m runtime -run '^TestIsolateSharedProtoCache' > "$POC_LOG_DIR/cache-race.log" 2>&1; then
+          if ! ./bin/go test -race -failfast -count=1 -timeout=2m runtime -run '^TestIsolate(SharedProtoCache|FrozenLibrary)' > "$POC_LOG_DIR/cache-race.log" 2>&1; then
             cat "$POC_LOG_DIR/cache-race.log"
             exit 1
           fi
           cat "$POC_LOG_DIR/cache-race.log"
+      - name: Shared library bindings and mutation boundaries
+        timeout-minutes: 4
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd golang-go
+          if ! ./bin/go test -v -failfast -count=1 -timeout=3m cmd/go -run '^TestScript/build_isolate_readonly_libraries$' > "$POC_LOG_DIR/library-script.log" 2>&1; then
+            cat "$POC_LOG_DIR/library-script.log"
+            exit 1
+          fi
+          cat "$POC_LOG_DIR/library-script.log"
       - name: Preserve all output
         if: always()
         timeout-minutes: 2

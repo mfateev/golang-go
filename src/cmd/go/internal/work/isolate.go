@@ -523,6 +523,13 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 		fmt.Fprintf(&source, "func isolateProgramState%d() (func(func()), error) {\npackages, libraries := isolateProgramDescriptors%d()\nstate, err := isolateproto.NewPackageInstance(packages, libraries)\nif err != nil { return nil, err }; return state.Run, nil\n}\n", i, i)
 	}
 	source.WriteString("func init() {\n")
+	source.WriteString("isolateproto.PrepareReadOnlyLibraries([]unsafe.Pointer{\n")
+	for _, path := range selectedPaths {
+		if isolatepolicy.FrozenLibraryPackage(path) {
+			fmt.Fprintf(&source, "unsafe.Pointer(&isolatePackageDescriptor%d),\n", descriptorIndex[path])
+		}
+	}
+	source.WriteString("})\n")
 	if len(functions) == 0 {
 		for i, p := range programs {
 			fmt.Fprintf(&source, "isolatebridge.RegisterProgram(%s, isolatebridge.ProgramEntry{MetadataVersion:%d, Main: isolateProgramMain%d, NewState: isolateProgramState%d})\n", strconv.Quote(p.Name), isolateabi.MetadataVersion, i, i)

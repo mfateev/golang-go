@@ -6,10 +6,16 @@
 
 package syntax
 
-// The alias maps are immutable after construction and shared by the process.
-// In the static isolate probe, prepare them at process startup so the first
-// isolate to parse a Unicode class does not populate process state with its
-// own allocations. A general immutable-state classification is still needed.
+import _ "unsafe" // for go:linkname
+
+// The alias maps are immutable after construction. Both the host and the
+// independent frozen snapshot prepare them before serving regexp operations.
 func init() {
 	aliases.once.Do(initAliases)
 }
+
+// Prog exposes its instructions and rune slices. Preserve writable expression
+// values when compilation uses one of the shared default wildcard tables.
+//
+//go:linkname privateRuneTable runtime.isolatePrivateRuneTable
+func privateRuneTable([]rune) []rune

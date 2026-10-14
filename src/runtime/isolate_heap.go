@@ -50,6 +50,9 @@ func isolateCheckHeapAccess(p unsafe.Pointer, size uintptr, write bool) {
 			return
 		}
 		if s.isolateAllocOwner != owner && (borrowed == 0 || s.isolateAllocOwner != borrowed) {
+			if write && gp.isolateReadOnlyOwner != 0 && s.isolateAllocOwner == 0 && isolateReadOnlyLibraryRange(p, size) {
+				panic("isolate: read-only handler cannot mutate shared library data")
+			}
 			if write && gp.isolateReadOnlyOwner != 0 && s.isolateAllocOwner == 0 &&
 				(isolateReadOnlyProtoRange(p, size) || isolateReadOnlyTypeRange(p, size)) {
 				panic("isolate: read-only handler cannot mutate shared protobuf metadata")
@@ -59,7 +62,7 @@ func isolateCheckHeapAccess(p unsafe.Pointer, size uintptr, write bool) {
 					panic("isolate: read-only handler cannot mutate workflow state")
 				}
 			} else {
-				if !write && s.isolateAllocOwner == 0 && (isolateReadOnlyProtoRange(p, size) || isolateReadOnlyTypeRange(p, size)) {
+				if !write && s.isolateAllocOwner == 0 && (isolateReadOnlyLibraryRange(p, size) || isolateReadOnlyProtoRange(p, size) || isolateReadOnlyTypeRange(p, size)) {
 					return
 				}
 				if write {
@@ -181,6 +184,14 @@ func isolateCheckHeapMap(p unsafe.Pointer, write bool) {
 	if m.IsolateOwner() == gp.isolateOwner {
 		return
 	}
+	if m.IsolateOwner() == 0 && isolateReadOnlyLibraryRange(p, 1) {
+		if !write {
+			return
+		}
+		if gp.isolateReadOnlyOwner != 0 {
+			panic("isolate: read-only handler cannot mutate shared library map")
+		}
+	}
 	if !write && m.IsolateOwner() == 0 && isolateReadOnlyProtoRange(p, 1) {
 		return
 	}
@@ -297,7 +308,7 @@ func isolateCheckHeapReferenceTo(dst, value unsafe.Pointer, stack bool) {
 		if gp.isolateReadOnlyOwner != 0 && source.isolateAllocOwner == gp.isolateReadOnlyOwner && owner == gp.isolateOwner {
 			return // Scratch values may refer to the borrowed workflow heap.
 		}
-		if source.isolateAllocOwner == 0 && (isolateReadOnlyProtoRange(value, 1) || isolateReadOnlyTypeRoot(value)) {
+		if source.isolateAllocOwner == 0 && (isolateReadOnlyLibraryRange(value, 1) || isolateReadOnlyProtoRange(value, 1) || isolateReadOnlyTypeRoot(value)) {
 			return
 		}
 		isolateOwnershipViolation("isolate: foreign heap reference publication")

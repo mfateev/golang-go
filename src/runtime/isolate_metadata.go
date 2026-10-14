@@ -249,6 +249,9 @@ func isolateCheckMetadataCall(pc uintptr) {
 	}
 	name := funcname(fn)
 	if gp.isolateGroup == nil && gp.isolateProtoInit != nil {
+		if gp.isolateProtoInit.library {
+			panic("isolate: unaudited frozen library callback " + name)
+		}
 		panic("isolate: unaudited protobuf cache callback " + name)
 	}
 	isolateRejectEffect("unaudited metadata callback " + name)

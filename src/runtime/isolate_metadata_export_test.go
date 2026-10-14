@@ -67,6 +67,33 @@ func IsolateHeapMapForTest(value any, write bool) {
 	isolateCheckHeapMap(e.data, write)
 }
 
+// Build a recorded process graph without importing compiler-generated E4
+// descriptors. The production entry accepts only the audited GOROOT packages.
+func IsolateFrozenLibraryForTest(build func() any) (value any) {
+	gp := getg()
+	state := &isolateProtoInitialization{library: true, parent: gp.isolateProtoInit}
+	gp.isolateProtoInit = state
+	defer func() { gp.isolateProtoInit = state.parent }()
+	value = build()
+	gp.isolateProtoInit = nil
+	next := &isolateLibrarySnapshot{states: make(map[unsafe.Pointer]isolateFrozenLibrary), parts: make(map[unsafe.Pointer][]isolateTypePart)}
+	if previous := isolateLoadLibraries(); previous != nil {
+		for key, entry := range previous.states {
+			next.states[key] = entry
+		}
+		for base, parts := range previous.parts {
+			next.parts[base] = append([]isolateTypePart(nil), parts...)
+		}
+	}
+	e := efaceOf(&value)
+	isolatePublishLibraryGraph(next, []unsafe.Pointer{e.data}, state.allocations)
+	if raceenabled {
+		racerelease(unsafe.Pointer(next))
+	}
+	isolateLibraries.Store(next)
+	return value
+}
+
 // Test-only provenance fixtures exercise array bounds and excluded mutable
 // cells without importing the external protobuf module into runtime tests.
 func IsolateMessageInfoLayoutForTest(p unsafe.Pointer, stride, readonly, count uintptr, roots []bool) {

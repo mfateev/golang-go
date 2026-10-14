@@ -56,7 +56,7 @@ func isolateE4NewPackageBases(keys, types []unsafe.Pointer) unsafe.Pointer {
 				panic("isolate: duplicate package key")
 			}
 		}
-		table.bases[i] = newobject((*_type)(typ))
+		table.bases[i] = isolateNewLibraryState(keys[i], (*_type)(typ))
 	}
 	return unsafe.Pointer(table)
 }
@@ -147,13 +147,15 @@ func isolateReadOnlyLibraries() {
 	for i, key := range original.libraryKeys {
 		for j, candidate := range table.keys {
 			if candidate == key {
-				table.bases[j] = newobject((*_type)(original.libraryTypes[i]))
+				table.bases[j] = isolateNewLibraryState(key, (*_type)(original.libraryTypes[i]))
 				break
 			}
 		}
 	}
 	gp.isolateE4Bases = unsafe.Pointer(table)
-	for _, task := range original.libraryTasks {
-		isolateE4RunInitTask(task)
+	for i, task := range original.libraryTasks {
+		if !isolateHasFrozenLibrary(original.libraryKeys[i]) {
+			isolateE4RunInitTask(task)
+		}
 	}
 }

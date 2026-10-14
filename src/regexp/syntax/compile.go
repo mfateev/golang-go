@@ -109,9 +109,9 @@ func (c *compiler) compile(re *Regexp) frag {
 	case OpCharClass:
 		return c.rune(re.Rune, re.Flags)
 	case OpAnyCharNotNL:
-		return c.rune(anyRuneNotNL, 0)
+		return c.rune(privateRuneTable(anyRuneNotNL), 0)
 	case OpAnyChar:
-		return c.rune(anyRune, 0)
+		return c.rune(privateRuneTable(anyRune), 0)
 	case OpBeginLine:
 		return c.empty(EmptyBeginLine)
 	case OpEndLine:

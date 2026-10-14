@@ -147,7 +147,9 @@ func NewPackageInstance(descriptors []unsafe.Pointer, readOnlyLibraries ...[]uns
 	}
 	instance.Run(func() {
 		for _, i := range initOrder {
-			isolateRunInitTask(ordered[i].InitTask)
+			if !isolateHasFrozenLibrary(ordered[i].Key) {
+				isolateRunInitTask(ordered[i].InitTask)
+			}
 		}
 	})
 	return instance, nil
