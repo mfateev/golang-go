@@ -11,12 +11,80 @@ on:
       - 'lib/**'
       - 'VERSION'
   workflow_dispatch:
+    inputs:
+      full_suite:
+        description: Run the complete native matrix instead of the macOS Intel failure reproducer
+        type: boolean
+        default: false
+
+concurrency:
+  group: isolate-determinism-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
+  macos-protobuf-replay:
+    if: ${{ !inputs.full_suite }}
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
+      GOCACHE: ${{ runner.temp }}/isolate-go-cache
+      POC_LOG_DIR: ${{ runner.temp }}/isolate-logs
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: golang-go
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: mfateev/sdk-go-poc
+          ref: task/modify-go-runtime-for-isolates
+          path: sdk-go-poc
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.7'
+          cache: false
+      - name: Build the fork
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$POC_LOG_DIR"
+          export GOROOT_BOOTSTRAP="$(go env GOROOT)"
+          for repo in golang-go sdk-go-poc; do
+            git -C "$repo" rev-parse HEAD >> "$POC_LOG_DIR/revisions.txt"
+          done
+          cd golang-go/src
+          if ! ./make.bash > "$POC_LOG_DIR/bootstrap.log" 2>&1; then
+            tail -n 100 "$POC_LOG_DIR/bootstrap.log"
+            exit 1
+          fi
+      - name: Reproduce the failed protobuf history replay
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd sdk-go-poc
+          # The step deadline also bounds compilation; Go's deadline bounds the
+          # test process and prints goroutine stacks if it stalls. Keep the
+          # workflow task's existing deadline unchanged for this reproducer.
+          if ! ../golang-go/bin/go test -v -failfast -count=1 -timeout=3m ./example/protobufvalues/check -run '^TestGeneratedProtobufHistoryReplay$' > "$POC_LOG_DIR/sdk.log" 2>&1; then
+            cat "$POC_LOG_DIR/sdk.log"
+            exit 1
+          fi
+          cat "$POC_LOG_DIR/sdk.log"
+      - name: Preserve all output
+        if: always()
+        timeout-minutes: 2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: isolate-protobuf-replay-macos-15-intel
+          path: ${{ runner.temp }}/isolate-logs
+
   native-replay:
+    if: ${{ inputs.full_suite }}
     strategy:
       fail-fast: true
       matrix:
