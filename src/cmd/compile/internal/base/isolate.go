@@ -10,23 +10,29 @@ var isolateSelectedPackages map[string]bool
 var isolateSelectedImports map[string]bool
 var isolateEntrySkip map[string]bool
 
-// InitIsolatePackageSelection establishes the same package selection in each
-// compiler invocation. It runs before loading export data, so the local
+// IsolateBuildEnabled reports whether compulsory isolate checks are enabled.
+func IsolateBuildEnabled() bool {
+	return Debug.IsolateBuild != 0 || Debug.IsolatePackages != ""
+}
+
+// InitIsolatePackageSelection establishes the relevant package selection for
+// each compiler invocation. It runs before loading export data, so the local
 // package's layout and initializer modes also apply to exported declarations.
 func InitIsolatePackageSelection() {
-	if Debug.IsolatePackages != "" {
-		// Every compiled dependency receives the same state manifest. Checks
-		// are compulsory even for packages whose mutable state is denied to
-		// private code; package exclusion grants no memory access privilege.
+	if IsolateBuildEnabled() {
+		// Checks remain compulsory when this package and all its dependencies
+		// are process-owned. An empty state selection grants no memory privilege.
 		Debug.IsolateHeap = 2
 		Debug.IsolateMetadata = 1
 		Debug.IsolateEffects = 1
 		isolateSelectedPackages = make(map[string]bool)
-		for _, path := range strings.Split(Debug.IsolatePackages, ":") {
-			if path == "" {
-				Fatalf("isolate: empty package path in isolatepackages")
+		if Debug.IsolatePackages != "" {
+			for _, path := range strings.Split(Debug.IsolatePackages, ":") {
+				if path == "" {
+					Fatalf("isolate: empty package path in isolatepackages")
+				}
+				isolateSelectedPackages[path] = true
 			}
-			isolateSelectedPackages[path] = true
 		}
 		if isolateSelectedPackages[Ctxt.Pkgpath] {
 			Debug.IsolateGlobals = 1

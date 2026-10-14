@@ -50,6 +50,7 @@ type DebugFlags struct {
 	InlFuncsWithClosures  int    `help:"allow functions with closures to be inlined" concurrent:"ok"`
 	InlStaticInit         int    `help:"allow static initialization of inlined calls" concurrent:"ok"`
 	InterfaceCycles       int    `help:"allow anonymous interface cycles" concurrent:"ok"`
+	IsolateBuild          int    `help:"enable compulsory isolate checks independently of package state selection"`
 	IsolateE4             int    `help:"redirect the E4 toy package global through the current goroutine base"`
 	IsolateEntrySkip      string `help:"colon-separated imports whose startup initialization is omitted from a generated isolate entry"`
 	IsolateMetadata       int    `help:"enable the pinned protobuf metadata service manifest in an isolate build"`

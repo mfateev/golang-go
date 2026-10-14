@@ -31,6 +31,20 @@ After container recreation on 2026-09-27, `src/all.bash` passed in full; see
 lacked `/etc/services`, causing two `net` tests to fail until Debian's
 `netbase` package was installed. Include `netbase` in future container setup.
 
+## Compiler cache reuse
+
+Isolate compilation enables compulsory checks with `-d=isolatebuild=1`, even
+when a dependency has no selected private state. The compiler receives package
+selection and entry lists limited to its transitive import graph. The command
+uses exactly those flags for both compilation and cache hashing; ownership,
+instrumentation, imported globals, and inlined entry diagnostics remain part of
+the identity. Unrelated workflows can therefore reuse shared dependencies.
+
+`TestIsolateCompilerFlags` checks flag normalization and ownership distinctions.
+`TestScript/build_isolate_cache` warms host-only code, builds two independent
+programs, checks private state, verifies shared compile actions were cached,
+and checks privilege rejection with an empty state selection.
+
 ## Why the previous container needed replacement
 
 During `src/all.bash`, `/dev/vdb` returned write I/O errors and ext4 aborted

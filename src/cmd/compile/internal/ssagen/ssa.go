@@ -6491,7 +6491,7 @@ func (s *state) referenceTypeBuiltin(n *ir.UnaryExpr, x *ssa.Value) *ssa.Value {
 	if n.X.Type().IsMap() && s.isolateHeapEnabled() {
 		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapMap"), true, nil, x, s.constBool(false))
 	}
-	if n.X.Type().IsMap() && base.Debug.IsolatePackages != "" {
+	if n.X.Type().IsMap() && base.IsolateBuildEnabled() {
 		return s.rtcall(typecheck.LookupRuntimeFunc("isolateMapLen"), true, []*types.Type{n.Type()}, x)[0]
 	}
 	// if n == nil {
