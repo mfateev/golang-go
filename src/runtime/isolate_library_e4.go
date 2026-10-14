@@ -14,7 +14,7 @@ import (
 //go:linkname isolatePrepareFrozenLibraries
 func isolatePrepareFrozenLibraries(paths []string, keys, types, tasks []unsafe.Pointer) {
 	gp := getg()
-	if gp.isolateOwner != 0 || gp.isolateGroup != nil || gp.isolateMetadataDepth != 0 || gp.isolateProtoInit != nil {
+	if gp.isolateOwner != 0 || gp.isolateGroup != nil || gp.isolateMetadataDepth != 0 || isolateCurrentInitialization() != nil {
 		throw("isolate: frozen libraries require process initialization")
 	}
 	if len(paths) != len(keys) || len(keys) != len(types) || len(types) != len(tasks) {
@@ -34,12 +34,12 @@ func isolatePrepareFrozenLibraries(paths []string, keys, types, tasks []unsafe.P
 			next.parts[base] = append([]isolateTypePart(nil), parts...)
 		}
 	}
-	state := &isolateProtoInitialization{library: true}
-	gp.isolateProtoInit = state
+	state := isolateBeginInitialization(nil, true)
 	oldBases := gp.isolateE4Bases
 	gp.isolateE4Bases = unsafe.Pointer(table)
 	defer func() {
-		gp.isolateProtoInit = nil
+		state.entry.state = state
+		isolateEndInitialization(state)
 		gp.isolateE4Bases = oldBases
 	}()
 	var roots []unsafe.Pointer
@@ -63,7 +63,7 @@ func isolatePrepareFrozenLibraries(paths []string, keys, types, tasks []unsafe.P
 			roots = append(roots, table.bases[i])
 		}
 	}
-	gp.isolateProtoInit = nil // Freeze only reachable initializer allocations.
+	state.entry.state = nil // Freeze only reachable initializer allocations.
 	gp.isolateE4Bases = oldBases
 	isolatePublishLibraryGraph(next, roots, state.allocations)
 	for i, key := range keys {

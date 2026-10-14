@@ -70,12 +70,13 @@ func IsolateHeapMapForTest(value any, write bool) {
 // Build a recorded process graph without importing compiler-generated E4
 // descriptors. The production entry accepts only the audited GOROOT packages.
 func IsolateFrozenLibraryForTest(build func() any) (value any) {
-	gp := getg()
-	state := &isolateProtoInitialization{library: true, parent: gp.isolateProtoInit}
-	gp.isolateProtoInit = state
-	defer func() { gp.isolateProtoInit = state.parent }()
+	state := isolateBeginInitialization(nil, true)
+	defer func() {
+		state.entry.state = state
+		isolateEndInitialization(state)
+	}()
 	value = build()
-	gp.isolateProtoInit = nil
+	state.entry.state = nil
 	next := &isolateLibrarySnapshot{states: make(map[unsafe.Pointer]isolateFrozenLibrary), parts: make(map[unsafe.Pointer][]isolateTypePart)}
 	if previous := isolateLoadLibraries(); previous != nil {
 		for key, entry := range previous.states {
@@ -258,13 +259,47 @@ func IsolatePrivateProtoScopeForTest(p unsafe.Pointer, fn func()) {
 }
 
 func IsolateProtoCacheForTest(info any, build func()) {
-	gp := getg()
-	parent := gp.isolateProtoInit
-	state := &isolateProtoInitialization{info: info, parent: parent}
-	gp.isolateProtoInit = state
-	defer func() { gp.isolateProtoInit = parent }()
+	state := isolateBeginInitialization(info, false)
+	defer isolateEndInitialization(state)
 	build()
 	isolatePublishProtoCache(info)
+}
+
+func IsolateInitializationScopeForTest(fn func()) {
+	state := isolateBeginInitialization(nil, false)
+	defer isolateEndInitialization(state)
+	fn()
+}
+
+func IsolateInitializationPauseForTest(fn func()) {
+	state := isolateCurrentInitialization()
+	state.entry.state = nil
+	defer func() { state.entry.state = state }()
+	fn()
+}
+
+func IsolateInitializationActiveForTest() bool {
+	return isolateInitializationForG(getg()) != nil
+}
+
+func IsolateInitializationRecordedForTest(p unsafe.Pointer) bool {
+	state := isolateCurrentInitialization()
+	if state != nil {
+		for a := state.allocations; a != nil; a = a.next {
+			if uintptr(p) >= uintptr(a.p) && uintptr(p)-uintptr(a.p) < a.size {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func IsolateInitializationEntriesForTest() int {
+	n := 0
+	for entry := isolateInitializations.head.Load(); entry != nil; entry = entry.next.Load() {
+		n++
+	}
+	return n
 }
 
 func IsolateMetadataCallbackForTest(pc uintptr) { isolateCheckMetadataCall(pc) }

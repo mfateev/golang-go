@@ -29,7 +29,7 @@ func isolateCopyMetadataReturnString(owner uintptr, value string) string {
 	if owner == ^uintptr(0) {
 		owner = getg().isolateOwner
 	}
-	if owner == 0 && getg().isolateProtoInit == nil || len(value) == 0 {
+	if owner == 0 && isolateCurrentInitialization() == nil || len(value) == 0 {
 		return value
 	}
 	gp := getg()
@@ -46,7 +46,7 @@ func isolateCopyMetadataProtoValue(owner uintptr, value any) any {
 	if owner == ^uintptr(0) {
 		owner = getg().isolateOwner
 	}
-	if owner == 0 && getg().isolateProtoInit == nil {
+	if owner == 0 && isolateCurrentInitialization() == nil {
 		return value
 	}
 	e := efaceOf(&value)
@@ -94,7 +94,7 @@ func isolateCopyMetadataProtoValue(owner uintptr, value any) any {
 // Descriptor interfaces are opaque handles to pinned library implementations.
 // Grant reference retention, never ordinary reads of their mutable lazy cells.
 func isolatePublishMetadataReturn(owner uintptr, value any) any {
-	if owner == 0 && getg().isolateProtoInit == nil {
+	if owner == 0 && isolateCurrentInitialization() == nil {
 		return value
 	}
 	e := efaceOf(&value)
@@ -240,7 +240,8 @@ func isolateCheckMetadataDescriptor(value any) {
 //go:linkname isolateCheckMetadataCall
 func isolateCheckMetadataCall(pc uintptr) {
 	gp := getg()
-	if (gp.isolateGroup == nil || gp.isolateMetadataDepth == 0) && gp.isolateProtoInit == nil {
+	state := isolateCurrentInitialization()
+	if (gp.isolateGroup == nil || gp.isolateMetadataDepth == 0) && state == nil {
 		return
 	}
 	fn := findfunc(pc)
@@ -248,8 +249,8 @@ func isolateCheckMetadataCall(pc uintptr) {
 		return
 	}
 	name := funcname(fn)
-	if gp.isolateGroup == nil && gp.isolateProtoInit != nil {
-		if gp.isolateProtoInit.library {
+	if gp.isolateGroup == nil && state != nil {
+		if state.library {
 			panic("isolate: unaudited frozen library callback " + name)
 		}
 		panic("isolate: unaudited protobuf cache callback " + name)
@@ -262,7 +263,7 @@ func isolateCheckMetadataCall(pc uintptr) {
 // touching a closure at all on the ordinary host path) before saving the defer.
 func isolateCheckMetadataClosure(fn unsafe.Pointer) {
 	gp := getg()
-	if (gp.isolateGroup == nil || gp.isolateMetadataDepth == 0) && gp.isolateProtoInit == nil || fn == nil {
+	if (gp.isolateGroup == nil || gp.isolateMetadataDepth == 0) && isolateCurrentInitialization() == nil || fn == nil {
 		return
 	}
 	isolateCheckHeapAccess(fn, unsafe.Sizeof(uintptr(0)), false)
@@ -309,7 +310,7 @@ func isolateCopyMetadataPanic(gp *g, owner uintptr) {
 func isolateCopyMetadataString(message string) string {
 	owner := getg().isolateOwner
 	if owner == 0 {
-		if getg().isolateProtoInit != nil && len(message) != 0 {
+		if isolateCurrentInitialization() != nil && len(message) != 0 {
 			clone, data := rawstring(len(message))
 			copy(data, message)
 			return clone

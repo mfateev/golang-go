@@ -51,6 +51,12 @@ those table initializers, records the exact allocated extents, and publishes
 their reachable graphs atomically. This is not an approval of arbitrary
 process-owned data. Reads after publication require no initialization lock.
 
+Allocation recorders live in a temporary runtime side table keyed by goroutine,
+not in the goroutine record itself. Entries exist only during shared-cache
+initialization, are not inherited by child goroutines, and are removed when the
+initializer returns or unwinds. Allocator lookups neither lock nor allocate;
+when no initializer is active they read only the empty-table pointer.
+
 Each isolate copies its package-global layout from the snapshot rather than
 rebuilding its maps and table backing arrays. Bindings remain private: an
 isolate can replace `unicode.L` or `unicode.Categories` with private values.

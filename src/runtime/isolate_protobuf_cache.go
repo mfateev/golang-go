@@ -25,6 +25,7 @@ type isolateProtoInitialization struct {
 	info        any
 	allocations *isolateProtoAllocation
 	parent      *isolateProtoInitialization
+	entry       *isolateInitializationEntry
 	library     bool // Audited GOROOT snapshot, using the same allocation recorder.
 }
 
@@ -39,51 +40,41 @@ func isolateBeginProtoInitialization(info any) unsafe.Pointer {
 	if !isolateCanonicalMessageInfo(info) {
 		return nil // Ordinary host custom/legacy metadata keeps its behavior.
 	}
-	gp := getg()
-	parent := gp.isolateProtoInit
-	gp.isolateProtoInit = nil
-	state := &isolateProtoInitialization{info: info, parent: parent}
-	gp.isolateProtoInit = state
-	return unsafe.Pointer(state)
+	return unsafe.Pointer(isolateBeginInitialization(info, false))
 }
 
 func isolateEndProtoInitialization(token unsafe.Pointer) {
 	if token != nil {
-		state := (*isolateProtoInitialization)(token)
-		if getg().isolateProtoInit != state {
-			throw("isolate: protobuf cache initialization scope changed")
-		}
-		getg().isolateProtoInit = state.parent
+		isolateEndInitialization((*isolateProtoInitialization)(token))
 	}
 }
 
 func isolateRecordProtoAllocation(p unsafe.Pointer, size uintptr, typ *abi.Type) {
 	gp := getg()
-	state := gp.isolateProtoInit
+	state := isolateCurrentInitialization()
 	if state == nil || gp.isolateOwner != 0 {
 		return
 	}
-	gp.isolateProtoInit = nil // Do not collect the collector itself.
+	state.entry.state = nil // Do not collect the collector itself.
 	record := &isolateProtoAllocation{p: p, size: size, typ: typ, next: state.allocations}
 	state.allocations = record
-	gp.isolateProtoInit = state
+	state.entry.state = state
 }
 
 func isolateProtoCacheBuilding() bool {
-	state := getg().isolateProtoInit
+	state := isolateCurrentInitialization()
 	return state != nil && !state.library
 }
 
 // Called immediately before initDone's release store, while initMu is held.
 // Publication uses a copy of the registry so subsequent reads require no lock.
 func isolatePublishProtoCache(info any) {
-	gp := getg()
-	state := gp.isolateProtoInit
+	state := isolateCurrentInitialization()
 	if state == nil || efaceOf(&state.info).data != efaceOf(&info).data {
 		return
 	}
-	gp.isolateProtoInit = nil
-	defer func() { gp.isolateProtoInit = state }()
+	state.entry.state = nil
+	defer func() { state.entry.state = state }()
 	e := efaceOf(&info)
 	typ := (*ptrtype)(unsafe.Pointer(e._type)).Elem
 	var goType *abi.Type

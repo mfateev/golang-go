@@ -83,7 +83,7 @@ jobs:
         run: |
           set -euo pipefail
           cd golang-go
-          if ! ./bin/go test -race -failfast -count=1 -timeout=2m runtime -run '^TestIsolate(SharedProtoCache|FrozenLibrary)' > "$POC_LOG_DIR/cache-race.log" 2>&1; then
+          if ! ./bin/go test -race -failfast -count=1 -timeout=2m runtime -run '^TestIsolate(SharedProtoCache|FrozenLibrary|Initialization)' > "$POC_LOG_DIR/cache-race.log" 2>&1; then
             cat "$POC_LOG_DIR/cache-race.log"
             exit 1
           fi
@@ -180,11 +180,11 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/cpu-disabled.log"
             exit 1
           fi
-          if ! ./bin/go test -failfast -race runtime isolate internal/isolatebridge -run 'TestLogging|TestWrite|TestResources|TestLifecycle|TestIsolateLifecycle|TestConcurrentStartKill|TestKill|TestMainExit|TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateReadOnly|TestIsolateFrozenLibrary|TestIsolateSharedProtoCache|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestEffectFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates|TestStackTrace|TestTaskDiagnostics' -count=5 > "$POC_LOG_DIR/race.log" 2>&1; then
+          if ! ./bin/go test -failfast -race runtime isolate internal/isolatebridge -run 'TestLogging|TestWrite|TestResources|TestLifecycle|TestIsolateLifecycle|TestConcurrentStartKill|TestKill|TestMainExit|TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateReadOnly|TestIsolateFrozenLibrary|TestIsolateSharedProtoCache|TestIsolateInitialization|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestEffectFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates|TestStackTrace|TestTaskDiagnostics' -count=5 > "$POC_LOG_DIR/race.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/race.log"
             exit 1
           fi
-          if ! GOEXPERIMENT=staticlockranking ./bin/go test -failfast -short runtime isolate internal/isolatebridge -run 'TestLogging|TestWrite|TestResources|TestLifecycle|TestIsolateLifecycle|TestConcurrentStartKill|TestKill|TestMainExit|TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateReadOnly|TestIsolateFrozenLibrary|TestIsolateSharedProtoCache|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestEffectFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates|TestStackTrace|TestTaskDiagnostics' -count=5 > "$POC_LOG_DIR/lockranking.log" 2>&1; then
+          if ! GOEXPERIMENT=staticlockranking ./bin/go test -failfast -short runtime isolate internal/isolatebridge -run 'TestLogging|TestWrite|TestResources|TestLifecycle|TestIsolateLifecycle|TestConcurrentStartKill|TestKill|TestMainExit|TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateReadOnly|TestIsolateFrozenLibrary|TestIsolateSharedProtoCache|TestIsolateInitialization|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestEffectFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates|TestStackTrace|TestTaskDiagnostics' -count=5 > "$POC_LOG_DIR/lockranking.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/lockranking.log"
             exit 1
           fi
