@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       full_suite:
-        description: Run the complete native matrix instead of the macOS Intel failure reproducer
+        description: Run the full suite; disable only for focused macOS diagnostics
         type: boolean
-        default: false
+        default: true
 
 concurrency:
   group: isolate-determinism-${{ github.ref }}
@@ -26,7 +26,7 @@ permissions:
 
 jobs:
   macos-protobuf-replay:
-    if: ${{ !inputs.full_suite }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.full_suite }}
     runs-on: macos-15-intel
     timeout-minutes: 15
     env:
@@ -108,7 +108,7 @@ jobs:
           path: ${{ runner.temp }}/isolate-logs
 
   native-replay:
-    if: ${{ inputs.full_suite }}
+    if: ${{ github.event_name == 'push' || inputs.full_suite }}
     strategy:
       fail-fast: true
       matrix:
@@ -180,11 +180,11 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/cpu-disabled.log"
             exit 1
           fi
-          if ! ./bin/go test -failfast -race runtime isolate internal/isolatebridge -run 'TestLogging|TestWrite|TestResources|TestLifecycle|TestIsolateLifecycle|TestConcurrentStartKill|TestKill|TestMainExit|TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateReadOnly|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestEffectFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates|TestStackTrace|TestTaskDiagnostics' -count=5 > "$POC_LOG_DIR/race.log" 2>&1; then
+          if ! ./bin/go test -failfast -race runtime isolate internal/isolatebridge -run 'TestLogging|TestWrite|TestResources|TestLifecycle|TestIsolateLifecycle|TestConcurrentStartKill|TestKill|TestMainExit|TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateReadOnly|TestIsolateFrozenLibrary|TestIsolateSharedProtoCache|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestEffectFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates|TestStackTrace|TestTaskDiagnostics' -count=5 > "$POC_LOG_DIR/race.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/race.log"
             exit 1
           fi
-          if ! GOEXPERIMENT=staticlockranking ./bin/go test -failfast -short runtime isolate internal/isolatebridge -run 'TestLogging|TestWrite|TestResources|TestLifecycle|TestIsolateLifecycle|TestConcurrentStartKill|TestKill|TestMainExit|TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateReadOnly|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestEffectFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates|TestStackTrace|TestTaskDiagnostics' -count=5 > "$POC_LOG_DIR/lockranking.log" 2>&1; then
+          if ! GOEXPERIMENT=staticlockranking ./bin/go test -failfast -short runtime isolate internal/isolatebridge -run 'TestLogging|TestWrite|TestResources|TestLifecycle|TestIsolateLifecycle|TestConcurrentStartKill|TestKill|TestMainExit|TestBoundaryResponseOwnership|TestIsolateAlloc|TestIsolateReadOnly|TestIsolateFrozenLibrary|TestIsolateSharedProtoCache|TestIsolateMetadata|TestIsolateHeap|TestOwnershipFault|TestEffectFault|TestIsolateCachedEviction|TestExecPreemptionLockOrder|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates|TestStackTrace|TestTaskDiagnostics' -count=5 > "$POC_LOG_DIR/lockranking.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/lockranking.log"
             exit 1
           fi
@@ -192,7 +192,7 @@ jobs:
             tail -n 100 "$POC_LOG_DIR/compiler-default.log"
             exit 1
           fi
-          if ! ./bin/go test -failfast cmd/internal/isolatepolicy cmd/go -run 'TestTemporalSDKSource|TestScript/build_isolate_(contract|write|functions|support|programs|metadata|heap|fault|ownership|effects|lifecycle|resources|nilinterface|structeq|typeassert_gc|fork)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
+          if ! ./bin/go test -failfast cmd/internal/isolatepolicy cmd/go -run 'TestTemporalSDKSource|TestScript/build_isolate_(contract|write|functions|support|programs|readonly_libraries|metadata|heap|fault|ownership|effects|lifecycle|resources|nilinterface|structeq|typeassert_gc|fork)$' -count=1 > "$POC_LOG_DIR/compiler.log" 2>&1; then
             tail -n 100 "$POC_LOG_DIR/compiler.log"
             exit 1
           fi
