@@ -270,7 +270,7 @@ func GoTool() (string, error) {
 }
 
 var goTool = sync.OnceValues(func() (string, error) {
-	return exec.LookPath("go")
+	return exec.LookPath("tgo")
 })
 
 // MustHaveSource checks that the entire source tree is available under GOROOT.

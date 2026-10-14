@@ -53,9 +53,9 @@ func dirsInit(extra ...Dir) {
 // goCmd returns the "go" command path corresponding to cfg.GOROOT.
 func goCmd() string {
 	if cfg.GOROOT == "" {
-		return "go"
+		return "tgo"
 	}
-	return filepath.Join(cfg.GOROOT, "bin", "go")
+	return filepath.Join(cfg.GOROOT, "bin", "tgo")
 }
 
 // Reset puts the scan back at the beginning.

@@ -118,7 +118,7 @@ record for this package; the test passed 100 native arm64 race-detector runs.
 This imported-global flag is a manual probe setting, not package discovery.
 Every compiler invocation that directly accesses an opted-in package's
 exported globals must select it. Passing
-`-gcflags=all=-d=isolateimports=encoding/base64` to `go test` covers every
+`-gcflags=all=-d=isolateimports=encoding/base64` to `tgo test` covers every
 importing compiler invocation in the build. A tagged test checks direct
 accesses from its test package, `e4base64toy`, and `e4base64caller` against the
 same selected instance; 100 native arm64 race runs passed. With only
@@ -212,7 +212,7 @@ independently reference the dependency's layout symbols.
 
 ## Static build integration
 
-The experimental `go build -isolate-dir` path now walks each configured
+The experimental `tgo build -isolate-dir` path now walks each configured
 program's package graph and selects its non-standard packages with one
 build-wide `-d=isolatepackages` value. The generated top-level main retains
 one descriptor for each selected package and passes the reachable subset to

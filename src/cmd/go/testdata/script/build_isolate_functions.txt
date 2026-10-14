@@ -1,5 +1,10 @@
 # Marked functions are discovered by ordinary builds, without configs or flags.
 [short] skip
+exec $GOROOT/bin/tgo$GOEXE version
+stdout '\(isolates POC\)$'
+! exists $GOROOT/bin/go$GOEXE
+go list -f '{{.Target}}' cmd/go
+stdout '[/\\]bin[/\\]tgo(\.exe)?$'
 go build -o host.exe ./host
 exec ./host.exe
 stdout 'ordinary before 42'

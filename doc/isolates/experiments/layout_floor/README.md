@@ -12,12 +12,12 @@ From this directory, using this fork's built toolchain:
 ```bash
 layout_run_dir=$(mktemp -d)
 for variant in empty withtime withreflect withjsontext withv2 withjson; do
-    ../../../../bin/go build -isolate-dir="./$variant" -o "$layout_run_dir/$variant" ./host
+    ../../../../bin/tgo build -isolate-dir="./$variant" -o "$layout_run_dir/$variant" ./host
     "$layout_run_dir/$variant"
 done
-../../../../bin/go build -isolate-dir=./withjson -o "$layout_run_dir/inspect" ./inspect
+../../../../bin/tgo build -isolate-dir=./withjson -o "$layout_run_dir/inspect" ./inspect
 "$layout_run_dir/inspect"
-../../../../bin/go build -isolate-dir=./withtime -o "$layout_run_dir/inspecttime" ./inspecttime
+../../../../bin/tgo build -isolate-dir=./withtime -o "$layout_run_dir/inspecttime" ./inspecttime
 "$layout_run_dir/inspecttime"
 ```
 

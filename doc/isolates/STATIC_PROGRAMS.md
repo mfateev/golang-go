@@ -9,7 +9,7 @@ remain pending. Dynamic loading is a
 ## Function entry points
 
 The source API now marks ordinary Go functions with `//temporal:workflow`. Build a
-host executable with an ordinary `go build`; the build discovers marked
+host executable with an ordinary `tgo build`; the build discovers marked
 functions in its import graph and generates their invokers, handles, and
 package-state factories. No workflow `main`, config, or directory flag is
 required. A package may contain multiple marked functions and ordinary
@@ -38,7 +38,7 @@ The marker supports concrete top-level functions with any number of ordinary
 Go arguments, returning nothing, `error`, or `(result, error)`. Methods,
 generics, variadic arguments, cgo source, dot imports, and Temporal
 `workflow.Context` arguments are rejected. Entry generation currently supports
-a single executable `go build`; other command paths remain TODO.
+a single executable `tgo build`; other command paths remain TODO.
 
 State selection remains at package level: the containing package and its
 dependency graph get instance copies under the current ownership policy.
@@ -110,7 +110,7 @@ From the worker module, build one executable with the host package and the
 selected programs:
 
 ```bash
-go build -isolate-dir=./isolates/orders -isolate-dir=./isolates/billing -o worker ./host
+tgo build -isolate-dir=./isolates/orders -isolate-dir=./isolates/billing -o worker ./host
 ```
 
 Add `-isolate-report=ownership.json` to write a JSON inventory after a
@@ -212,7 +212,7 @@ reference-model mechanism, not the proposed source-level program contract.
 
 The build compiles each selected `package main` under its own import path and
 generates a synthetic top-level `main` that registers each program entry and
-calls the host's `main`. Ordinary `go build` still builds one top-level main;
+calls the host's `main`. Ordinary `tgo build` still builds one top-level main;
 the experimental `-isolate-dir` path provides this explicit multi-program
 support.
 
@@ -244,7 +244,7 @@ executable. The config therefore has no dependency-version override field.
 
 ## Linker feasibility probe
 
-On 2026-09-29, a direct `go tool compile`/`go tool link` probe on this fork's
+On 2026-09-29, a direct `tgo tool compile`/`tgo tool link` probe on this fork's
 Linux arm64 toolchain compiled two separate `package main` units as
 `isolate/a` and `isolate/b`. A host blank-imported both compiled units and
 used entry stubs to call their `main` functions; the executable printed

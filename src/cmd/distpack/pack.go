@@ -183,7 +183,7 @@ func main() {
 	// if this is a cross-compiled distribution.
 	// Keep in sync with binExesIncludedInDistpack in cmd/dist/build.go.
 	binExes := []string{
-		"go",
+		"tgo",
 		"gofmt",
 	}
 	crossBin := "bin"

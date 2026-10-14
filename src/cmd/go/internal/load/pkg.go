@@ -1780,6 +1780,9 @@ func (p *Package) exeFromFiles() string {
 
 // DefaultExecName returns the default executable name for a package
 func (p *Package) DefaultExecName() string {
+	if p.Standard && p.ImportPath == "cmd/go" {
+		return "tgo"
+	}
 	if p.Internal.CmdlineFiles {
 		return p.exeFromFiles()
 	}

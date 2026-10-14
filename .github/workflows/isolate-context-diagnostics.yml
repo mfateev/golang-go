@@ -62,7 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           cd golang-go
-          if ! ./bin/go test -race isolate -run '^TestTaskDiagnosticsActiveDispatcher$' -count=100 > "$POC_LOG_DIR/active-dispatcher-race.log" 2>&1; then
+          if ! ./bin/tgo test -race isolate -run '^TestTaskDiagnosticsActiveDispatcher$' -count=100 > "$POC_LOG_DIR/active-dispatcher-race.log" 2>&1; then
             cat "$POC_LOG_DIR/active-dispatcher-race.log"
             exit 1
           fi
@@ -74,7 +74,7 @@ jobs:
           cd sdk-go-poc
           python3 ../golang-go/.github/scripts/context_dispatch_diagnostics.py . "$RUNNER_TEMP/context-overlays"
           for variant in unfiltered current; do
-            if ! ../golang-go/bin/go build -overlay="$RUNNER_TEMP/context-overlays/$variant.json" -o "$RUNNER_TEMP/context-check-$variant" ./example/contextpropagation/check > "$POC_LOG_DIR/checker-build-$variant.log" 2>&1; then
+            if ! ../golang-go/bin/tgo build -overlay="$RUNNER_TEMP/context-overlays/$variant.json" -o "$RUNNER_TEMP/context-check-$variant" ./example/contextpropagation/check > "$POC_LOG_DIR/checker-build-$variant.log" 2>&1; then
               tail -n 100 "$POC_LOG_DIR/checker-build-$variant.log"
               exit 1
             fi
@@ -126,7 +126,7 @@ jobs:
           cd sdk-go-poc
           for round in $(seq 1 "$CONTEXT_ROUNDS"); do
             echo "Read-only deadline, protobuf APIs and replay: round $round"
-            if ! ../golang-go/bin/go test -failfast -timeout=10m -count=1 \
+            if ! ../golang-go/bin/tgo test -failfast -timeout=10m -count=1 \
               ./temporalbridge ./testsuite ./example/protobufvalues/check \
               -run 'TestReadOnly|TestQueryUsesWorkerBudget|TestTaskTimeout|TestGeneratedProtobuf' \
               > "$POC_LOG_DIR/read-only-$round.log" 2>&1; then

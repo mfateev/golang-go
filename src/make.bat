@@ -77,8 +77,10 @@ if "x%GOROOT_BOOTSTRAP%"=="x" if exist "%HOMEDRIVE%%HOMEPATH%\sdk\go%bootgo%" se
 if "x%GOROOT_BOOTSTRAP%"=="x" set GOROOT_BOOTSTRAP=%HOMEDRIVE%%HOMEPATH%\Go1.4
 
 :bootstrapset
-if not exist "%GOROOT_BOOTSTRAP%\bin\go.exe" (
-	echo ERROR: Cannot find %GOROOT_BOOTSTRAP%\bin\go.exe
+set bootstrap_go=%GOROOT_BOOTSTRAP%\bin\go.exe
+if exist "%GOROOT_BOOTSTRAP%\bin\tgo.exe" set bootstrap_go=%GOROOT_BOOTSTRAP%\bin\tgo.exe
+if not exist "%bootstrap_go%" (
+	echo ERROR: Cannot find %bootstrap_go%
 	echo Set GOROOT_BOOTSTRAP to a working Go tree ^>= Go %bootgo%.
 	exit /b 1
 )
@@ -87,13 +89,13 @@ set GOROOT_TEMP=
 
 setlocal
 call :nogoenv
-for /f "tokens=*" %%g IN ('"%GOROOT_BOOTSTRAP%\bin\go" version') do (set GOROOT_BOOTSTRAP_VERSION=%%g)
+for /f "tokens=*" %%g IN ('"%bootstrap_go%" version') do (set GOROOT_BOOTSTRAP_VERSION=%%g)
 set GOROOT_BOOTSTRAP_VERSION=%GOROOT_BOOTSTRAP_VERSION:go version =%
 echo Building Go cmd/dist using %GOROOT_BOOTSTRAP%. (%GOROOT_BOOTSTRAP_VERSION%)
 if x%vflag==x-v echo cmd/dist
 set GOROOT=%GOROOT_BOOTSTRAP%
 set GOBIN=
-"%GOROOT_BOOTSTRAP%\bin\go.exe" build -o cmd\dist\dist.exe .\cmd\dist || exit /b 1
+"%bootstrap_go%" build -o cmd\dist\dist.exe .\cmd\dist || exit /b 1
 endlocal
 .\cmd\dist\dist.exe env -w -p >env.bat || exit /b 1
 call .\env.bat

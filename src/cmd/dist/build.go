@@ -118,7 +118,7 @@ func xinit() {
 	// runs cmd/dist inside go/bin often, and on Windows
 	// it will be found in the current directory and refuse to exec.
 	// All exec calls rewrite "go" into gorootBinGo.
-	gorootBinGo = pathf("%s/bin/go", goroot)
+	gorootBinGo = pathf("%s/bin/tgo", goroot)
 
 	b = os.Getenv("GOOS")
 	if b == "" {
@@ -1151,7 +1151,9 @@ func cmdbootstrap() {
 	}
 
 	// Check that there are no new files in $GOROOT/bin other than
-	// go and gofmt and $GOOS_$GOARCH (target bin when cross-compiling).
+	// tgo and gofmt and $GOOS_$GOARCH (target bin when cross-compiling).
+	// Remove the previous POC command name after a successful installation.
+	xremove(pathf("%s/go%s", gorootBin, exe))
 	binFiles, err := filepath.Glob(pathf("%s/bin/*", goroot))
 	if err != nil {
 		fatalf("glob: %v", err)
@@ -1166,7 +1168,7 @@ func cmdbootstrap() {
 			continue // unfortunate but not unexpected
 		}
 		elem := strings.TrimSuffix(filepath.Base(f), ".exe")
-		if !ok[f] && elem != "go" && elem != "gofmt" && elem != goos+"_"+goarch {
+		if !ok[f] && elem != "tgo" && elem != "gofmt" && elem != goos+"_"+goarch {
 			fatalf("unexpected new file in $GOROOT/bin: %s", elem)
 		}
 	}

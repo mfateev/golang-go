@@ -43,7 +43,7 @@ while `Resume` reports quiescence. Run:
 
 ```bash
 cd src
-../bin/go test -race -tags=phase0_e1 -run='^TestNativeCoverage$' -count=1 internal/isolateproto
+../bin/tgo test -race -tags=phase0_e1 -run='^TestNativeCoverage$' -count=1 internal/isolateproto
 ```
 
 The full standard-library call-path inventory and enforceable classification
@@ -99,7 +99,7 @@ A fixed command/result fixture now checks sorted integer keys, numeric call
 IDs, seeded random output, and logical time against exact bytes. It passed 20
 repetitions on native Linux arm64 and 20 on an emulated Linux amd64 binary;
 the complete Phase 1 test suite also passed 20 amd64-emulated repetitions.
-The amd64 run used `GOARCH=amd64 CGO_ENABLED=0 go test -c` followed by
+The amd64 run used `GOARCH=amd64 CGO_ENABLED=0 tgo test -c` followed by
 `qemu-x86_64` on this arm64 host. Emulation verifies the compiled amd64 code's
 observable results, but it does not establish native amd64 performance or
 ordinary-Go map iteration determinism. The fixture is
@@ -131,7 +131,7 @@ Run:
 
 ```bash
 cd src
-../bin/go test -run='^$' -bench='^Benchmark(MapRange|RangeMap)1000$' \
+../bin/tgo test -run='^$' -bench='^Benchmark(MapRange|RangeMap)1000$' \
   -benchtime=500ms -count=3 -benchmem internal/isolateproto
 ```
 
@@ -146,7 +146,7 @@ On this Linux arm64 tree, summing 1,000 string-keyed map values took
 
 ```bash
 cd src
-../bin/go test -run='^$' -bench='^Benchmark(MapRange|SortedKeys)1000$' -benchtime=500ms -count=3 -benchmem internal/isolateproto
+../bin/tgo test -run='^$' -bench='^Benchmark(MapRange|SortedKeys)1000$' -benchtime=500ms -count=3 -benchmem internal/isolateproto
 ```
 
 This measures one source-level fallback for string keys. It does not compare
@@ -165,7 +165,7 @@ portable isolate hash or a map-operation benchmark. Run:
 
 ```bash
 cd src
-../bin/go test -run='^$' -bench='^BenchmarkHashBakeoff/(scalar|aes)/(latency|throughput)/(16|64|128)$' -benchtime=300ms -count=3 internal/runtime/maps
+../bin/tgo test -run='^$' -bench='^BenchmarkHashBakeoff/(scalar|aes)/(latency|throughput)/(16|64|128)$' -benchtime=300ms -count=3 internal/runtime/maps
 ```
 
 ## E3: suspended-memory proxy, partial
@@ -174,8 +174,8 @@ Command:
 
 ```bash
 cd src
-../bin/go test -run='^$' -bench='^BenchmarkIdleProxy$' -benchtime=1x -count=1 -timeout=120s -v internal/isolateproto
-../bin/go test -run='^$' -bench='^BenchmarkFanoutProxy$' -benchtime=1x -count=1 -timeout=120s -v internal/isolateproto
+../bin/tgo test -run='^$' -bench='^BenchmarkIdleProxy$' -benchtime=1x -count=1 -timeout=120s -v internal/isolateproto
+../bin/tgo test -run='^$' -bench='^BenchmarkFanoutProxy$' -benchtime=1x -count=1 -timeout=120s -v internal/isolateproto
 ```
 
 The toolchain was built from this tree with `src/make.bash`. At 10,000
@@ -249,7 +249,7 @@ be `1/1/1` once initialized state is isolated. Run it with:
 
 ```bash
 cd src
-../bin/go test -tags=phase2_isolation -run='^TestInitializedGlobalsAreIsolated$' -count=1 internal/isolateproto
+../bin/tgo test -tags=phase2_isolation -run='^TestInitializedGlobalsAreIsolated$' -count=1 internal/isolateproto
 ```
 
 The test is deliberately excluded from the default suite until Phase 2.
@@ -259,7 +259,7 @@ direct 2.088–2.096 ns/op, accessor 2.179–2.183 ns/op, and base-plus-offset
 
 ```bash
 cd src
-../bin/go test -tags=phase0_e4 -run='^$' -bench='^BenchmarkE4(Direct|Accessor|BaseOffset)$' -benchtime=500ms -count=3 internal/isolateproto
+../bin/tgo test -tags=phase0_e4 -run='^$' -bench='^BenchmarkE4(Direct|Accessor|BaseOffset)$' -benchtime=500ms -count=3 internal/isolateproto
 ```
 
 The accessor and base shapes were about 4% slower in this microbenchmark.
@@ -278,7 +278,7 @@ race-detector repetitions on Linux arm64:
 
 ```bash
 cd src
-../bin/go test -race -tags=phase0_e4 -count=100 internal/isolateproto/testdata/e4toy
+../bin/tgo test -race -tags=phase0_e4 -count=100 internal/isolateproto/testdata/e4toy
 ```
 
 This demonstrates that the generated init function can execute again while
@@ -301,7 +301,7 @@ goroutines, and a native child goroutine. It passed 100 race-detector runs at
 
 ```bash
 cd src
-GOMAXPROCS=4 GOGC=20 ../bin/go test -race \
+GOMAXPROCS=4 GOGC=20 ../bin/tgo test -race \
   -tags=phase0_e4,phase0_e4_compile \
   -gcflags='internal/isolateproto/testdata/e4compiletoy=-d=isolatee4=1,isolateinit=1' \
   -count=100 internal/isolateproto/testdata/e4compiletoy
@@ -337,7 +337,7 @@ allocations. Run:
 
 ```bash
 cd src
-GOMAXPROCS=1 ../bin/go test -tags=phase0_e4,phase0_e4_compile \
+GOMAXPROCS=1 ../bin/tgo test -tags=phase0_e4,phase0_e4_compile \
   -gcflags='internal/isolateproto/testdata/e4compiletoy=-d=isolatee4=1,isolateinit=1' \
   -run='^$' -bench='^Benchmark(ProcessGlobal|CompilerGlobalBase)$' \
   -benchtime=500ms -count=5 -benchmem internal/isolateproto/testdata/e4compiletoy
@@ -364,7 +364,7 @@ indirection. Run:
 
 ```bash
 cd src
-../bin/go test -tags=phase0_e4 -run='^$' -bench='^BenchmarkE4Workflow' -benchtime=300ms -count=3 -benchmem internal/isolateproto
+../bin/tgo test -tags=phase0_e4 -run='^$' -bench='^BenchmarkE4Workflow' -benchtime=300ms -count=3 -benchmem internal/isolateproto
 ```
 
 ## E5a: future forceful-kill probe; 100 ms stress gate failed
@@ -391,7 +391,7 @@ source-level exclusion. Run:
 
 ```bash
 cd src
-../bin/go test -tags=phase0_e5a -run='^TestIsolate(.*)SuspendLatencyPhase0$' -count=10 -timeout=30s -v runtime
+../bin/tgo test -tags=phase0_e5a -run='^TestIsolate(.*)SuspendLatencyPhase0$' -count=10 -timeout=30s -v runtime
 ```
 
 An opt-in scheduler hook now discards a registered G before returning from a
@@ -435,9 +435,9 @@ Run these probes only on Linux arm64:
 
 ```bash
 cd src
-../bin/go test -tags=phase0_e5a -run='^TestIsolate.*KillPhase0$' -count=100 -timeout=30s runtime
-../bin/go test -race -tags=phase0_e5a -run='^TestIsolate.*KillPhase0$' -count=100 -timeout=30s runtime
-../bin/go test -tags=phase0_e5a,phase0_e5a_acceptance -run='^TestIsolate(NonHeadMutex|Cond|MultiCond)WaitHardKillAcceptancePhase0$' -count=100 -timeout=30s runtime
+../bin/tgo test -tags=phase0_e5a -run='^TestIsolate.*KillPhase0$' -count=100 -timeout=30s runtime
+../bin/tgo test -race -tags=phase0_e5a -run='^TestIsolate.*KillPhase0$' -count=100 -timeout=30s runtime
+../bin/tgo test -tags=phase0_e5a,phase0_e5a_acceptance -run='^TestIsolate(NonHeadMutex|Cond|MultiCond)WaitHardKillAcceptancePhase0$' -count=100 -timeout=30s runtime
 ```
 
 This is **not** a general kill implementation. `suspendG` still spins without
@@ -456,7 +456,7 @@ its waiters, so group teardown could discard both tickets together; this
 probe has no owner model and does not prove that path. After moving
 register/waiter cleanup to the point between `_Gdead` and
 `gFree`, the native Linux arm64 `src/make.bash` rebuild and full
-`go test runtime` suite passed. E5a remains open.
+`tgo test runtime` suite passed. E5a remains open.
 
 The allowed built-in `copy` supplies a stronger counterexample to the
 current kill mechanism. An opt-in Linux arm64 test repeatedly copies a 4 GiB
@@ -478,7 +478,7 @@ Run the deliberately failing test only on a machine with at least 8 GiB free:
 
 ```bash
 cd src
-../bin/go test -tags=phase0_e5a,phase0_e5a_stress -run='^TestIsolateLargeCopyHardKillAcceptancePhase0$' -count=1 -timeout=30s runtime
+../bin/tgo test -tags=phase0_e5a,phase0_e5a_stress -run='^TestIsolateLargeCopyHardKillAcceptancePhase0$' -count=1 -timeout=30s runtime
 ```
 
 This failed probe blocks a forceful-kill claim, not the trusted MVP's Phase
@@ -507,12 +507,12 @@ sampling fails. The tagged hook is not the production `Kill(ctx)` path.
 
 ```bash
 cd src
-../bin/go test -tags=phase0_e5a,phase0_e5a_diag -run='^TestIsolateRunningStackSamplePhase0$' -count=100 runtime
-../bin/go test -race -tags=phase0_e5a,phase0_e5a_diag -run='^TestIsolateRunningStackSamplePhase0$' -count=20 runtime
+../bin/tgo test -tags=phase0_e5a,phase0_e5a_diag -run='^TestIsolateRunningStackSamplePhase0$' -count=100 runtime
+../bin/tgo test -race -tags=phase0_e5a,phase0_e5a_diag -run='^TestIsolateRunningStackSamplePhase0$' -count=20 runtime
 ```
 
 After adding this signal hook, the native Linux arm64 `src/make.bash` rebuild
-and full `go test runtime` package suite passed.
+and full `tgo test runtime` package suite passed.
 
 ## Phase 0 path decision for the trusted MVP
 

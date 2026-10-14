@@ -2,7 +2,7 @@
 
 This plan describes the trusted POC and its remaining gates. A worker built
 with this Go fork links
-functions marked `//temporal:workflow` through an ordinary `go build`, runs each
+functions marked `//temporal:workflow` through an ordinary `tgo build`, runs each
 workflow execution in an isolate instance, and uses the Temporal Go SDK for
 polling, history replay, and command emission. The separate
 [`sdk-go-poc` repository](https://github.com/mfateev/sdk-go-poc/tree/task/modify-go-runtime-for-isolates)
@@ -112,7 +112,7 @@ version changes. The follow-on release gates are in
 ## Build shape
 
 Clone `golang-go` and `sdk-go-poc` as sibling directories. From `sdk-go-poc`,
-build the worker with `../golang-go/bin/go build -o worker ./example/worker`.
+build the worker with `../golang-go/bin/tgo build -o worker ./example/worker`.
 Workflow functions carry `//temporal:workflow`; the host imports them and uses the
 POC SDK's `worker.RegisterWorkflow` API. The build generates their handles and
 typed invokers. No workflow `main` or `isolate.json` is needed. Unmarked

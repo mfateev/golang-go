@@ -24,10 +24,10 @@ func TestGoToolLocation(t *testing.T) {
 
 	// Tests are defined to run within their package source directory,
 	// and this package's source directory is $GOROOT/src/internal/testenv.
-	// The 'go' command is installed at $GOROOT/bin/go, so if the environment
-	// is correct then testenv.GoTool() should be identical to ../../../bin/go.
+	// The 'tgo' command is installed at $GOROOT/bin/go, so if the environment
+	// is correct then testenv.GoTool() should be identical to ../../../bin/tgo.
 
-	relWant := "../../../bin/go" + exeSuffix
+	relWant := "../../../bin/tgo" + exeSuffix
 	absWant, err := filepath.Abs(relWant)
 	if err != nil {
 		t.Fatal(err)
@@ -117,14 +117,14 @@ func TestHasGoBuild(t *testing.T) {
 		hasExec = true
 	})
 	t.Run("MustHaveExecPath", func(t *testing.T) {
-		testenv.MustHaveExecPath(t, "go")
+		testenv.MustHaveExecPath(t, "tgo")
 		hasExecGo = true
 	})
 	if !hasExec {
 		t.Errorf(`MustHaveExec(t) skipped unexpectedly`)
 	}
 	if !hasExecGo {
-		t.Errorf(`MustHaveExecPath(t, "go") skipped unexpectedly`)
+		t.Errorf(`MustHaveExecPath(t, "tgo") skipped unexpectedly`)
 	}
 
 	dir := t.TempDir()
@@ -132,7 +132,7 @@ func TestHasGoBuild(t *testing.T) {
 	if err := os.WriteFile(mainGo, []byte("package main\nfunc main() {}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	cmd := testenv.Command(t, "go", "build", "-o", os.DevNull, mainGo)
+	cmd := testenv.Command(t, "tgo", "build", "-o", os.DevNull, mainGo)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("%v: %v\n%s", cmd, err, out)

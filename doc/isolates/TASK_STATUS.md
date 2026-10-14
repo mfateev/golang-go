@@ -279,7 +279,7 @@ ordinary-Go execution remains unproved.**
 - [x] Direct-toolchain static probe linked two separately compiled configured
       `package main` directories into one host and ran both through the
       trusted `Call` boundary (the original probe also had `Inbox`)
-- [x] Experimental `go build -isolate-dir` loads configured `package main`
+- [x] Experimental `tgo build -isolate-dir` loads configured `package main`
       directories under distinct paths, generates the name-to-entry table,
       and links one executable with the host. The trusted host API can look up
       each program, start its `main`, and exchange copied `Call` bytes;
@@ -304,7 +304,7 @@ ordinary-Go execution remains unproved.**
       unexported globals. Generated offsets cover those globals, while generic
       dictionaries remain shared metadata; the static script checks reads,
       writes, second-instance reset, and separate host state
-- [x] Optional `go build -isolate-report=FILE` emits a sorted JSON inventory of
+- [x] Optional `tgo build -isolate-report=FILE` emits a sorted JSON inventory of
       each program's reachable packages, instance-state selection, and host
       reachability. Unselected standard packages are labeled unclassified;
       the build script verifies selected, shared, and unclassified examples
@@ -518,7 +518,7 @@ The opt-in `encoding/base64` initialized-state probe passed 100 tagged native
 race runs and another complete native `src/all.bash` run.
 
 The 2026-09-29 `Call`/`Inbox` boundary probe passed `src/make.bash`,
-`go test -race -count=100 isolate`, and `go test runtime -count=1`. The
+`tgo test -race -count=100 isolate`, and `tgo test runtime -count=1`. The
 earlier runtime run found a `runtime.g` size assertion that was corrected;
 it also failed in an execution environment that denied `ptrace` and local
 listening sockets. After those permissions were available, the focused
@@ -528,13 +528,13 @@ suite passed.
 The 2026-09-30 static build integration passed `src/make.bash`, a focused
 `cmd/go` script test, and a separate two-program build/run from an external
 module. The next slice also passed `src/make.bash`, the script's initialized
-state check for two instances, and `go test -race isolate`. A later script
+state check for two instances, and `tgo test -race isolate`. A later script
 check passed for a dependency imported by two programs and for initializer
 dependency order. A further focused check passed with process-startup
 initialization suppressed for selected packages unused by the host. The
 complete Linux arm64 `src/all.bash` suite passed after
 updating the new packages' dependency policy and generated package/help lists.
-The rebuilt `bin/go` also built and ran a standalone two-program example from
+The rebuilt `bin/tgo` also built and ran a standalone two-program example from
 an external module. The startup-initialization change passed `make.bash`, its
 focused `cmd/go` script test, and a subsequent complete Linux arm64
 `src/all.bash` run.
@@ -555,11 +555,11 @@ build/run, and a complete Linux arm64 `src/all.bash` run.
 
 The optional package ownership report passed the focused static-build script
 and `TestDocsUpToDate`. The provisional cleanup guards passed `src/make.bash`,
-`go test -race isolate`, ordinary `unique` and `net/netip` tests, and a
+`tgo test -race isolate`, ordinary `unique` and `net/netip` tests, and a
 complete Linux arm64 `src/all.bash` run.
 
 The active development target is the container's native **Linux arm64**
-(`uname -m` reports `aarch64`; the rebuilt tree's `go version` reports
+(`uname -m` reports `aarch64`; the rebuilt tree's `tgo version` reports
 `linux/arm64`). E5a measurements and hard-kill acceptance tests run on this
 target. The amd64 emulator is used only for Phase 1 replay-byte comparison;
 the Linux/386 emulator cannot launch even a minimal bootstrap-Go binary in

@@ -38,10 +38,10 @@ arm64 race-detector repetitions and 100 emulated Linux amd64 runs, including
 
 ```bash
 cd src
-../bin/go test -race -tags=phase2b_revocation \
+../bin/tgo test -race -tags=phase2b_revocation \
   -run='^TestIsolate(FirstDispatchRevocation|GroupCompletion)$' \
   -count=1000 -timeout=60s runtime
-GOARCH=amd64 CGO_ENABLED=0 ../bin/go test -c -tags=phase2b_revocation \
+GOARCH=amd64 CGO_ENABLED=0 ../bin/tgo test -c -tags=phase2b_revocation \
   -o /tmp/runtime-revocation-amd64.test runtime
 qemu-x86_64 /tmp/runtime-revocation-amd64.test \
   -test.run='^Test(IsolateFirstDispatchRevocation|IsolateGroupCompletion|Sizeof)$' \
@@ -104,7 +104,7 @@ including its race section and `../test`.
 
 ```bash
 cd src
-GOMAXPROCS=4 GOGC=20 ../bin/go test -race \
+GOMAXPROCS=4 GOGC=20 ../bin/tgo test -race \
   -tags=phase0_e4,phase2b_layout,phase2b_dependency \
   -gcflags='internal/isolateproto/testdata/e4...=-d=isolateglobals=1,isolateinit=1' \
   -gcflags='internal/isolateproto/testdata/e4importtoy=-d=isolateglobals=1,isolateinit=1,isolateimports=internal/isolateproto/testdata/e4deptoy' \
@@ -131,7 +131,7 @@ and verifies that the process global is unchanged. Its tagged suite passed
 
 ```bash
 cd src
-GOMAXPROCS=4 GOGC=20 ../bin/go test -race \
+GOMAXPROCS=4 GOGC=20 ../bin/tgo test -race \
   -tags=phase0_e4,phase2b_layout,phase2b_dependency,phase2b_autoselection \
   -gcflags='all=-d=isolatepackages=internal/isolateproto/testdata/e4deptoy:internal/isolateproto/testdata/e4importtoy' \
   -count=100 internal/isolateproto/testdata/e4importtoy
@@ -198,7 +198,7 @@ native child inheriting the base. Run:
 
 ```bash
 cd src
-GOMAXPROCS=4 GOGC=20 ../bin/go test -race \
+GOMAXPROCS=4 GOGC=20 ../bin/tgo test -race \
   -tags=phase0_e4,phase2b_layout \
   -gcflags='internal/isolateproto/testdata/e4layouttoy=-d=isolateglobals=1,isolateinit=1' \
   -count=100 internal/isolateproto/testdata/e4layouttoy
@@ -234,7 +234,7 @@ changes only one selected instance; 100 native arm64 race runs passed.
 
 ```bash
 cd src
-GOMAXPROCS=4 GOGC=20 ../bin/go test -race \
+GOMAXPROCS=4 GOGC=20 ../bin/tgo test -race \
   -tags=phase0_e4,phase2b_stdlib \
   -gcflags='all=-d=isolateimports=encoding/base64' \
   -gcflags='encoding/base64=-d=isolateglobals=1,isolateinit=1' \
@@ -284,7 +284,7 @@ A diagnostic `make.bash` with `GOMAXPROCS=1 GODEBUG=gocachehash=1` then failed
 almost immediately with `ENFILE` opening `pkg/include/asm_ppc64x.h` on the
 repository's `virtiofs` mount. Linux's allocated file count afterward was 222
 against a 3,295,909 limit. The failed build removed `pkg/tool/linux_arm64/*`
-before it could replace them, so no further `../bin/go test` can run until a
+before it could replace them, so no further `../bin/tgo test` can run until a
 successful toolchain build. The host-mounted build cache was not cleared;
 this failure was in the repository, not the cache.
 

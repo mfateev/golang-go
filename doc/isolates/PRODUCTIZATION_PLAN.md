@@ -329,7 +329,7 @@ platforms, including the new deterministic sync.Map.Range and iter.Pull paths.
   `internalbindings` and pins one SDK version. Establish a compatibility test
   matrix and either secure a supported extension point or maintain an
   isolated adapter with an explicit SDK upgrade gate.
-- Extend the POC's `//temporal:workflow` entry generation to `go run`, `go install`,
+- Extend the POC's `//temporal:workflow` entry generation to `tgo run`, `tgo install`,
   and test binaries, trim dependency selection with finer function reachability,
   and generalize the trusted SDK support-package classification. Marked
   functions now have generated typed invokers for any argument count and use

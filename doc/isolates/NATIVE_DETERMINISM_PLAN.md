@@ -160,10 +160,10 @@ must pass old histories or introduce an explicit compatibility/version policy.
 - `src/all.bash` completed with `ALL TESTS PASSED`, including standard-library
   and compiler tests, tagged/experimental configurations, cgo, runtime processor
   configurations, the race detector, and the language regression corpus.
-- After the final named-zone lookup guard, `go test -short time isolate go/build`
+- After the final named-zone lookup guard, `tgo test -short time isolate go/build`
   passed, including UTC/Local lookup, rejection of machine database lookups,
   and explicit TZif data decoding.
-- `go test -race isolate -run TestDeterministic -count=5`, SDK `go test ./...`,
+- `tgo test -race isolate -run TestDeterministic -count=5`, SDK `tgo test ./...`,
   and the serial/concurrent SDK driver passed. The SDK suite includes the
   positive saved-history replay and corrupted-result rejection test.
 - The saved 195-observation history replayed in fresh processes at GOMAXPROCS

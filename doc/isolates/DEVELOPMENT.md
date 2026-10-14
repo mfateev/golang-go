@@ -73,7 +73,7 @@ After recreation, verify `/tmp` is writable, check the worktree with
 ```bash
 git ls-files src/cmd/vendor/golang.org/x/tools/internal/moreiters
 ls src/cmd/vendor/golang.org/x/tools/internal/moreiters
-"$GOROOT_BOOTSTRAP/bin/go" version
+"$GOROOT_BOOTSTRAP/bin/tgo" version
 ```
 
 Record the new suite result in [PHASE2B_PROGRESS.md](./PHASE2B_PROGRESS.md).

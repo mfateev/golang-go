@@ -29,7 +29,7 @@ containment needs the fork.**
 
 ## Option 1 — `-toolexec` source rewriting *(the serious one)*
 
-`go build -toolexec=mytool` interposes on every compiler and linker invocation,
+`tgo build -toolexec=mytool` interposes on every compiler and linker invocation,
 so a tool can rewrite Go source before it reaches the compiler — including
 standard library packages. This is not theoretical: `garble` uses exactly this
 mechanism to rewrite Go source at scale, stdlib included, and has been

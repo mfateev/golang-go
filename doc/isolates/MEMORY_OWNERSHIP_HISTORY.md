@@ -219,7 +219,7 @@ requires its separate audit. Owner zero never grants blanket immutable sharing.
   retained approximately 69.6 MB of live heap; after eviction, all weak instance
   references cleared, allocator-cache count returned to zero, goroutine count
   returned to two, and live heap returned to approximately 1.1 MB.
-- `go test -race runtime isolate -run
+- `tgo test -race runtime isolate -run
   'TestIsolateAlloc|TestIsolateMetadata|TestIsolateCachedEviction|TestDeterministic|TestReflectionTypeRegistryAcrossIsolates'
   -count=5`: passed. The cached test alone created/evicted 15,360 instances.
 - The same filter with `GOEXPERIMENT=staticlockranking`, `-short -count=5`:

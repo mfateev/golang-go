@@ -216,8 +216,13 @@ func bootstrapBuildTools() {
 		}
 	}
 
+	// Bootstrap with either the upstream Go command or an installed POC tgo.
+	bootstrapGo := pathf("%s/bin/go%s", goroot_bootstrap, exe)
+	if tgo := pathf("%s/bin/tgo%s", goroot_bootstrap, exe); isfile(tgo) {
+		bootstrapGo = tgo
+	}
 	// check bootstrap version.
-	ver := run(pathf("%s/bin", goroot_bootstrap), CheckExit, pathf("%s/bin/go", goroot_bootstrap), "env", "GOVERSION")
+	ver := run(pathf("%s/bin", goroot_bootstrap), CheckExit, bootstrapGo, "env", "GOVERSION")
 	// go env GOVERSION output like "go1.22.6\n" or "devel go1.24-ffb3e574 Thu Aug 29 20:16:26 2024 +0000\n".
 	ver = ver[:len(ver)-1]
 	if version.Compare(ver, version.Lang(minBootstrap)) > 0 && version.Compare(ver, minBootstrap) < 0 {
@@ -321,7 +326,7 @@ func bootstrapBuildTools() {
 	bindir := pathf("%s/bin", workspace)
 	xmkdirall(bindir)
 	cmd := []string{
-		pathf("%s/bin/go", goroot_bootstrap),
+		bootstrapGo,
 		"build",
 		"-o", bindir,
 		"-tags=compiler_bootstrap,cmd_go_bootstrap",
