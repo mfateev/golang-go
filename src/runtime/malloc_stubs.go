@@ -65,7 +65,7 @@ func mallocgcSlowPathStub(size uintptr, typ *_type, needzero bool, spc spanClass
 func mallocStub(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 	// The compiler also calls these specialized allocators directly. Route
 	// private allocations through the common reservation and discard fences.
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {

@@ -620,7 +620,8 @@ type g struct {
 	isolateCallSelectNext      uint64 // Four poll draws reserved before a Call transport park.
 	isolateCallSelectValues    [4]uint64
 	isolateCallSelectRemaining uint32
-	isolateMetadataDepth       uint32 // Audited process metadata service nesting; never inherited.
+	isolateMetadataDepth       uint32                      // Audited process metadata service nesting; never inherited.
+	isolateProtoInit           *isolateProtoInitialization // Pinned cache builder allocations, never inherited.
 	isolateReadOnlyRandLegacy  unsafe.Pointer
 	isolateReadOnlyRandom      *isolateRandomState
 	isolateReadOnlyOwner       uintptr // Workflow memory may be borrowed for reads, never writes.

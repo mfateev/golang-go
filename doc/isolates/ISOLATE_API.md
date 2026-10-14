@@ -759,12 +759,21 @@ this check before invoking generated value converters; unsupported representatio
 remain subject to ordinary memory and effect checks.
 
 The compiler rewrites generated open-API message accessors to use canonical type
-metadata with private reflection/coder caches. Generated reset paths clear the
-caller-owned message without retaining a process cache. Enum metadata stays
-immutable. Descriptor dependencies resolve from canonical Go types without calling
-application code under metadata privileges. Codec pools and initialization state
-are private; query libraries initialize in scratch memory. Process descriptor
-strings and scalar defaults are copied back into the caller's owner.
+metadata and shared reflection/coder tables. Each used type initializes lazily once
+in the host process, using protobuf's initializer mutex and atomic ready flag.
+Only completed immutable cache fields and their builder-created allocations are
+published for reads. The publication registry uses immutable snapshots and atomic
+loads; cache reads take no registry lock. Unused types are not initialized.
+
+Message values, size caches and codec pools stay under the workflow or query
+owner. Generated reset paths clear the caller-owned message. Nil reflective
+message wrappers also stay caller-owned; the separate process nil-wrapper cache
+is not exposed. Initializer locks and ready flags remain service state. Descriptor
+dependencies resolve from canonical Go types without calling application code
+under metadata privileges, including when the host initializes a shared cache.
+Reflection table order is independent of the first caller and executable hash.
+Descriptor strings and scalar defaults are copied into the caller's owner, or
+into immutable cache allocations during shared initialization.
 
 Protobuf support is part of the single current POC interface. The API marker is
 currently 1; markers can change freely during development and do not select older

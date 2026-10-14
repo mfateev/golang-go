@@ -229,6 +229,18 @@ func IsolatePrivateProtoScopeForTest(p unsafe.Pointer, fn func()) {
 	defer isolateLeaveMessageInfoMetadata(owner)
 	fn()
 }
+
+func IsolateProtoCacheForTest(info any, build func()) {
+	gp := getg()
+	parent := gp.isolateProtoInit
+	state := &isolateProtoInitialization{info: info, parent: parent}
+	gp.isolateProtoInit = state
+	defer func() { gp.isolateProtoInit = parent }()
+	build()
+	isolatePublishProtoCache(info)
+}
+
+func IsolateMetadataCallbackForTest(pc uintptr) { isolateCheckMetadataCall(pc) }
 func IsolateMetadataReturnStringForTest(owner uintptr, value string) string {
 	return isolateCopyMetadataReturnString(owner, value)
 }

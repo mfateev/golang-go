@@ -75,6 +75,7 @@ func ScopeIsolateMetadata() {
 			// under process privileges. Use the process builder's canonical Go-type map.
 			fn.Pragma |= ir.Noinline
 			active := Expr(ir.NewBinaryExpr(fn.Pos(), ir.ONE, Call(fn.Pos(), LookupRuntime("isolateMetadataBorrowOwner"), nil, false), ir.NewInt(fn.Pos(), 0)))
+			active = Expr(ir.NewLogicalExpr(fn.Pos(), ir.OOROR, active, Call(fn.Pos(), LookupRuntime("isolateProtoCacheBuilding"), nil, false)))
 			infoType := types.LocalPkg.Lookup("MessageInfo").Def.(*ir.Name).Type()
 			if name == "Export.EnumDescriptorOf" {
 				infoType = types.LocalPkg.Lookup("EnumInfo").Def.(*ir.Name).Type()
@@ -95,6 +96,21 @@ func ScopeIsolateMetadata() {
 			fn.Pragma |= ir.Noinline
 			active := Expr(ir.NewBinaryExpr(fn.Pos(), ir.ONE, Call(fn.Pos(), LookupRuntime("isolateGetOwner"), nil, false), ir.NewInt(fn.Pos(), 0)))
 			fn.Body.Prepend(Stmt(ir.NewIfStmt(fn.Pos(), active, []ir.Node{Stmt(ir.NewReturnStmt(fn.Pos(), []ir.Node{ir.NewInt(fn.Pos(), 0)}))}, nil)))
+		}
+		if pkg == isolatepolicy.ProtobufModule+"/internal/detrand" && (name == "Bool" || name == "Intn") {
+			// Shared reflection tables must have the same order regardless of
+			// whether their first caller is the host or an isolate.
+			fn.Pragma |= ir.Noinline
+			active := Call(fn.Pos(), LookupRuntime("isolateProtoCacheBuilding"), nil, false)
+			zero := ir.NewInt(fn.Pos(), 0)
+			if name == "Bool" {
+				fn.Body.Prepend(Stmt(ir.NewIfStmt(fn.Pos(), active, []ir.Node{Stmt(ir.NewReturnStmt(fn.Pos(), []ir.Node{ir.NewBool(fn.Pos(), false)}))}, nil)))
+			} else {
+				// Preserve the original nonpositive-bound panic.
+				positive := Expr(ir.NewBinaryExpr(fn.Pos(), ir.OGT, fn.Type().Param(0).Nname.(*ir.Name), zero))
+				active = Expr(ir.NewLogicalExpr(fn.Pos(), ir.OANDAND, active, positive))
+				fn.Body.Prepend(Stmt(ir.NewIfStmt(fn.Pos(), active, []ir.Node{Stmt(ir.NewReturnStmt(fn.Pos(), []ir.Node{zero}))}, nil)))
+			}
 		}
 		generated := strings.HasSuffix(base.Ctxt.PosTable.Pos(fn.Pos()).Base().Filename(), ".pb.go")
 		if generated {
@@ -179,9 +195,46 @@ func ScopeIsolateMetadata() {
 			fn.Pragma |= ir.Noinline
 			receiver := fn.Type().Recv().Nname.(*ir.Name)
 			input := AssignConv(receiver, types.Types[types.TINTER], "protobuf message info")
-			cloned := Call(fn.Pos(), LookupRuntime("isolatePrivateMessageInfo", types.Types[types.TINTER], types.Types[types.TINTER]), []ir.Node{input}, false)
-			result := Expr(ir.NewTypeAssertExpr(fn.Pos(), cloned, receiver.Type()))
-			fn.Body.Prepend(Stmt(ir.NewAssignStmt(fn.Pos(), receiver, result)))
+			shared := Call(fn.Pos(), LookupRuntime("isolateSharedMessageInfo", types.Types[types.TINTER], types.Types[types.TINTER]), []ir.Node{input}, false)
+			result := Expr(ir.NewTypeAssertExpr(fn.Pos(), shared, receiver.Type()))
+			active := Expr(ir.NewBinaryExpr(fn.Pos(), ir.ONE, Call(fn.Pos(), LookupRuntime("isolateGetOwner"), nil, false), ir.NewInt(fn.Pos(), 0)))
+			init := ir.NewSelectorExpr(fn.Pos(), ir.ODOT, receiver, types.LocalPkg.Lookup("init"))
+			callInit := Stmt(ir.NewCallExpr(fn.Pos(), ir.OCALL, init, nil))
+			// A nil reflective message is a caller-owned wrapper too. Do not
+			// allocate it into MessageInfo's separately lazy process nil cache.
+			last := fn.Body[len(fn.Body)-1].(*ir.ReturnStmt)
+			for _, node := range fn.Body {
+				if branch, ok := node.(*ir.IfStmt); ok {
+					for _, inner := range branch.Body {
+						if ret, ok := inner.(*ir.ReturnStmt); ok && len(ret.Results) == 1 {
+							if call, ok := ret.Results[0].(*ir.CallExpr); ok {
+								if sel, ok := call.Fun.(*ir.SelectorExpr); ok && sel.Sel.Name == "Init" {
+									branch.Body.Prepend(Stmt(ir.NewIfStmt(fn.Pos(), ir.DeepCopy(fn.Pos(), active), []ir.Node{ir.DeepCopy(fn.Pos(), last)}, nil)))
+								}
+							}
+						}
+					}
+				}
+			}
+			fn.Body.Prepend(Stmt(ir.NewAssignStmt(fn.Pos(), receiver, result)), Stmt(ir.NewIfStmt(fn.Pos(), active, []ir.Node{callInit}, nil)))
+		}
+		if pkg == isolatepolicy.ProtobufModule+"/internal/impl" && name == "(*MessageInfo).initOnce" {
+			publishSharedProtoCache(fn)
+		}
+		if pkg == isolatepolicy.ProtobufModule+"/internal/impl" && name == "getMessageInfo" {
+			fn.Pragma |= ir.Noinline
+			value := AssignConv(fn.Type().Param(0).Nname.(*ir.Name), types.Types[types.TINTER], "protobuf child Go type")
+			info := TempAt(fn.Pos(), fn, types.Types[types.TINTER])
+			lookup := Call(fn.Pos(), LookupRuntime("isolateProtoInfoForReflectType", types.Types[types.TINTER], types.Types[types.TINTER]), []ir.Node{value}, false)
+			empty := Expr(ir.NewBinaryExpr(fn.Pos(), ir.OEQ, info, NodNil()))
+			result := Expr(ir.NewTypeAssertExpr(fn.Pos(), info, fn.Type().Result(0).Type))
+			body := []ir.Node{
+				Stmt(ir.NewAssignStmt(fn.Pos(), info, lookup)),
+				Stmt(ir.NewIfStmt(fn.Pos(), empty, []ir.Node{Stmt(ir.NewReturnStmt(fn.Pos(), []ir.Node{NodNil()}))}, nil)),
+				Stmt(ir.NewReturnStmt(fn.Pos(), []ir.Node{result})),
+			}
+			active := Call(fn.Pos(), LookupRuntime("isolateProtoCacheBuilding"), nil, false)
+			fn.Body.Prepend(Stmt(ir.NewIfStmt(fn.Pos(), active, body, nil)))
 		}
 		if pkg == isolatepolicy.ProtobufModule+"/reflect/protoregistry" && name == "init" {
 			fn.Pragma |= ir.Noinline
@@ -310,6 +363,34 @@ func cloneIsolateProto(fn *ir.Func) {
 	owner := Call(fn.Pos(), LookupRuntime("isolateGetOwner"), nil, false)
 	active := Expr(ir.NewBinaryExpr(fn.Pos(), ir.ONE, owner, ir.NewInt(fn.Pos(), 0)))
 	fn.Body.Prepend(Stmt(ir.NewIfStmt(fn.Pos(), active, body, nil)))
+}
+
+// Preserve protobuf's initMu/atomic initDone protocol. Freeze only completed
+// cache allocations, immediately before publication to concurrent readers.
+func publishSharedProtoCache(fn *ir.Func) {
+	receiver := fn.Type().Recv().Nname.(*ir.Name)
+	value := AssignConv(receiver, types.Types[types.TINTER], "shared protobuf cache")
+	token := TempAt(fn.Pos(), fn, types.Types[types.TUNSAFEPTR])
+	begin := Call(fn.Pos(), LookupRuntime("isolateBeginProtoInitialization", types.Types[types.TINTER]), []ir.Node{value}, false)
+	end := Call(fn.Pos(), LookupRuntime("isolateEndProtoInitialization"), []ir.Node{token}, false)
+	fn.Body.Prepend(Stmt(ir.NewAssignStmt(fn.Pos(), token, begin)), Stmt(ir.NewGoDeferStmt(fn.Pos(), ir.ODEFER, end)))
+	var edit func(ir.Node) ir.Node
+	edit = func(node ir.Node) ir.Node {
+		if _, closure := node.(*ir.ClosureExpr); closure {
+			return node
+		}
+		if call, ok := node.(*ir.CallExpr); ok {
+			if target := ir.StaticCalleeName(call.Fun); target != nil && target.Sym().Pkg.Path == "sync/atomic" && target.Sym().Name == "StoreUint32" {
+				publish := Call(call.Pos(), LookupRuntime("isolatePublishProtoCache", types.Types[types.TINTER]), []ir.Node{value}, false)
+				call.PtrInit().Append(Stmt(publish))
+			}
+		}
+		ir.EditChildren(node, edit)
+		return node
+	}
+	for i, node := range fn.Body {
+		fn.Body[i] = edit(node)
+	}
 }
 
 // The pinned builder populates and registers MessageInfos before its final

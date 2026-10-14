@@ -4667,6 +4667,7 @@ func gdestroy(gp *g) {
 	gp.isolateCallSelectNext = 0
 	gp.isolateCallSelectRemaining = 0
 	gp.isolateMetadataDepth = 0
+	gp.isolateProtoInit = nil
 	gp.isolateBoundary = nil
 	gp.timer = nil
 	gp.coroarg = nil
@@ -5576,6 +5577,7 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	newg.isolateSpawnPriority = 0
 	newg.isolateOwner = 0
 	newg.isolateMetadataDepth = 0
+	newg.isolateProtoInit = nil
 	newg.isolatePrinting = false
 	newg.isolateBoundary = nil
 	newg.isolateGroup = nil

@@ -336,7 +336,12 @@ func isolateCheckHeapStrings([]string)
 func isolatePublishProtoRegistry(value any)
 func isolateCopyMetadataReturnString(owner uintptr, value string) string
 func isolatePublishMetadataReturn(owner uintptr, value any) any
-func isolatePrivateMessageInfo(value any) any
+func isolateSharedMessageInfo(value any) any
+func isolateBeginProtoInitialization(value any) unsafe.Pointer
+func isolateEndProtoInitialization(unsafe.Pointer)
+func isolatePublishProtoCache(value any)
+func isolateProtoCacheBuilding() bool
+func isolateProtoInfoForReflectType(value any) any
 func isolateEnterMessageInfoMetadata(p unsafe.Pointer) uintptr
 func isolateLeaveMessageInfoMetadata(owner uintptr)
 func isolatePublishMessageInfos(any)

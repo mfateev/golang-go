@@ -72,11 +72,22 @@ jobs:
           # The step deadline also bounds compilation; Go's deadline bounds the
           # test process and prints goroutine stacks if it stalls. Keep the
           # workflow task's existing deadline unchanged for this reproducer.
-          if ! ../golang-go/bin/go test -v -failfast -count=1 -timeout=3m ./example/protobufvalues/check -run '^TestGeneratedProtobufHistoryReplay$' > "$POC_LOG_DIR/sdk.log" 2>&1; then
+          if ! ../golang-go/bin/go test -v -failfast -count=1 -timeout=3m ./example/protobufvalues/check -run '^TestGeneratedProtobuf(HistoryReplay|SharedMetadata)$' > "$POC_LOG_DIR/sdk.log" 2>&1; then
             cat "$POC_LOG_DIR/sdk.log"
             exit 1
           fi
           cat "$POC_LOG_DIR/sdk.log"
+      - name: Shared metadata boundaries under race detection
+        timeout-minutes: 4
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd golang-go
+          if ! ./bin/go test -race -failfast -count=1 -timeout=2m runtime -run '^TestIsolateSharedProtoCache' > "$POC_LOG_DIR/cache-race.log" 2>&1; then
+            cat "$POC_LOG_DIR/cache-race.log"
+            exit 1
+          fi
+          cat "$POC_LOG_DIR/cache-race.log"
       - name: Preserve all output
         if: always()
         timeout-minutes: 2

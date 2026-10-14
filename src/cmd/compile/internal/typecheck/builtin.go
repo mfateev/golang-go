@@ -277,21 +277,26 @@ var runtimeDecls = [...]struct {
 	{"isolatePublishProtoRegistry", funcTag, 35},
 	{"isolateCopyMetadataReturnString", funcTag, 172},
 	{"isolatePublishMetadataReturn", funcTag, 173},
-	{"isolatePrivateMessageInfo", funcTag, 174},
-	{"isolateEnterMessageInfoMetadata", funcTag, 175},
+	{"isolateSharedMessageInfo", funcTag, 174},
+	{"isolateBeginProtoInitialization", funcTag, 175},
+	{"isolateEndProtoInitialization", funcTag, 166},
+	{"isolatePublishProtoCache", funcTag, 35},
+	{"isolateProtoCacheBuilding", funcTag, 176},
+	{"isolateProtoInfoForReflectType", funcTag, 174},
+	{"isolateEnterMessageInfoMetadata", funcTag, 177},
 	{"isolateLeaveMessageInfoMetadata", funcTag, 3},
 	{"isolatePublishMessageInfos", funcTag, 35},
 	{"isolateCloneProto", funcTag, 174},
 	{"isolatePublishErrorSentinel", funcTag, 35},
-	{"isolateCheckHeapMap", funcTag, 176},
-	{"isolateCheckHeapMapKey", funcTag, 177},
-	{"isolateCheckHeapReference", funcTag, 178},
+	{"isolateCheckHeapMap", funcTag, 178},
+	{"isolateCheckHeapMapKey", funcTag, 179},
+	{"isolateCheckHeapReference", funcTag, 180},
 	{"isolateCheckHeapStackReference", funcTag, 6},
 	{"isolateCheckHeapMove", funcTag, 77},
-	{"isolateCheckHeapStackMove", funcTag, 178},
-	{"isolateCheckHeapCopy", funcTag, 179},
-	{"isolateCheckHeapSliceCopy", funcTag, 180},
-	{"isolateCheckHeapInterfaceEqual", funcTag, 177},
+	{"isolateCheckHeapStackMove", funcTag, 180},
+	{"isolateCheckHeapCopy", funcTag, 181},
+	{"isolateCheckHeapSliceCopy", funcTag, 182},
+	{"isolateCheckHeapInterfaceEqual", funcTag, 179},
 	{"isolateCanonicalProtoInfo", funcTag, 174},
 	{"isolatePublishEnumInfos", funcTag, 35},
 	{"isolateCopyMetadataProtoValue", funcTag, 173},
@@ -300,7 +305,7 @@ var runtimeDecls = [...]struct {
 }
 
 func runtimeTypes() []*types.Type {
-	var typs [181]*types.Type
+	var typs [183]*types.Type
 	typs[0] = types.Types[types.TSTRING]
 	typs[1] = newSig(params(typs[0]), nil)
 	typs[2] = types.Types[types.TUINTPTR]
@@ -476,12 +481,14 @@ func runtimeTypes() []*types.Type {
 	typs[172] = newSig(params(typs[2], typs[0]), params(typs[0]))
 	typs[173] = newSig(params(typs[2], typs[10]), params(typs[10]))
 	typs[174] = newSig(params(typs[10]), params(typs[10]))
-	typs[175] = newSig(params(typs[14]), params(typs[2]))
-	typs[176] = newSig(params(typs[5], typs[13]), nil)
-	typs[177] = newSig(params(typs[5], typs[5], typs[5], typs[13]), nil)
-	typs[178] = newSig(params(typs[5], typs[5]), nil)
-	typs[179] = newSig(params(typs[5], typs[7], typs[5], typs[7], typs[2]), nil)
-	typs[180] = newSig(params(typs[5], typs[5], typs[7], typs[5], typs[7], typs[13]), nil)
+	typs[175] = newSig(params(typs[10]), params(typs[14]))
+	typs[176] = newSig(nil, params(typs[13]))
+	typs[177] = newSig(params(typs[14]), params(typs[2]))
+	typs[178] = newSig(params(typs[5], typs[13]), nil)
+	typs[179] = newSig(params(typs[5], typs[5], typs[5], typs[13]), nil)
+	typs[180] = newSig(params(typs[5], typs[5]), nil)
+	typs[181] = newSig(params(typs[5], typs[7], typs[5], typs[7], typs[2]), nil)
+	typs[182] = newSig(params(typs[5], typs[5], typs[7], typs[5], typs[7], typs[13]), nil)
 	return typs[:]
 }
 

@@ -1080,7 +1080,7 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		return unsafe.Pointer(&zerobase)
 	}
 
-	if sizeSpecializedMallocEnabled && getg().isolateOwner == 0 && size < uintptr(len(mallocNoScanTable)) {
+	if sizeSpecializedMallocEnabled && getg().isolateOwner == 0 && getg().isolateProtoInit == nil && size < uintptr(len(mallocNoScanTable)) {
 		if typ == nil || !typ.Pointers() {
 			if size >= maxTinySize {
 				return mallocNoScanTable[size](size, typ, needzero)
@@ -1221,6 +1221,7 @@ func mallocgcCommon(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		postMallocgcDebug(x, elemsize, typ)
 	}
 	isolateCheckAllocationResources()
+	isolateRecordProtoAllocation(x, size-asanRZ, typ)
 	return x
 }
 

@@ -70,72 +70,82 @@ func isolateCanonicalProtoInfo(value any) any {
 	for typ.Kind() == abi.Pointer {
 		typ = (*ptrtype)(unsafe.Pointer(typ)).Elem
 	}
+	if typ.Kind() == abi.Struct && !isolateSupportedProtoStruct(typ) {
+		isolateRejectEffect("unaudited generated protobuf type")
+		return nil
+	}
+	if snapshot := isolateLoadProtoSnapshot(); snapshot != nil {
+		if info := snapshot.infos[typ]; info != nil {
+			return info
+		}
+	}
 	reflectOffsLock()
 	info := reflectOffs.isolateProtoInfos[typ]
 	reflectOffsUnlock()
-	if info == nil || typ.Kind() == abi.Struct && !isolateSupportedProtoStruct(typ) {
+	if info == nil {
 		isolateRejectEffect("unaudited generated protobuf type")
 	}
 	return info
 }
 
-// Copy the pinned immutable MessageInfo header into the caller's allocator.
-// Reflection and binary coder caches are subsequently built under that owner.
-func isolatePrivateMessageInfo(value any) any {
-	gp := getg()
-	if gp.isolateOwner == 0 {
+// Coder construction resolves child message types without invoking a generated
+// application's ProtoReflect method with process metadata privileges.
+func isolateProtoInfoForReflectType(value any) any {
+	e := efaceOf(&value)
+	if e._type == nil || e._type.Kind() != abi.Pointer || e.data == nil {
+		isolateRejectEffect("unaudited protobuf reflection type")
+		return nil
+	}
+	t := (*ptrtype)(unsafe.Pointer(e._type)).Elem
+	if toRType(t).pkgpath() != "reflect" || toRType(t).name() != "rtype" {
+		isolateRejectEffect("unaudited protobuf reflection type")
+		return nil
+	}
+	goType := (*abi.Type)(e.data)
+	if goType.Kind() != abi.Pointer {
+		return nil
+	}
+	reflectOffsLock()
+	info := reflectOffs.isolateProtoInfos[(*ptrtype)(unsafe.Pointer(goType)).Elem]
+	reflectOffsUnlock()
+	return info
+}
+
+// Use only the process builder's canonical MessageInfo. Its cache initialization
+// runs as an audited service; message allocation and operations keep the caller.
+func isolateSharedMessageInfo(value any) any {
+	if getg().isolateOwner == 0 {
 		return value
 	}
 	e := efaceOf(&value)
 	if e._type == nil || e.data == nil {
 		return value
 	}
-	if e._type.Kind() != abi.Pointer {
-		throw("isolate: invalid message info cache")
+	if !isolateCanonicalMessageInfo(value) {
+		isolateOwnershipViolation("isolate: unaudited shared message info cache")
+	}
+	return value
+}
+
+func isolateCanonicalMessageInfo(value any) bool {
+	e := efaceOf(&value)
+	if e._type == nil || e.data == nil || e._type.Kind() != abi.Pointer {
+		return false
 	}
 	typ := (*ptrtype)(unsafe.Pointer(e._type)).Elem
 	if toRType(typ).pkgpath() != "google.golang.org/protobuf/internal/impl" || toRType(typ).name() != "MessageInfo" {
-		throw("isolate: unexpected message info cache type")
+		return false
 	}
-	s := spanOfHeap(uintptr(e.data))
-	if s != nil && s.isolateAllocOwner == gp.isolateOwner {
-		return value
+	if s := spanOfHeap(uintptr(e.data)); s == nil || s.isolateAllocOwner != 0 {
+		return false
 	}
-	var extent uintptr
-	for _, field := range (*structtype)(unsafe.Pointer(typ)).Fields {
-		switch field.Name.Name() {
-		case "GoReflectType", "Desc", "Exporter", "OneofWrappers":
-			extent = field.Offset + field.Typ.Size_
-		}
+	if isolateReadOnlyProtoRange(e.data, 1) {
+		return true
 	}
-	if s == nil || (s.isolateAllocOwner != 0 && s.isolateAllocOwner != gp.isolateReadOnlyOwner) {
-		isolateOwnershipViolation("isolate: foreign message info cache")
-	}
-	if s.isolateAllocOwner == 0 && !isolateReadOnlyTypeRange(e.data, extent) {
-		isolateOwnershipViolation("isolate: unaudited message info cache")
-	}
-	clone := newobject(typ)
-	if writeBarrier.enabled {
-		bulkBarrierPreWrite(uintptr(clone), uintptr(e.data), extent, typ)
-	}
-	memmove(clone, e.data, extent)
-	for _, field := range (*structtype)(unsafe.Pointer(typ)).Fields {
-		if field.Name.Name() == "OneofWrappers" {
-			src := (*slice)(add(e.data, field.Offset))
-			if src.len != 0 {
-				item := (*slicetype)(unsafe.Pointer(field.Typ)).Elem
-				array := mallocgc(uintptr(src.len)*item.Size_, item, true)
-				if writeBarrier.enabled {
-					bulkBarrierPreWrite(uintptr(array), uintptr(src.array), uintptr(src.len)*item.Size_, nil)
-				}
-				memmove(array, src.array, uintptr(src.len)*item.Size_)
-				*(*slice)(add(clone, field.Offset)) = slice{array, src.len, src.len}
-			}
-		}
-	}
-	result := value
-	efaceOf(&result).data = clone
-	return result
+	reflectOffsLock()
+	_, approved := reflectOffs.isolateTypes[e.data]
+	reflectOffsUnlock()
+	return approved
 }
 
 // Only the pinned protoregistry initializer publishes its two process roots.

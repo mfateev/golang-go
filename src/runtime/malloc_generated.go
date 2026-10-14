@@ -12,7 +12,7 @@ import (
 
 func mallocgcSmallScanNoHeaderSC1(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
@@ -170,7 +170,7 @@ func mallocgcSmallScanNoHeaderSC1(size uintptr, typ *_type, needzero bool) unsaf
 
 func mallocgcSmallScanNoHeaderSC2(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
@@ -328,7 +328,7 @@ func mallocgcSmallScanNoHeaderSC2(size uintptr, typ *_type, needzero bool) unsaf
 
 func mallocgcSmallScanNoHeaderSC3(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
@@ -486,7 +486,7 @@ func mallocgcSmallScanNoHeaderSC3(size uintptr, typ *_type, needzero bool) unsaf
 
 func mallocgcSmallScanNoHeaderSC4(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
@@ -644,7 +644,7 @@ func mallocgcSmallScanNoHeaderSC4(size uintptr, typ *_type, needzero bool) unsaf
 
 func mallocgcSmallScanNoHeaderSC5(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
@@ -802,7 +802,7 @@ func mallocgcSmallScanNoHeaderSC5(size uintptr, typ *_type, needzero bool) unsaf
 
 func mallocgcSmallScanNoHeaderSC6(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
@@ -960,7 +960,7 @@ func mallocgcSmallScanNoHeaderSC6(size uintptr, typ *_type, needzero bool) unsaf
 
 func mallocgcSmallScanNoHeaderSC7(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
@@ -1118,7 +1118,7 @@ func mallocgcSmallScanNoHeaderSC7(size uintptr, typ *_type, needzero bool) unsaf
 
 func mallocgcTinySC2(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
@@ -1231,7 +1231,7 @@ func mallocgcTinySC2(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
 func mallocgcSmallNoScanSC2(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
@@ -1336,7 +1336,7 @@ func mallocgcSmallNoScanSC2(size uintptr, typ *_type, needzero bool) unsafe.Poin
 
 func mallocgcSmallNoScanSC3(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
@@ -1441,7 +1441,7 @@ func mallocgcSmallNoScanSC3(size uintptr, typ *_type, needzero bool) unsafe.Poin
 
 func mallocgcSmallNoScanSC4(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
@@ -1546,7 +1546,7 @@ func mallocgcSmallNoScanSC4(size uintptr, typ *_type, needzero bool) unsafe.Poin
 
 func mallocgcSmallNoScanSC5(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
@@ -1651,7 +1651,7 @@ func mallocgcSmallNoScanSC5(size uintptr, typ *_type, needzero bool) unsafe.Poin
 
 func mallocgcSmallNoScanSC6(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
@@ -1756,7 +1756,7 @@ func mallocgcSmallNoScanSC6(size uintptr, typ *_type, needzero bool) unsafe.Poin
 
 func mallocgcSmallNoScanSC7(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
@@ -1861,7 +1861,7 @@ func mallocgcSmallNoScanSC7(size uintptr, typ *_type, needzero bool) unsafe.Poin
 
 func mallocgcTinySlowPath(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
@@ -2012,7 +2012,7 @@ func mallocgcTinySlowPath(size uintptr, typ *_type, needzero bool) unsafe.Pointe
 
 func mallocgcSmallScanSlowPath(size uintptr, typ *_type, needzero bool, spc spanClass, elemsize uintptr) unsafe.Pointer {
 
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
@@ -2193,7 +2193,7 @@ func mallocgcSmallScanSlowPath(size uintptr, typ *_type, needzero bool, spc span
 
 func mallocgcSmallNoScanSlowPath(size uintptr, typ *_type, needzero bool, spc spanClass, elemsize uintptr) unsafe.Pointer {
 
-	if getg().isolateOwner != 0 {
+	if getg().isolateOwner != 0 || getg().isolateProtoInit != nil {
 		return mallocgcCommon(size, typ, needzero)
 	}
 	if doubleCheckMalloc {
