@@ -14,7 +14,7 @@ import (
 
 func TestInline(t *testing.T) {
 	testenv.MustHaveGoBuild(t)
-	cmd := exec.Command("go", "build", "-gcflags=-m", "internal/runtime/maps")
+	cmd := exec.Command(testenv.GoToolPath(t), "build", "-gcflags=-m", "internal/runtime/maps")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("exec.Command error: %v\n\n%s", err, out)

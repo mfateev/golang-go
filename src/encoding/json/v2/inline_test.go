@@ -7,6 +7,7 @@
 package json
 
 import (
+	"internal/testenv"
 	"os"
 	"os/exec"
 	"strings"
@@ -30,7 +31,7 @@ func TestInline(t *testing.T) {
 			"hash64":   true,
 			"foldName": true, // thin wrapper over appendFoldedName
 		},
-		"./internal/jsonwire": {
+		"../internal/jsonwire": {
 			"ConsumeWhitespace":    true,
 			"ConsumeNull":          true,
 			"ConsumeFalse":         true,
@@ -45,7 +46,7 @@ func TestInline(t *testing.T) {
 			"TrimSuffixString":     true,
 			"TrimSuffixWhitespace": true,
 		},
-		"./jsontext": {
+		"../jsontext": {
 			"encoderState.NeedFlush":                  true,
 			"Decoder.ReadToken":                       true, // thin wrapper over decoderState.ReadToken
 			"Decoder.ReadValue":                       true, // thin wrapper over decoderState.ReadValue
@@ -87,7 +88,7 @@ func TestInline(t *testing.T) {
 	}
 
 	for pkg, fncs := range pkgs {
-		cmd := exec.Command("go", "build", "-gcflags=-m", pkg)
+		cmd := exec.Command(testenv.GoToolPath(t), "build", "-gcflags=-m", pkg)
 		b, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("exec.Command error: %v\n\n%s", err, b)

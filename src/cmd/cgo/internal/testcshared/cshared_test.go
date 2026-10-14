@@ -165,7 +165,7 @@ func testMain(m *testing.M) int {
 }
 
 func goEnv(key string) string {
-	out, err := exec.Command("go", "env", key).Output()
+	out, err := exec.Command("tgo", "env", key).Output()
 	if err != nil {
 		log.Printf("go env %s failed:\n%s", key, err)
 		log.Panicf("%s", err.(*exec.ExitError).Stderr)
@@ -232,7 +232,7 @@ func createHeaders() error {
 	// of main package libgo.
 	//
 	// TODO(golang.org/issue/35715): This should be simpler.
-	args := []string{"go", "tool", "cgo",
+	args := []string{"tgo", "tool", "cgo",
 		"-objdir", objDir,
 		"-exportheader", "p.h",
 		filepath.Join(".", "p", "p.go")}
@@ -249,14 +249,14 @@ func createHeaders() error {
 	}
 	libgoname = "libgo.a"
 
-	args = []string{"go", "build", "-buildmode=c-shared", "-o", filepath.Join(installdir, libgoname), "./libgo"}
+	args = []string{"tgo", "build", "-buildmode=c-shared", "-o", filepath.Join(installdir, libgoname), "./libgo"}
 	cmd = exec.Command(args[0], args[1:]...)
 	out, err = cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("command failed: %v\n%v\n%s\n", args, err, out)
 	}
 
-	args = []string{"go", "build", "-buildmode=c-shared",
+	args = []string{"tgo", "build", "-buildmode=c-shared",
 		"-installsuffix", "testcshared",
 		"-o", libgoname,
 		filepath.Join(".", "libgo", "libgo.go")}
@@ -544,7 +544,7 @@ func TestUnexportedSymbols(t *testing.T) {
 
 	run(t,
 		nil,
-		"go", "build",
+		"tgo", "build",
 		"-buildmode=c-shared",
 		"-installsuffix", "testcshared",
 		"-o", libname, "./libgo2",
@@ -610,7 +610,7 @@ func testSignalHandlers(t *testing.T, pkgname, cfile, cmd string) {
 	libname := pkgname + ".a"
 	run(t,
 		nil,
-		"go", "build",
+		"tgo", "build",
 		"-buildmode=c-shared",
 		"-installsuffix", "testcshared",
 		"-o", libname, pkgname,
@@ -709,7 +709,7 @@ func TestCachedInstall(t *testing.T) {
 	copyFile(t, filepath.Join(tmpdir, "src", "testcshared", "libgo", "libgo.go"), filepath.Join("libgo", "libgo.go"))
 	copyFile(t, filepath.Join(tmpdir, "src", "testcshared", "p", "p.go"), filepath.Join("p", "p.go"))
 
-	buildcmd := []string{"go", "install", "-x", "-buildmode=c-shared", "-installsuffix", "testcshared", "./libgo"}
+	buildcmd := []string{"tgo", "install", "-x", "-buildmode=c-shared", "-installsuffix", "testcshared", "./libgo"}
 
 	cmd := exec.Command(buildcmd[0], buildcmd[1:]...)
 	cmd.Dir = filepath.Join(tmpdir, "src", "testcshared")
@@ -818,7 +818,7 @@ func TestGo2C2Go(t *testing.T) {
 		env = append(env, "CGO_LDFLAGS=-Wl,--out-implib,"+lib, "CGO_LDFLAGS_ALLOW=.*")
 		lib = strings.TrimSuffix(lib, ".a") + ".dll"
 	}
-	run(t, env, "go", "build", "-buildmode=c-shared", "-o", lib, "./go2c2go/go")
+	run(t, env, "tgo", "build", "-buildmode=c-shared", "-o", lib, "./go2c2go/go")
 
 	cgoCflags := os.Getenv("CGO_CFLAGS")
 	if cgoCflags != "" {
@@ -843,11 +843,11 @@ func TestGo2C2Go(t *testing.T) {
 	runenv := []string{"LD_LIBRARY_PATH=" + ldLibPath}
 
 	bin := filepath.Join(tmpdir, "m1") + exeSuffix
-	run(t, goenv, "go", "build", "-o", bin, "./go2c2go/m1")
+	run(t, goenv, "tgo", "build", "-o", bin, "./go2c2go/m1")
 	runExe(t, runenv, bin)
 
 	bin = filepath.Join(tmpdir, "m2") + exeSuffix
-	run(t, goenv, "go", "build", "-o", bin, "./go2c2go/m2")
+	run(t, goenv, "tgo", "build", "-o", bin, "./go2c2go/m2")
 	runExe(t, runenv, bin)
 }
 
@@ -868,7 +868,7 @@ func TestIssue36233(t *testing.T) {
 
 	const exportHeader = "issue36233.h"
 
-	run(t, nil, "go", "tool", "cgo", "-exportheader", exportHeader, "-objdir", tmpdir, "./issue36233/issue36233.go")
+	run(t, nil, "tgo", "tool", "cgo", "-exportheader", exportHeader, "-objdir", tmpdir, "./issue36233/issue36233.go")
 	data, err := os.ReadFile(exportHeader)
 	if err != nil {
 		t.Fatal(err)
@@ -915,7 +915,7 @@ func TestIssue68411(t *testing.T) {
 
 	const exportHeader = "issue68411.h"
 
-	run(t, nil, "go", "tool", "cgo", "-exportheader", exportHeader, "-objdir", tmpdir, "./issue68411/issue68411.go")
+	run(t, nil, "tgo", "tool", "cgo", "-exportheader", exportHeader, "-objdir", tmpdir, "./issue68411/issue68411.go")
 	data, err := os.ReadFile(exportHeader)
 	if err != nil {
 		t.Fatal(err)
@@ -961,7 +961,7 @@ func TestSymbolicFunctions(t *testing.T) {
 
 	run(t,
 		nil,
-		"go", "build",
+		"tgo", "build",
 		"-buildmode=c-shared",
 		"-installsuffix", "testcshared",
 		"-ldflags=-extldflags=-Wl,-Bsymbolic-functions",

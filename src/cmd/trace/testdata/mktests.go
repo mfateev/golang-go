@@ -20,7 +20,7 @@ import (
 func main() {
 	// Create command.
 	var trace, stderr bytes.Buffer
-	cmd := exec.Command("go", "run", "./testprog/main.go")
+	cmd := exec.Command("tgo", "run", "./testprog/main.go")
 	cmd.Stdout = &trace
 	cmd.Stderr = &stderr
 

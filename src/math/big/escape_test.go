@@ -16,7 +16,7 @@ func TestEscape(t *testing.T) {
 	testenv.MustHaveGoBuild(t)
 	// The multiplication routines create many temporary Int values,
 	// expecting them to be stack-allocated. Make sure none escape to the heap.
-	out, err := exec.Command("go", "build", "-gcflags=-m").CombinedOutput()
+	out, err := exec.Command(testenv.GoToolPath(t), "build", "-gcflags=-m").CombinedOutput()
 	if err != nil {
 		t.Fatalf("go build -gcflags=-m: %v\n%s", err, out)
 	}

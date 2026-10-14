@@ -764,7 +764,7 @@ func requireGccgo(t *testing.T) {
 		t.Skipf("gccgo too old (%s)", strings.TrimSpace(string(output)))
 	}
 
-	gomod, err := exec.Command("go", "env", "GOMOD").Output()
+	gomod, err := exec.Command("tgo", "env", "GOMOD").Output()
 	if err != nil {
 		t.Fatalf("go env GOMOD: %v", err)
 	}

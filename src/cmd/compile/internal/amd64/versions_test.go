@@ -105,7 +105,7 @@ func clobber(t *testing.T, src string, dst *os.File, opcodes map[string]bool) {
 	if false {
 		// TODO: go tool objdump doesn't disassemble the bmi1 instructions
 		// in question correctly. See issue 48584.
-		cmd := testenv.Command(t, "go", "tool", "objdump", src)
+		cmd := testenv.Command(t, "tgo", "tool", "objdump", src)
 		var err error
 		disasm, err = cmd.StdoutPipe()
 		if err != nil {
