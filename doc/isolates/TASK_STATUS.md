@@ -32,6 +32,14 @@ isolates. Driving use case is Temporal workflow isolation.
 
 ## Current Status
 
+### Minimal Go core refactoring plan
+
+The next refactoring is specified in [the execution plan](./MINIMAL_GO_CORE_PLAN.md).
+Keep generic isolate enforcement in Go; move Temporal/library integration and
+`tgo` build/distribution ownership into `sdk-go-poc`. Retain experimental findings
+and useful regression tests, and remove superseded experimental implementations.
+Implementation has not started; the plan defines sequencing and acceptance gates.
+
 ### Host checksum deadline regression (2026-10-13)
 
 The macOS ARM [CI failure](https://github.com/mfateev/golang-go/actions/runs/38339264475)

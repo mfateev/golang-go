@@ -12,6 +12,7 @@ Productization is ongoing; see the acceptance status and remaining features in
 is an earlier reference model, not the implementation used by the SDK.
 
 - [Resource controls](./RESOURCE_CONTROLS_PLAN.md) — accounting, limits and worker watchdogs
+- [Minimal Go core plan](./MINIMAL_GO_CORE_PLAN.md) — move SDK policy and toolchain ownership out of Go and retire superseded experiments
 - [Reliable lifecycle](./LIFECYCLE_PLAN.md) — whole-group termination and SDK cleanup
 - [Task status](./TASK_STATUS.md) — current progress and open work
 - [Implementation plan](./IMPLEMENTATION_PLAN.md) — phase gates and acceptance
