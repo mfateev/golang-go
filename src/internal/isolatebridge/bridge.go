@@ -605,7 +605,7 @@ func (b *Boundary) ReadOnlyCall(op uint32, payload []byte) ([]byte, error) {
 	return response, err
 }
 
-func (b *Boundary) FreezeWorkflow() { freezeWorkflow(b.group) }
+func (b *Boundary) FenceReadOnly() { fenceReadOnly(b.group) }
 
 func (b *Boundary) ResumeReadOnly() error {
 	if !b.deterministic || b.Stopped() {
@@ -629,8 +629,8 @@ func beginReadOnly()
 //go:linkname prepareReadOnly runtime.isolatePrepareReadOnly
 func prepareReadOnly(unsafe.Pointer, uintptr)
 
-//go:linkname freezeWorkflow runtime.isolateFreezeWorkflow
-func freezeWorkflow(unsafe.Pointer)
+//go:linkname fenceReadOnly runtime.isolateFenceReadOnly
+func fenceReadOnly(unsafe.Pointer)
 
 //go:linkname resumeReadOnly runtime.isolateResumeReadOnly
 func resumeReadOnly(unsafe.Pointer)

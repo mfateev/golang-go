@@ -184,30 +184,13 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 		for _, trusted := range []struct{ path, version string }{
 			{metadatapolicy.ProtobufModule, metadatapolicy.ProtobufVersion},
 			{metadatapolicy.TemporalAPIModule, metadatapolicy.TemporalAPIVersion},
-			{metadatapolicy.TemporalSDKModule, ""},
 			{metadatapolicy.OTelTraceModule, metadatapolicy.OTelVersion},
 		} {
 			if p.ImportPath != trusted.path && !strings.HasPrefix(p.ImportPath, trusted.path+"/") {
 				continue
 			}
-			// SDK contrib integrations are separate modules and have no entries
-			// in the compiler service manifest. Their ordinary instrumented
-			// code never inherits the parent SDK's metadata privileges.
-			if trusted.path == metadatapolicy.TemporalSDKModule && strings.HasPrefix(p.ImportPath, trusted.path+"/contrib/") {
-				continue
-			}
 			validSource := p.Module != nil && p.Module.Path == trusted.path && p.Module.Version == trusted.version && p.Module.Replace == nil
-			if trusted.path == metadatapolicy.TemporalSDKModule && p.Module != nil && p.Module.Path == trusted.path {
-				var replacementPath, replacementVersion string
-				if p.Module.Replace != nil {
-					replacementPath, replacementVersion = p.Module.Replace.Path, p.Module.Replace.Version
-				}
-				validSource = metadatapolicy.TemporalSDKSource(replacementPath, replacementVersion)
-			}
 			if !validSource || cfg.BuildMod == "vendor" {
-				if trusted.path == metadatapolicy.TemporalSDKModule {
-					base.Fatalf("isolate: SDK metadata services require %s as the owning module, using an official revision or filesystem checkout; replacement modules, nested modules, and vendored sources are unsupported", trusted.path)
-				}
 				base.Fatalf("isolate: metadata services require %s@%s without a replacement, nested module, or vendored source; audit the service manifest before upgrading", trusted.path, trusted.version)
 			}
 			metadataServices = true

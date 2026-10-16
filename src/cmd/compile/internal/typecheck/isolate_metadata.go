@@ -248,16 +248,6 @@ func ScopeIsolateMetadata() {
 				}
 			}
 		}
-		if pkg == isolatepolicy.TemporalSDKModule+"/internal" && name == "init" {
-			fn.Pragma |= ir.Noinline
-			value := AssignConv(types.LocalPkg.Lookup("ErrNoData").Def.(*ir.Name), types.Types[types.TINTER], "SDK error sentinel")
-			publish := Stmt(Call(fn.Pos(), LookupRuntime("isolatePublishErrorSentinel", types.Types[types.TINTER]), []ir.Node{value}, false))
-			if last, ok := fn.Body[len(fn.Body)-1].(*ir.ReturnStmt); ok {
-				last.PtrInit().Append(publish)
-			} else {
-				fn.Body.Append(publish)
-			}
-		}
 		if pkg == isolatepolicy.ProtobufModule+"/proto" && name == "Clone" {
 			cloneIsolateProto(fn)
 			continue

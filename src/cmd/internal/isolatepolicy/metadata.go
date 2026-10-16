@@ -7,7 +7,6 @@
 package isolatepolicy
 
 import (
-	"path/filepath"
 	"strings"
 )
 
@@ -16,20 +15,6 @@ const ProtobufVersion = "v1.36.11"
 
 const TemporalAPIModule = "go.temporal.io/api"
 const TemporalAPIVersion = "v1.63.6"
-
-const TemporalSDKModule = "go.temporal.io/sdk"
-
-// TemporalSDKSource supports official SDK revisions and development checkouts.
-// The caller must also verify the owning module is TemporalSDKModule. Replacing
-// it with another module does not grant that module SDK metadata privileges.
-func TemporalSDKSource(replacementPath, replacementVersion string) bool {
-	if replacementPath == "" {
-		return replacementVersion == ""
-	}
-	return replacementVersion == "" && (filepath.IsAbs(replacementPath) ||
-		strings.HasPrefix(replacementPath, "./") || strings.HasPrefix(replacementPath, "../") ||
-		replacementPath == "." || replacementPath == "..")
-}
 
 const OTelTraceModule = "go.opentelemetry.io/otel/trace"
 const OTelVersion = "v1.44.0"
@@ -120,14 +105,6 @@ func MetadataGlobal(symbol string) bool {
 		return true
 	}
 
-	// The default failure converter compares this startup-derived type name
-	// with reflect.Type.Name. Its backing bytes are immutable type metadata.
-	if symbol == TemporalSDKModule+"/internal.goErrType" {
-		return true
-	}
-	if symbol == TemporalSDKModule+"/internal.ErrNoData" || symbol == TemporalSDKModule+"/temporal.ErrNoData" {
-		return true
-	}
 	// SHA backend flags select equivalent implementations. These scalar reads
 	// and the fixed round table expose no application object or write privilege.
 	switch symbol {

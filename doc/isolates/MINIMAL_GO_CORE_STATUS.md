@@ -129,3 +129,41 @@ override. SDK/Go/sample revisions will be reconciled in the final handoff.
 Remote CI checked with `gh run list`: latest completed fork run at `9ac0e230f3`
 is [successful](https://github.com/mfateev/golang-go/actions/runs/38840464433).
 This does not validate the local migration commits or the newly moved CI jobs.
+
+## SDK-specific runtime behavior removed
+
+The dependency checkout at `643d90e` owns a shared key index for typed search
+attributes and returns ordered copied entries through integration binding v2.
+Native code uses `workflow.SearchAttributeEntries`; the old map-order regression
+now exercises that SDK traversal with the same 517 keys and name/type order.
+The saved history is unchanged. Core deterministic maps accept only generic
+integer/string keys, including for SDK-keyed maps; arbitrary interface keys
+still fail before traversal. Removed both runtime SDK-layout recognition hooks.
+
+`ErrNoData` is now an immutable named-string error constant, preserving `==`,
+`errors.Is`, error text and the SDK default failure type. The previous writable
+sentinel binding is retired in this POC. The SDK derives the standard error type
+locally instead of reading a privileged startup global. Removed compiler SDK-init
+rewriting, runtime error publication, SDK global exceptions and Go-owned SDK
+source validation. SDK source/version policy remains in the SDK driver.
+
+The core admission primitive is `FenceReadOnly`: it admits read-only services at
+the next park without driving a workflow phase or host protocol. Temporal task
+completion and cache policy choose when to invoke it in the SDK. No process
+allocation or metadata entry API was added.
+
+PASS: SDK-owned pinned-source snapshot bootstrap with isolates enabled; generic
+compiler script gate on that snapshot (67.655s). After rebuilding the local
+source through the SDK entrypoint, current core runtime/isolate/maps checks pass
+(runtime 124.807s under concurrent builds), and the generic compiler/script gate
+passes (110.487s). Canonical upstream unit tests run across modules with race
+checks and the focused search-attribute/sentinel tests. The initial quality gate
+identified missing docs on the new binding fields; doclink generation plus field
+docs resolves that check. The current ordered-entry metadata probe and its saved
+history pass (3.408s). Full SDK, samples and final quality gates remain part of
+the final verification.
+
+Protobuf/OTel compiler rewriting and their corresponding source guards remain;
+step 4 is not complete. Removing those guards before replacing their privilege
+mechanisms would weaken isolation. They are intentionally retained rather than
+replaced with user-configurable trust or unrestricted owner scopes.

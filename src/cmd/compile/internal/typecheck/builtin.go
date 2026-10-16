@@ -287,7 +287,6 @@ var runtimeDecls = [...]struct {
 	{"isolateLeaveMessageInfoMetadata", funcTag, 3},
 	{"isolatePublishMessageInfos", funcTag, 35},
 	{"isolateCloneProto", funcTag, 174},
-	{"isolatePublishErrorSentinel", funcTag, 35},
 	{"isolateCheckHeapMap", funcTag, 178},
 	{"isolateCheckHeapMapKey", funcTag, 179},
 	{"isolateCheckHeapReference", funcTag, 180},

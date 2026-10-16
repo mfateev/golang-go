@@ -346,7 +346,6 @@ func isolateEnterMessageInfoMetadata(p unsafe.Pointer) uintptr
 func isolateLeaveMessageInfoMetadata(owner uintptr)
 func isolatePublishMessageInfos(any)
 func isolateCloneProto(any) any
-func isolatePublishErrorSentinel(any)
 func isolateCheckHeapMap(*byte, bool)
 func isolateCheckHeapMapKey(*byte, *byte, *byte, bool)
 func isolateCheckHeapReference(*byte, *byte)

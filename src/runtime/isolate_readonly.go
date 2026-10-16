@@ -113,14 +113,14 @@ func isolateDispatchQueuePopLocked(group *isolateRevocationGroup, queue *gQueue)
 	return next
 }
 
-// Freeze changes admission at the next park, including a suspension already
-// in progress. Workflow continuations remain queued until Resume or Kill.
+// FenceReadOnly changes admission at the next park, including a suspension
+// already in progress. Normal continuations remain queued until Resume or Kill.
 //
-//go:linkname isolateFreezeWorkflow
-func isolateFreezeWorkflow(p unsafe.Pointer) {
+//go:linkname isolateFenceReadOnly
+func isolateFenceReadOnly(p unsafe.Pointer) {
 	group := (*isolateRevocationGroup)(p)
 	if getg().isolateGroup != nil || !group.deterministic {
-		panic("isolate: freezing is a deterministic host operation")
+		panic("isolate: read-only fencing is a deterministic host operation")
 	}
 	systemstack(func() {
 		var waiter *g
