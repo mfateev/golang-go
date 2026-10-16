@@ -41,6 +41,13 @@ BSD-style license found in the LICENSE file.
 
 ### Download and Install
 
+#### tgo Isolate Toolchain
+
+The fork's [binary release and installer setup](misc/tgo/README.md) packages
+precompiled `tgo` toolchains for macOS and Linux on arm64 and amd64, including
+a download installer and a generated Homebrew formula. See that guide for
+release publication and installation instructions.
+
 #### Binary Distributions
 
 Official binary distributions are available at https://go.dev/dl/.

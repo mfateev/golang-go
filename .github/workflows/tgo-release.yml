@@ -1,0 +1,133 @@
+name: tgo release
+
+on:
+  push:
+    tags: ['tgo-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag (for example tgo-v0.1.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tgo-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: darwin_arm64
+          - runner: macos-15-intel
+            target: darwin_amd64
+          - runner: ubuntu-24.04
+            target: linux_amd64
+          - runner: ubuntu-24.04-arm
+            target: linux_arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.7'
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build native toolchain from tracked sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show-ref --verify "refs/tags/$RELEASE_TAG"
+          export GOROOT_BOOTSTRAP="$(go env GOROOT)"
+          export GOCACHE="$RUNNER_TEMP/tgo-build-cache"
+          python3 misc/tgo/release.py build "$RELEASE_TAG" --output "$RUNNER_TEMP/dist"
+      - name: Install and compile using the relocated distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/dist" <<'PY'
+          import hashlib, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          with (root / "SHA256SUMS").open("w") as sums:
+              for archive in root.glob("*.tar.gz"):
+                  with archive.open("rb") as source:
+                      sums.write(f"{hashlib.file_digest(source, 'sha256').hexdigest()}  {archive.name}\n")
+          PY
+          sh misc/tgo/install.sh --version "$RELEASE_TAG" \
+            --from-dir "$RUNNER_TEMP/dist" --prefix "$RUNNER_TEMP/tgo installed"
+          export GOCACHE="$RUNNER_TEMP/tgo-package-cache"
+          export GOENV=off
+          export GO111MODULE=off
+          # Deliberately set an unrelated GOROOT: the launcher must select its own.
+          export GOROOT=/does-not-exist
+          export GOTOOLCHAIN=auto
+          "$RUNNER_TEMP/tgo installed/bin/tgo" version
+          cat > "$RUNNER_TEMP/hello.go" <<'GO'
+          package main
+          import (
+              "fmt"
+              _ "isolate"
+          )
+          func main() { fmt.Println("tgo distribution works") }
+          GO
+          "$RUNNER_TEMP/tgo installed/bin/tgo" run "$RUNNER_TEMP/hello.go"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tgo-${{ matrix.target }}
+          path: ${{ runner.temp }}/dist/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tgo-*
+          path: dist
+          merge-multiple: true
+      - name: Generate checksums and Homebrew formula
+        run: python3 misc/tgo/release.py prepare "$RELEASE_TAG" --output dist --repository "$GH_REPO"
+      - name: Create or refresh draft release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
+          else
+            prerelease=()
+            if [[ "${RELEASE_TAG#tgo-v}" == *-* ]]; then
+              prerelease=(--prerelease)
+            fi
+            gh release create "$RELEASE_TAG" --verify-tag --draft \
+              --title "tgo ${RELEASE_TAG#tgo-v}" --generate-notes "${prerelease[@]}"
+          fi
+          gh release upload "$RELEASE_TAG" dist/* --clobber
