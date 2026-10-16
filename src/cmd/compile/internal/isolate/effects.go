@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package typecheck
+package isolate
 
 import (
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
+	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
 	"internal/isolatepolicy"
 	"strings"
@@ -17,15 +18,15 @@ import (
 var isolateEffectsScoped = make(map[*ir.Func]bool)
 
 // Run both for initial bodies and newly instantiated/imported generic bodies.
-func ScopeIsolateEffects() {
-	for _, fn := range Target.Funcs {
-		ScopeIsolateEffectsInBody(fn, fn)
+func ScopeEffects() {
+	for _, fn := range typecheck.Target.Funcs {
+		ScopeEffectsInBody(fn, fn)
 	}
 }
 
 // source carries the original declaration/provenance when Unified IR reads a
 // fresh body for inlining. Guards must survive that reread as well.
-func ScopeIsolateEffectsInBody(fn, source *ir.Func) {
+func ScopeEffectsInBody(fn, source *ir.Func) {
 	if base.Debug.IsolateEffects == 0 || base.Flag.CompilingRuntime || len(fn.Body) == 0 || isolateEffectsScoped[fn] {
 		return
 	}
@@ -107,8 +108,8 @@ func ScopeIsolateEffectsInBody(fn, source *ir.Func) {
 	})
 	if reason != "" {
 		fn.Pragma |= ir.Noinline | ir.IsolateEffectGuarded
-		guard := Stmt(Call(fn.Pos(), LookupRuntime("isolateRejectEffect"), []ir.Node{ir.NewString(fn.Pos(), reason)}, false))
-		if isolateProtoNativePrefixes[fn] {
+		guard := typecheck.Stmt(typecheck.Call(fn.Pos(), typecheck.LookupRuntime("isolateRejectEffect"), []ir.Node{ir.NewString(fn.Pos(), reason)}, false))
+		if typecheck.IsolateGuardPrefix(fn) {
 			fn.Body = append(fn.Body[:1], append([]ir.Node{guard}, fn.Body[1:]...)...)
 		} else {
 			fn.Body.Prepend(guard)

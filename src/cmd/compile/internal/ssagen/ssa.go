@@ -5628,32 +5628,16 @@ func (s *state) addr(n ir.Node) *ssa.Value {
 			if base.Debug.IsolateGlobals != 0 {
 				if offset, ok := isolateGlobalOffset(n); ok {
 					key := s.entryNewValue1A(ssaop.OpAddr, types.Types[types.TUNSAFEPTR], isolatePackageKey(), s.sb)
-					basePtr := s.rtcall(typecheck.LookupRuntimeFunc("isolateE4GetPackageBase"), true, []*types.Type{t}, key)[0]
+					basePtr := s.rtcall(typecheck.LookupRuntimeFunc("isolateGetPackageBase"), true, []*types.Type{t}, key)[0]
 					return s.isolateGlobalAddr(basePtr, linksymOffset(n.Linksym(), 0), s.constInt(types.Types[types.TUINTPTR], offset))
 				}
 			}
 			if isolateImportedGlobal(n) {
 				key := s.entryNewValue1A(ssaop.OpAddr, types.Types[types.TUNSAFEPTR], isolateImportedKey(n), s.sb)
-				basePtr := s.rtcall(typecheck.LookupRuntimeFunc("isolateE4GetImportedPackageBase"), true, []*types.Type{t}, key)[0]
+				basePtr := s.rtcall(typecheck.LookupRuntimeFunc("isolateGetPackageBase"), true, []*types.Type{t}, key)[0]
 				offsetAddr := s.entryNewValue1A(ssaop.OpAddr, types.NewPtr(types.Types[types.TUINTPTR]), isolateImportedOffset(n), s.sb)
 				offset := s.load(types.Types[types.TUINTPTR], offsetAddr)
 				return s.isolateGlobalAddr(basePtr, linksymOffset(n.Linksym(), 0), offset)
-			}
-			if base.Debug.IsolateE4 != 0 &&
-				types.LocalPkg.Path == "internal/isolateproto/testdata/e4compiletoy" &&
-				(n.Sym().Name == "global" || n.Sym().Name == "epoch") {
-				// Phase 0 E4 probe: redirect two initialized package globals
-				// through a base carried by the current goroutine. The
-				// process-global symbol remains the fallback during ordinary
-				// package initialization, before a base has been selected.
-				basePtr := s.rtcall(typecheck.LookupRuntimeFunc("isolateE4GetBase"), true, []*types.Type{t})[0]
-				offset := int64(0)
-				if n.Sym().Name == "epoch" {
-					// The toy's Graph has exactly three pointer-word fields.
-					// A real implementation needs generated package layout data.
-					offset = 3 * int64(types.PtrSize)
-				}
-				return s.isolateGlobalAddr(basePtr, linksymOffset(n.Linksym(), 0), s.constInt(types.Types[types.TUINTPTR], offset))
 			}
 			return linksymOffset(n.Linksym(), 0)
 		case ir.PPARAM:

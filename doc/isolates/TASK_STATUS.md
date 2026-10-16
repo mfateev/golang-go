@@ -1,8 +1,16 @@
 # Task Status: Modify Go runtime to support isolates
 
-This checklist preserves implementation history. The earlier per-directory
-`isolate.json` build path has been retired; `//temporal:workflow` is the
-current entry contract.
+Current migration: [minimal core status and evidence](MINIMAL_GO_CORE_STATUS.md).
+The SDK owns `tgo` and workflow discovery. Go builds conventional `bin/go` and
+accepts explicit manifests with `GOEXPERIMENT=isolates` (default off). Generic
+compiler checks live in `cmd/compile/internal/isolate`; package-state support
+lives in `internal/isolatestate`. The cooperative prototype, toy global lowering
+and phase-specific production hooks are retired.
+
+The checklist below preserves implementation history. Its old phase commands,
+internal/isolateproto APIs and directory-based entry paths are historical.
+Protobuf/OTel metadata integration remains in the core pending a safe replacement;
+the minimal-core plan is not complete.
 
 ## Task Overview
 

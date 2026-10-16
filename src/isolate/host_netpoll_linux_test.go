@@ -26,7 +26,7 @@ func TestKillWakesNetpollWait(t *testing.T) {
 
 	entered := make(chan struct{})
 	var resumed atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			close(entered)
@@ -143,7 +143,7 @@ func TestKillWakesMultipleNetpollWaiters(t *testing.T) {
 		_, _ = reader.Read(buf[:])
 		resumed.Store(true)
 	}
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			go read(readers[1])

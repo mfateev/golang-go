@@ -1,15 +1,16 @@
 # Go isolates design work
 
 This directory contains the design and feasibility record for the experimental
-isolates branch. The compiler discovers `//temporal:workflow` functions and statically
-links their programs into one process. The runtime supplies private package
-state, memory ownership checks, deterministic scheduling and time, copied-byte
-host calls, effect restrictions, and whole-group lifecycle management. The
-Temporal SDK POC uses these mechanisms for native Go workflows.
+isolates branch. The Go fork accepts an [explicit build manifest](BUILD_CONTRACT.md)
+and supplies private package state, ownership checks, deterministic scheduling,
+generic time/timers, copied-byte transport and lifecycle enforcement.
+The SDK owns workflow discovery, typed entry generation, package selection and
+toolchain distribution. The old cooperative reference model and phase probes
+have been retired; current package state lives in `internal/isolatestate`.
 
-Productization is ongoing; see the acceptance status and remaining features in
-[the productization plan](./PRODUCTIZATION_PLAN.md). `src/internal/isolateproto`
-is an earlier reference model, not the implementation used by the SDK.
+See [migration evidence](MINIMAL_GO_CORE_STATUS.md) for completed changes,
+verification and remaining protobuf/OTel integration work. Earlier phase logs
+preserve findings and rejected approaches; their retired commands are historical.
 
 - [Resource controls](./RESOURCE_CONTROLS_PLAN.md) — accounting, limits and worker watchdogs
 - [Minimal Go core plan](./MINIMAL_GO_CORE_PLAN.md) — move SDK policy and toolchain ownership out of Go and retire superseded experiments
@@ -17,7 +18,7 @@ is an earlier reference model, not the implementation used by the SDK.
 - [Task status](./TASK_STATUS.md) — current progress and open work
 - [Implementation plan](./IMPLEMENTATION_PLAN.md) — phase gates and acceptance
 - [Design definition](./ISOLATES_DESIGN.md) — goals and decisions
-- [Static programs](./STATIC_PROGRAMS.md) — per-directory config and one-binary build contract
+- [Static programs](./STATIC_PROGRAMS.md) — generic entries and one-binary linking
 - [Dynamic loading](./DYNAMIC_LOADING.md) — deferred plugin-based enhancement
 - [Isolate API](./ISOLATE_API.md) — proposed host and isolate surfaces
 - [Language and library subset](./ISOLATE_SUBSET.md) — proposed restrictions

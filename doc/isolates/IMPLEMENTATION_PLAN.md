@@ -1,5 +1,12 @@
 # Implementation Plan
 
+Historical implementation record. Phase-specific production hooks, the
+cooperative `internal/isolateproto` scheduler and toy package lowering have been
+retired. Keep these measurements and constraints; use
+[MINIMAL_GO_CORE_STATUS.md](MINIMAL_GO_CORE_STATUS.md) and
+[BUILD_CONTRACT.md](BUILD_CONTRACT.md) for current code and commands.
+
+
 Status: **Phase 0 selected the Phase 2B path for the trusted MVP; Phase 2B
 implementation remains incomplete**. Results and decision in
 [PHASE0_RESULTS.md](./PHASE0_RESULTS.md). Background in

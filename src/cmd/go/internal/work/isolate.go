@@ -111,7 +111,7 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 	// Keep the module loader's complete graph so later test binaries can resolve
 	// dependencies that appear only in their test files.
 	var implicit []*load.Package
-	for _, path := range []string{"unsafe", "runtime", "internal/isolatebridge", "internal/isolateproto", "isolate"} {
+	for _, path := range []string{"unsafe", "runtime", "internal/isolatebridge", "internal/isolatestate", "isolate"} {
 		var stack load.ImportStack
 		implicit = append(implicit, load.LoadPackageWithFlags(ld, path, host.Dir, &stack, nil, 0))
 	}
@@ -255,8 +255,8 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 		switch path {
 		case "internal/isolatebridge":
 			fmt.Fprintf(&source, "isolatebridge %s\n", strconv.Quote(path))
-		case "internal/isolateproto":
-			fmt.Fprintf(&source, "isolateproto %s\n", strconv.Quote(path))
+		case "internal/isolatestate":
+			fmt.Fprintf(&source, "isolatestate %s\n", strconv.Quote(path))
 		case "unsafe":
 			fmt.Fprintf(&source, "unsafe %s\n", strconv.Quote(path))
 		default:
@@ -291,10 +291,10 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 			}
 		}
 		source.WriteString("}\n}\n")
-		fmt.Fprintf(&source, "func isolateProgramState%d() (func(func()), error) {\npackages, libraries := isolateProgramDescriptors%d()\nstate, err := isolateproto.NewPackageInstance(packages, libraries)\nif err != nil { return nil, err }; return state.Run, nil\n}\n", i, i)
+		fmt.Fprintf(&source, "func isolateProgramState%d() (func(func()), error) {\npackages, libraries := isolateProgramDescriptors%d()\nstate, err := isolatestate.New(packages, libraries)\nif err != nil { return nil, err }; return state.Run, nil\n}\n", i, i)
 	}
 	source.WriteString("func init() {\n")
-	source.WriteString("isolateproto.PrepareReadOnlyLibraries([]unsafe.Pointer{\n")
+	source.WriteString("isolatestate.PrepareReadOnlyLibraries([]unsafe.Pointer{\n")
 	for _, path := range selectedPaths {
 		if isolatepolicy.FrozenLibraryPackage(path) {
 			fmt.Fprintf(&source, "unsafe.Pointer(&isolatePackageDescriptor%d),\n", descriptorIndex[path])
@@ -426,7 +426,7 @@ func isolateTrustedRuntimePackage(path string) bool {
 	case "runtime/cgo", "runtime/race", "runtime/asan", "runtime/msan",
 		"internal/abi", "internal/goarch", "internal/goos", "internal/cpu", "internal/bytealg",
 		"internal/race", "internal/asan", "internal/msan", "internal/coverage/rtcov",
-		"internal/isolatebridge", "internal/isolateproto", "internal/isolatepolicy", "isolate":
+		"internal/isolatebridge", "internal/isolatestate", "internal/isolatepolicy", "isolate":
 		return true
 	}
 	return false

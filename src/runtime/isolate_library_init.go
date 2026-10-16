@@ -23,7 +23,7 @@ func isolatePrepareFrozenLibraries(paths []string, keys, types, tasks []unsafe.P
 	if len(keys) == 0 {
 		return
 	}
-	table := &isolateE4PackageBases{keys: append([]unsafe.Pointer(nil), keys...), bases: make([]unsafe.Pointer, len(keys))}
+	table := &isolatePackageState{keys: append([]unsafe.Pointer(nil), keys...), bases: make([]unsafe.Pointer, len(keys))}
 	previous := isolateLoadLibraries()
 	next := &isolateLibrarySnapshot{states: make(map[unsafe.Pointer]isolateFrozenLibrary), parts: make(map[unsafe.Pointer][]isolateTypePart)}
 	if previous != nil {
@@ -35,12 +35,12 @@ func isolatePrepareFrozenLibraries(paths []string, keys, types, tasks []unsafe.P
 		}
 	}
 	state := isolateBeginInitialization(nil, true)
-	oldBases := gp.isolateE4Bases
-	gp.isolateE4Bases = unsafe.Pointer(table)
+	oldBases := gp.isolateState
+	gp.isolateState = table
 	defer func() {
 		state.entry.state = state
 		isolateEndInitialization(state)
-		gp.isolateE4Bases = oldBases
+		gp.isolateState = oldBases
 	}()
 	var roots []unsafe.Pointer
 	for i, key := range keys {
@@ -59,12 +59,12 @@ func isolatePrepareFrozenLibraries(paths []string, keys, types, tasks []unsafe.P
 	}
 	for i, key := range keys {
 		if _, found := next.states[key]; !found {
-			isolateE4RunInitTask(tasks[i])
+			isolateRunInitTask(tasks[i])
 			roots = append(roots, table.bases[i])
 		}
 	}
 	state.entry.state = nil // Freeze only reachable initializer allocations.
-	gp.isolateE4Bases = oldBases
+	gp.isolateState = oldBases
 	isolatePublishLibraryGraph(next, roots, state.allocations)
 	for i, key := range keys {
 		next.states[key] = isolateFrozenLibrary{typ: (*_type)(types[i]), base: table.bases[i]}

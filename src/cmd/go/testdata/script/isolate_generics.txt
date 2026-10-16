@@ -1,0 +1,22 @@
+# Exported and imported generic bodies accept selected package-state layouts.
+[!isolates] skip
+go build ./...
+go build -gcflags=example.org/generic/...=-d=isolatepackages=example.org/generic:example.org/generic/use ./...
+
+-- go.mod --
+module example.org/generic
+go 1.26
+-- state.go --
+package generic
+var epoch int
+func SetEpoch[T ~int](value T){epoch=int(value)}
+type Counter[T ~int] struct{Value T}
+func(c *Counter[T])Set(value T){c.Value=value}
+-- use/use.go --
+package use
+import "example.org/generic"
+func Apply(){
+ generic.SetEpoch(42)
+ var counter generic.Counter[int]
+ counter.Set(7)
+}

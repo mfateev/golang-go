@@ -77,7 +77,7 @@ func TestOwnershipFaultLibraryOperations(t *testing.T) {
 	for _, deterministic := range []bool{false, true} {
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
-				program := Program{entry: isolatebridge.ProgramEntry{
+				program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 					NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 					Main:     func() { defer func() { _ = recover(); panic("ownership fault ran application defer") }(); tc.action() },
 				}}
@@ -107,7 +107,7 @@ func TestOwnershipFaultLibraryOperations(t *testing.T) {
 
 func TestOwnershipFaultLibraryOwnedValues(t *testing.T) {
 	foreign := new(int)
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			p := new(int)

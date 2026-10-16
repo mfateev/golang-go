@@ -871,16 +871,15 @@ var depsRules = `
 	internal/coverage/cfile, internal/fuzz, internal/testlog, runtime/pprof, regexp
 	< testing/internal/testdeps;
 
-	# Experimental isolate API and host-loop reference model.
-	context, encoding/binary, encoding/json, errors, fmt, internal/isolateabi, math,
-	runtime, sort, sync, sync/atomic, time
-	< internal/isolateproto;
+	# Compiler-owned isolate package state and frozen standard-library tables.
+	cmp, fmt, internal/isolateabi, internal/isolatepolicy, slices, sync, unsafe
+	< internal/isolatestate;
 
 	# Experimental source-level isolate API and trusted host transport.
 	bytes, errors, internal/isolateabi, reflect, runtime, strconv, strings, sync, sync/atomic, unsafe
 	< internal/isolatebridge;
 
-	context, errors, internal/isolateabi, internal/isolatebridge, internal/isolateproto, reflect, strconv, sync, sync/atomic, time
+	context, errors, internal/isolateabi, internal/isolatebridge, internal/isolatestate, reflect, strconv, sync, sync/atomic, time
 	< isolate;
 
 	# Test-only packages can have anything they want

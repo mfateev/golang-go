@@ -16,7 +16,7 @@ import (
 )
 
 func TestDeterministicSuspendBatchReplies(t *testing.T) {
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			var wg sync.WaitGroup
@@ -91,7 +91,7 @@ func TestDeterministicSuspendBatchReplies(t *testing.T) {
 
 func TestDeterministicInitializerCannotRequestTimer(t *testing.T) {
 	clock := time.Unix(0, 0)
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) {
 			time.Sleep(time.Hour)
 			return func(fn func()) { fn() }, nil
@@ -110,7 +110,7 @@ func TestDeterministicInitializerCannotRequestTimer(t *testing.T) {
 func TestDeterministicSuspendRevocation(t *testing.T) {
 	for _, mode := range []string{"paused", "running"} {
 		t.Run(mode, func(t *testing.T) {
-			program := Program{entry: isolatebridge.ProgramEntry{
+			program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 				NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 				Main: func() {
 					if mode == "running" {

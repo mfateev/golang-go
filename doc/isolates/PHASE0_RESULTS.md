@@ -1,5 +1,12 @@
 # Phase 0 results and open gates
 
+Historical implementation record. Phase-specific production hooks, the
+cooperative `internal/isolateproto` scheduler and toy package lowering have been
+retired. Keep these measurements and constraints; use
+[MINIMAL_GO_CORE_STATUS.md](MINIMAL_GO_CORE_STATUS.md) and
+[BUILD_CONTRACT.md](BUILD_CONTRACT.md) for current code and commands.
+
+
 Recorded 2026-09-27 against Go tree `2ff5743d9f` on Linux arm64.
 These are feasibility observations and the scoped Phase 0 path decision.
 The command blocks below start from the repository root.

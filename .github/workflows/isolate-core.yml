@@ -46,7 +46,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./bin/go test -short -failfast runtime isolate internal/isolatebridge internal/isolatepolicy go/build context time sync iter reflect internal/runtime/maps math math/rand math/rand/v2
+          ./bin/go test -short -failfast runtime isolate internal/isolatebridge internal/isolatestate internal/isolatepolicy go/build context time sync iter reflect internal/runtime/maps math math/rand math/rand/v2
           ./bin/go test -count=1 -timeout=15m cmd/go -run 'TestIsolate|TestScript/.*isolate'
           ./bin/go test -race -count=1 runtime isolate internal/isolatebridge -run 'TestIsolate|TestLifecycle|TestKill|TestDeterministic|TestOwnershipFault'
           GOEXPERIMENT=isolates,staticlockranking ./bin/go test -short -count=1 runtime isolate internal/isolatebridge -run 'TestIsolate|TestLifecycle|TestKill|TestDeterministic|TestOwnershipFault'

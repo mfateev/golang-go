@@ -1,5 +1,17 @@
 # Phase 2B package-state partition
 
+Current implementation: compiler-created descriptors feed
+`internal/isolatestate.New`; a typed runtime package-state table is inherited by
+children and reset on goroutine reuse. Generic local/imported address lowering
+uses one package-key lookup. There is no toy global/epoch path or single-base
+fallback. See [BUILD_CONTRACT.md](BUILD_CONTRACT.md).
+
+The original partition and E4/phase commands below are historical findings.
+Their retired packages, flags and runtime hooks must not be restored as current
+requirements. Native compiler scripts now cover imported/inlined/generic globals
+and independent initialization of pointers, maps and closures.
+
+
 This is the first explicit partition for the opt-in compiler probe. It is not
 yet a linked-program reachability manifest or a complete audit of the standard
 library.

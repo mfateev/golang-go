@@ -15,6 +15,13 @@ stdout '^private initialization and generated invocation passed$'
 cp invalid.json other.json
 ! go build -isolate-config=other.json -o invalid$GOEXE ./host
 stderr 'adds unsupported import "internal/isolatebridge"'
+# The core checks adapter provenance and its call ABI before registration.
+cp bad-accessor.json other.json
+! go build -isolate-config=other.json ./host
+stderr 'accessor entryValue must return the selected function Entry directly'
+cp bad-abi.json other.json
+! go build -isolate-config=other.json -o bad-abi$GOEXE ./host
+stderr 'cannot use entryInvoke'
 # An invalid manifest must fail before constructing a program.
 cp version.json other.json
 ! go build -isolate-config=other.json ./host
@@ -42,8 +49,16 @@ go 1.26
 package jobs
 var count=40
 func init(){count++}
-func Entry() int {count++;return count}
-func HostCount()int{return count}
+var graph=func()struct{count *int;values map[string]int;read func()int}{
+ p:=new(int)
+ return struct{count *int;values map[string]int;read func()int}{p,map[string]int{"n":0},func()int{return *p}}
+}()
+func Entry() int {
+ count++;*graph.count++;graph.values["n"]++
+ if graph.read()!=1||graph.values["n"]!=1{panic("initialized graph leaked")}
+ return count
+}
+func HostCount()int{if *graph.count!=0||graph.values["n"]!=0{panic("host graph changed")};return count}
 -- host/main.go --
 package main
 import (
@@ -72,3 +87,9 @@ func main(){
  if jobs.HostCount()!=41 {panic("host initialization changed")}
  fmt.Println("private initialization and generated invocation passed")
 }
+
+-- bad-accessor.json --
+{"format_version":1,"entries":[{"package":"example.org/manifest/jobs","function":"Entry","value":"entryValue","invoke":"entryInvoke"}],"sources":{"example.org/manifest/jobs":"package jobs\nimport \"isolate\"\nfunc entryValue()any{return func(){}}\nfunc entryInvoke(decode,encode func(...isolate.Value)error)error{return nil}\n"}}
+
+-- bad-abi.json --
+{"format_version":1,"entries":[{"package":"example.org/manifest/jobs","function":"Entry","value":"entryValue","invoke":"entryInvoke"}],"sources":{"example.org/manifest/jobs":"package jobs\nimport(\"isolate\";_ \"unsafe\")\n//go:linkname entryValue\nfunc entryValue()any{return Entry}\n//go:linkname entryInvoke\nfunc entryInvoke(){}\n"}}

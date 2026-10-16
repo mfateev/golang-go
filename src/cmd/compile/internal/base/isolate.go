@@ -10,7 +10,6 @@ import (
 )
 
 var isolateSelectedPackages map[string]bool
-var isolateSelectedImports map[string]bool
 var isolateEntrySkip map[string]bool
 
 // IsolateBuildEnabled reports whether compulsory isolate checks are enabled.
@@ -48,15 +47,6 @@ func InitIsolatePackageSelection() {
 	if Flag.Std && isolateRuntimeImplementation(Ctxt.Pkgpath) {
 		Debug.IsolateHeap = 0
 	}
-	if Debug.IsolateImports != "" {
-		isolateSelectedImports = make(map[string]bool)
-		for _, path := range strings.Split(Debug.IsolateImports, ",") {
-			if path == "" {
-				Fatalf("isolate: empty package path in isolateimports")
-			}
-			isolateSelectedImports[path] = true
-		}
-	}
 	if Debug.IsolateEntrySkip != "" {
 		isolateEntrySkip = make(map[string]bool)
 		for _, path := range strings.Split(Debug.IsolateEntrySkip, ":") {
@@ -72,10 +62,9 @@ func InitIsolatePackageSelection() {
 }
 
 // IsolateImportSelected reports whether a direct import's globals must use
-// its selected layout in this compilation. IsolateImports is retained for
-// the earlier single-import probe.
+// its selected layout in this compilation.
 func IsolateImportSelected(path string) bool {
-	return isolateSelectedPackages[path] || isolateSelectedImports[path]
+	return isolateSelectedPackages[path]
 }
 
 // IsolateEntrySkip reports whether a generated process entry omits this
@@ -97,7 +86,7 @@ func isolateRuntimeImplementation(path string) bool {
 	case "runtime/cgo", "runtime/race", "runtime/asan", "runtime/msan",
 		"internal/abi", "internal/goarch", "internal/goos", "internal/cpu", "internal/bytealg",
 		"internal/race", "internal/asan", "internal/msan", "internal/coverage/rtcov",
-		"internal/isolatebridge", "internal/isolateproto", "isolate":
+		"internal/isolatebridge", "internal/isolatestate", "isolate":
 		return true
 	}
 	return false

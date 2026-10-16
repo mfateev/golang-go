@@ -27,7 +27,7 @@ func TestMainExitRevokesUnstartedChildren(t *testing.T) {
 	var childDeferred atomic.Bool
 	var grandchildCreated atomic.Bool
 	var grandchildRan atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			go func() {
@@ -75,7 +75,7 @@ func TestMainExitRevokesUnstartedChildren(t *testing.T) {
 
 func TestKillStopsCallWaiter(t *testing.T) {
 	var deferred atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			defer deferred.Store(true)
@@ -112,7 +112,7 @@ func TestHostClockDrivesNativeTimer(t *testing.T) {
 	const duration = 10 * time.Second
 	const timerOp = 77
 	observed := make(chan [3]time.Time, 1)
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			before := time.Now()
@@ -157,7 +157,7 @@ func TestHostClockDrivesNativeSleep(t *testing.T) {
 	start := time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)
 	const duration = 5 * time.Second
 	observed := make(chan time.Time, 1)
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			time.Sleep(duration)
@@ -200,7 +200,7 @@ func TestHostClocksArePerIsolate(t *testing.T) {
 	} {
 		initialized := make(chan time.Time, 1)
 		observed := make(chan time.Time, 1)
-		program := Program{entry: isolatebridge.ProgramEntry{
+		program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 			NewState: func() (func(func()), error) {
 				initialized <- time.Now()
 				return func(fn func()) { fn() }, nil
@@ -238,7 +238,7 @@ func TestProcessExitStopsOnlyIsolate(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var deferred, resumed atomic.Bool
-			program := Program{entry: isolatebridge.ProgramEntry{
+			program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 				NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 				Main: func() {
 					defer deferred.Store(true)
@@ -277,7 +277,7 @@ func TestProcessExitStopsOnlyIsolate(t *testing.T) {
 }
 
 func TestProcessExitDuringInitialization(t *testing.T) {
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) {
 			os.Exit(39)
 			return nil, nil
@@ -295,7 +295,7 @@ func TestProcessExitDuringInitialization(t *testing.T) {
 }
 
 func TestStandardLogFatalExitsOnlyIsolate(t *testing.T) {
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main:     func() { log.Fatal("isolate fatal") },
 	}}
@@ -314,7 +314,7 @@ func TestStandardLogFatalExitsOnlyIsolate(t *testing.T) {
 
 func TestChildExitDuringInitialization(t *testing.T) {
 	var deferred atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) {
 			defer deferred.Store(true)
 			go func() { os.Exit(41) }()
@@ -339,7 +339,7 @@ func TestChildExitDuringInitialization(t *testing.T) {
 
 func TestChildExitRevokesMain(t *testing.T) {
 	var mainResumed, mainDeferred, childDeferred atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			defer mainDeferred.Store(true)
@@ -374,7 +374,7 @@ func TestChildExitRevokesMain(t *testing.T) {
 
 func TestBeginStopDefersWaiterScan(t *testing.T) {
 	entered := make(chan struct{})
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			close(entered)
@@ -415,7 +415,7 @@ func TestBeginStopDefersWaiterScan(t *testing.T) {
 func TestKillWakesCondWait(t *testing.T) {
 	entered := make(chan struct{})
 	var resumed, deferred atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			var mu sync.Mutex
@@ -458,7 +458,7 @@ func TestKillWakesCondWait(t *testing.T) {
 func TestKillWakesMultipleCondWaiters(t *testing.T) {
 	entered := make(chan struct{}, 2)
 	var resumed atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			var mu sync.Mutex
@@ -506,7 +506,7 @@ func TestKillWakesMultipleCondWaiters(t *testing.T) {
 func TestKillRacesCondSignal(t *testing.T) {
 	entered := make(chan struct{})
 	var signal atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			var mu sync.Mutex
@@ -594,7 +594,7 @@ func TestKillWakesSemaphoreWaiters(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			entered := make(chan struct{}, 2)
 			var resumed atomic.Bool
-			program := Program{entry: isolatebridge.ProgramEntry{
+			program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 				NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 				Main:     func() { tc.main(entered, &resumed) },
 			}}
@@ -633,7 +633,7 @@ func TestKillRacesMutexUnlock(t *testing.T) {
 	entered := make(chan struct{})
 	unlockerStarted := make(chan struct{})
 	var release atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			var mu sync.Mutex
@@ -693,7 +693,7 @@ func TestKillWakesChannelWait(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	var resumed atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			close(entered)
@@ -746,7 +746,7 @@ func TestKillWakesMultipleChannelWaiters(t *testing.T) {
 		<-release
 		resumed.Store(true)
 	}
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			go wait()
@@ -785,7 +785,7 @@ func TestKillWakesMultipleChannelWaiters(t *testing.T) {
 func TestKillWakesTimerChannelReceive(t *testing.T) {
 	entered := make(chan struct{})
 	var resumed atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			close(entered)
@@ -826,7 +826,7 @@ func TestKillWakesSelectWait(t *testing.T) {
 	release := make(chan struct{})
 	other := make(chan struct{})
 	var resumed atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			close(entered)
@@ -879,7 +879,7 @@ func TestKillWakesTimerSelect(t *testing.T) {
 	entered := make(chan struct{})
 	other := make(chan struct{})
 	var resumed atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			close(entered)
@@ -921,7 +921,7 @@ func TestKillWakesTimerSelect(t *testing.T) {
 func TestKillWakesWaitGroupWait(t *testing.T) {
 	entered := make(chan struct{})
 	var resumed atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			var wg sync.WaitGroup
@@ -966,7 +966,7 @@ func TestRevokedWaitGroupReadyPath(t *testing.T) {
 	var release atomic.Bool
 	entered := make(chan struct{})
 	var resumed atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			var wg sync.WaitGroup
@@ -1002,7 +1002,7 @@ func TestRevokedWaitGroupReadyPath(t *testing.T) {
 
 func TestKillStopsGoschedLoop(t *testing.T) {
 	started := make(chan struct{})
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			close(started)
@@ -1032,7 +1032,7 @@ func TestKillStopsGoschedLoop(t *testing.T) {
 func TestKillWakesSleep(t *testing.T) {
 	entered := make(chan struct{})
 	var resumed atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			close(entered)
@@ -1079,7 +1079,7 @@ func TestKillWakesMultipleSleepers(t *testing.T) {
 		time.Sleep(time.Hour)
 		resumed.Store(true)
 	}
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			go sleep()
@@ -1135,7 +1135,7 @@ func TestKillWakesPermanentParks(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			entered := make(chan struct{})
 			var resumed atomic.Bool
-			program := Program{entry: isolatebridge.ProgramEntry{
+			program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 				NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 				Main: func() {
 					close(entered)
@@ -1177,7 +1177,7 @@ func TestKillPreventsLateMainEntry(t *testing.T) {
 	runnerEntered := make(chan struct{})
 	var releaseRunner atomic.Bool
 	var mainRan atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) {
 			return func(fn func()) {
 				close(runnerEntered)
@@ -1215,7 +1215,7 @@ func TestKillPreventsLateMainEntry(t *testing.T) {
 }
 
 func TestKillBeforeStart(t *testing.T) {
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main:     func() { t.Error("revoked program ran") },
 	}}
@@ -1235,7 +1235,7 @@ func TestConcurrentStartKill(t *testing.T) {
 	for range 100 {
 		var killReturned atomic.Bool
 		var ranAfterKill atomic.Bool
-		program := Program{entry: isolatebridge.ProgramEntry{
+		program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 			NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 			Main: func() {
 				if killReturned.Load() {
@@ -1275,7 +1275,7 @@ func TestConcurrentStartKill(t *testing.T) {
 func TestMainExitStopsCallWaiter(t *testing.T) {
 	releaseMain := make(chan struct{})
 	var callReturned, childDeferred atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			go func() {

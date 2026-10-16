@@ -16,6 +16,7 @@ import (
 	"cmd/compile/internal/inline"
 	"cmd/compile/internal/inline/interleaved"
 	"cmd/compile/internal/ir"
+	"cmd/compile/internal/isolate"
 	"cmd/compile/internal/logopt"
 	"cmd/compile/internal/loopvar"
 	"cmd/compile/internal/noder"
@@ -258,7 +259,7 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	bloop.Walk(typecheck.Target)
 
 	typecheck.ScopeIsolateMetadata()
-	typecheck.ScopeIsolateEffects()
+	isolate.ScopeEffects()
 
 	// Interleaved devirtualization and inlining.
 	base.Timer.Start("fe", "devirtualize-and-inline")
@@ -280,6 +281,7 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	ir.CurFunc = nil
 
 	// Build init task, if needed.
+	isolate.Validate()
 	pkginit.MakeTask()
 	ssagen.InitIsolateLayout()
 

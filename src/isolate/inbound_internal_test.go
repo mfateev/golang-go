@@ -19,7 +19,7 @@ func TestInboundDeliveryFencesApplication(t *testing.T) {
 	defer runtime.GOMAXPROCS(old)
 	for _, procs := range []int{1, 2, 8} {
 		runtime.GOMAXPROCS(procs)
-		program := Program{entry: isolatebridge.ProgramEntry{
+		program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 			NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 			Main: func() {
 				ch := make(chan byte, 32)
@@ -132,7 +132,7 @@ func TestInboundDeliveryFencesApplication(t *testing.T) {
 }
 
 func TestInboundCannotAdmitReadOnlyServices(t *testing.T) {
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			GoInbound(func() {

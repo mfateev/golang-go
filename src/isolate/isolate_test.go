@@ -1511,7 +1511,7 @@ func TestInstanceOwnerSpansInitializationAndChildren(t *testing.T) {
 	var initOwner uintptr
 	type observedOwners struct{ main, child uintptr }
 	observed := make(chan observedOwners, 1)
-	isolatebridge.RegisterProgram(name, isolatebridge.ProgramEntry{MetadataVersion: isolate.MetadataVersion,
+	isolate.RegisterTestProgram(name, isolatebridge.ProgramEntry{MetadataVersion: isolate.MetadataVersion,
 		NewState: func() (func(func()), error) {
 			initOwner = runtimeOwner()
 			initializerChild := make(chan uintptr, 1)
@@ -1540,7 +1540,7 @@ func TestInstanceOwnerSpansInitializationAndChildren(t *testing.T) {
 			observed <- observedOwners{runtimeOwner(), <-child}
 		},
 	})
-	program, ok := isolate.LookupProgram(name)
+	program, ok := isolate.LookupTestProgram(name)
 	if !ok {
 		t.Fatal("missing test program")
 	}
@@ -1580,11 +1580,11 @@ func TestMainFailureReportedToHost(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			name := "test-main-failure-" + strconv.FormatUint(ownerTestSequence.Add(1), 10)
-			isolatebridge.RegisterProgram(name, isolatebridge.ProgramEntry{MetadataVersion: isolate.MetadataVersion,
+			isolate.RegisterTestProgram(name, isolatebridge.ProgramEntry{MetadataVersion: isolate.MetadataVersion,
 				NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 				Main:     tt.main,
 			})
-			program, ok := isolate.LookupProgram(name)
+			program, ok := isolate.LookupTestProgram(name)
 			if !ok {
 				t.Fatal("missing test program")
 			}
@@ -1626,8 +1626,8 @@ func TestInitializerFailureReportedToHost(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			name := "test-initializer-failure-" + strconv.FormatUint(ownerTestSequence.Add(1), 10)
-			isolatebridge.RegisterProgram(name, isolatebridge.ProgramEntry{MetadataVersion: isolate.MetadataVersion, NewState: tt.init, Main: func() {}})
-			program, ok := isolate.LookupProgram(name)
+			isolate.RegisterTestProgram(name, isolatebridge.ProgramEntry{MetadataVersion: isolate.MetadataVersion, NewState: tt.init, Main: func() {}})
+			program, ok := isolate.LookupTestProgram(name)
 			if !ok {
 				t.Fatal("missing test program")
 			}
@@ -1657,7 +1657,7 @@ func TestCallCopiesLargeRequestIntoProcessContext(t *testing.T) {
 		err                   error
 	}
 	observed := make(chan origins, 1)
-	isolatebridge.RegisterProgram(name, isolatebridge.ProgramEntry{MetadataVersion: isolate.MetadataVersion,
+	isolate.RegisterTestProgram(name, isolatebridge.ProgramEntry{MetadataVersion: isolate.MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			owner := runtimeOwner()
@@ -1668,7 +1668,7 @@ func TestCallCopiesLargeRequestIntoProcessContext(t *testing.T) {
 			observed <- origins{owner, requestOrigin, replyOrigin, requestOK, replyOK, err}
 		},
 	})
-	program, ok := isolate.LookupProgram(name)
+	program, ok := isolate.LookupTestProgram(name)
 	if !ok {
 		t.Fatal("missing test program")
 	}

@@ -1,5 +1,12 @@
 # Phase 2B implementation progress
 
+Historical implementation record. Phase-specific production hooks, the
+cooperative `internal/isolateproto` scheduler and toy package lowering have been
+retired. Keep these measurements and constraints; use
+[MINIMAL_GO_CORE_STATUS.md](MINIMAL_GO_CORE_STATUS.md) and
+[BUILD_CONTRACT.md](BUILD_CONTRACT.md) for current code and commands.
+
+
 This records implemented slices of the selected compiler/runtime path. It is
 not an ordinary-Go isolate conformance result. The Phase 0 decision and
 measurements are in [PHASE0_RESULTS.md](./PHASE0_RESULTS.md).

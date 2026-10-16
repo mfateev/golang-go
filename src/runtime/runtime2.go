@@ -610,11 +610,10 @@ type g struct {
 	ancestors                  *[]ancestorInfo // ancestor information goroutine(s) that created this goroutine (only used if debug.tracebackancestors)
 	startpc                    uintptr         // pc of goroutine function
 	racectx                    uintptr
-	waiting                    *sudog         // sudog structures this g is waiting on (that have a valid elem ptr); in lock order
-	cgoCtxt                    []uintptr      // cgo traceback context
-	labels                     unsafe.Pointer // profiler labels
-	isolateE4Base              unsafe.Pointer // tagged Phase 0 global-base experiment
-	isolateE4Bases             unsafe.Pointer // tagged Phase 2B package-state table probe
+	waiting                    *sudog               // sudog structures this g is waiting on (that have a valid elem ptr); in lock order
+	cgoCtxt                    []uintptr            // cgo traceback context
+	labels                     unsafe.Pointer       // profiler labels
+	isolateState               *isolatePackageState // Current package layouts; inherited by children, reset on reuse.
 	isolateResourceRunStart    int64
 	isolateHeapReservation     uint64
 	isolateCallSelectNext      uint64 // Four poll draws reserved before a Call transport park.

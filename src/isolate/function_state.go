@@ -8,7 +8,7 @@ package isolate
 
 import (
 	"internal/isolatebridge"
-	"internal/isolateproto"
+	"internal/isolatestate"
 	"unsafe"
 )
 
@@ -33,7 +33,7 @@ func newSupportedState(entries ...isolatebridge.FunctionEntry) (func(func()), er
 		extraPackages, extraLibraries := entry.StateDescriptors()
 		packages, libraries = union(packages, extraPackages), union(libraries, extraLibraries)
 	}
-	state, err := isolateproto.NewPackageInstance(packages, libraries)
+	state, err := isolatestate.New(packages, libraries)
 	if err != nil {
 		return nil, err
 	}

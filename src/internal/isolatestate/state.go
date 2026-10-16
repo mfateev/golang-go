@@ -4,7 +4,7 @@
 
 //go:build goexperiment.isolates
 
-package isolateproto
+package isolatestate
 
 import (
 	"cmp"
@@ -30,33 +30,32 @@ type packageDescriptor struct {
 	InitTask        unsafe.Pointer
 }
 
-// PackageInstance is one set of independent package globals for the tagged
-// compiler/runtime probe. It is not the public isolate API.
-type PackageInstance struct {
+// Instance holds independent package layouts created from compiler metadata.
+type Instance struct {
 	table unsafe.Pointer
 }
 
-//go:linkname isolateNewPackageBases runtime.isolateE4NewPackageBases
+//go:linkname isolateNewPackageBases runtime.isolateNewPackageState
 func isolateNewPackageBases(keys, types []unsafe.Pointer) unsafe.Pointer
 
-//go:linkname isolateSetPackageBases runtime.isolateE4SetPackageBases
+//go:linkname isolateSetPackageBases runtime.isolateSetPackageState
 func isolateSetPackageBases(unsafe.Pointer) unsafe.Pointer
 
-//go:linkname isolateRunInitTask runtime.isolateE4RunInitTask
+//go:linkname isolateRunInitTask runtime.isolateRunInitTask
 func isolateRunInitTask(unsafe.Pointer)
 
-// NewPackageInstance allocates the selected packages' layouts and replays
+// New allocates the selected packages' layouts and replays
 // their initializers in dependency order. Its input is an explicit list of
-// compiler-owned descriptors; whole-program discovery remains open.
-func NewPackageInstance(descriptors []unsafe.Pointer, readOnlyLibraries ...[]unsafe.Pointer) (*PackageInstance, error) {
+// compiler-owned descriptors supplied by the generated process entry.
+func New(descriptors []unsafe.Pointer, readOnlyLibraries ...[]unsafe.Pointer) (*Instance, error) {
 	ordered := make([]packageDescriptor, len(descriptors))
 	for i, descriptor := range descriptors {
 		if descriptor == nil {
-			return nil, fmt.Errorf("isolateproto: nil package descriptor at index %d", i)
+			return nil, fmt.Errorf("isolatestate: nil package descriptor at index %d", i)
 		}
 		// Read the fixed prefix before interpreting any version-specific fields.
 		if version := *(*uint64)(descriptor); version != isolateabi.MetadataVersion {
-			return nil, fmt.Errorf("isolateproto: incompatible package metadata version %d, runtime requires %d; rebuild with a compatible toolchain", version, isolateabi.MetadataVersion)
+			return nil, fmt.Errorf("isolatestate: incompatible package metadata version %d, runtime requires %d; rebuild with a compatible toolchain", version, isolateabi.MetadataVersion)
 		}
 		ordered[i] = *(*packageDescriptor)(descriptor)
 	}
@@ -75,20 +74,20 @@ func NewPackageInstance(descriptors []unsafe.Pointer, readOnlyLibraries ...[]uns
 	seenKeys := make(map[unsafe.Pointer]bool, len(ordered))
 	for i, spec := range ordered {
 		if spec.Path == "" || spec.Key == nil || spec.TypeSlot == nil || spec.DependencyTask == nil || spec.InitTask == nil {
-			return nil, fmt.Errorf("isolateproto: incomplete package state spec for %q", spec.Path)
+			return nil, fmt.Errorf("isolatestate: incomplete package state spec for %q", spec.Path)
 		}
 		if _, exists := index[spec.Path]; exists {
-			return nil, fmt.Errorf("isolateproto: duplicate package %q", spec.Path)
+			return nil, fmt.Errorf("isolatestate: duplicate package %q", spec.Path)
 		}
 		if seenKeys[spec.Key] {
-			return nil, fmt.Errorf("isolateproto: duplicate package key for %q", spec.Path)
+			return nil, fmt.Errorf("isolatestate: duplicate package key for %q", spec.Path)
 		}
 		index[spec.Path] = i
 		seenKeys[spec.Key] = true
 		keys[i] = spec.Key
 		types[i] = *(*unsafe.Pointer)(spec.TypeSlot)
 		if types[i] == nil {
-			return nil, fmt.Errorf("isolateproto: missing package layout type for %q", spec.Path)
+			return nil, fmt.Errorf("isolatestate: missing package layout type for %q", spec.Path)
 		}
 	}
 
@@ -100,7 +99,7 @@ func NewPackageInstance(descriptors []unsafe.Pointer, readOnlyLibraries ...[]uns
 			return nil
 		}
 		if state[i] == 1 {
-			return fmt.Errorf("isolateproto: package initialization cycle at %q", ordered[i].Path)
+			return fmt.Errorf("isolatestate: package initialization cycle at %q", ordered[i].Path)
 		}
 		state[i] = 1
 		depTask := ordered[i].DependencyTask
@@ -110,10 +109,10 @@ func NewPackageInstance(descriptors []unsafe.Pointer, readOnlyLibraries ...[]uns
 		for _, dep := range deps {
 			j, ok := index[dep.Path]
 			if !ok {
-				return fmt.Errorf("isolateproto: selected dependency %q of %q is missing", dep.Path, ordered[i].Path)
+				return fmt.Errorf("isolatestate: selected dependency %q of %q is missing", dep.Path, ordered[i].Path)
 			}
 			if dep.Key != ordered[j].Key {
-				return fmt.Errorf("isolateproto: selected dependency %q of %q has a mismatched package key", dep.Path, ordered[i].Path)
+				return fmt.Errorf("isolatestate: selected dependency %q of %q has a mismatched package key", dep.Path, ordered[i].Path)
 			}
 			if err := visit(j); err != nil {
 				return err
@@ -129,7 +128,7 @@ func NewPackageInstance(descriptors []unsafe.Pointer, readOnlyLibraries ...[]uns
 		}
 	}
 
-	instance := &PackageInstance{table: isolateNewPackageBases(keys, types)}
+	instance := &Instance{table: isolateNewPackageBases(keys, types)}
 	if len(readOnlyLibraries) != 0 {
 		selected := make(map[unsafe.Pointer]bool)
 		for _, descriptor := range readOnlyLibraries[0] {
@@ -156,11 +155,11 @@ func NewPackageInstance(descriptors []unsafe.Pointer, readOnlyLibraries ...[]uns
 }
 
 // Run selects this instance for fn and any native child goroutines it starts.
-func (instance *PackageInstance) Run(fn func()) {
+func (instance *Instance) Run(fn func()) {
 	old := isolateSetPackageBases(instance.table)
 	defer isolateSetPackageBases(old)
 	fn()
 }
 
-//go:linkname isolateSetReadOnlyLibraries runtime.isolateE4SetReadOnlyLibraries
+//go:linkname isolateSetReadOnlyLibraries runtime.isolateSetReadOnlyLibraries
 func isolateSetReadOnlyLibraries(unsafe.Pointer, []unsafe.Pointer, []unsafe.Pointer, []unsafe.Pointer)

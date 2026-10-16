@@ -301,7 +301,7 @@ func (p *noder) pragma(pos syntax.Pos, blankLine bool, text string, old syntax.P
 		}
 		if base.IsolateBuildEnabled() && !base.Flag.Std &&
 			(strings.HasPrefix(target, "runtime.isolate") || strings.HasPrefix(target, "reflect.isolate") ||
-				strings.HasPrefix(target, "internal/isolatebridge.") || strings.HasPrefix(target, "internal/isolateproto.") || target == "sync.poolCleanup") {
+				strings.HasPrefix(target, "internal/isolatebridge.") || strings.HasPrefix(target, "internal/isolatestate.") || target == "sync.poolCleanup") {
 			// Generated entry files reference state descriptors, not runtime
 			// privilege hooks. Descriptors have no allocation/service authority.
 			if !strings.HasSuffix(target, ".isolatePackageDescriptor") {

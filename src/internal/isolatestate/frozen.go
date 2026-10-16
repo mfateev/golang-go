@@ -4,7 +4,7 @@
 
 //go:build goexperiment.isolates
 
-package isolateproto
+package isolatestate
 
 import (
 	"internal/isolateabi"
@@ -26,7 +26,7 @@ func PrepareReadOnlyLibraries(descriptors []unsafe.Pointer) {
 	var keys, types, tasks []unsafe.Pointer
 	for _, pointer := range descriptors {
 		if pointer == nil || *(*uint64)(pointer) != isolateabi.MetadataVersion {
-			panic("isolateproto: incompatible frozen library descriptor; rebuild with the current toolchain")
+			panic("isolatestate: incompatible frozen library descriptor; rebuild with the current toolchain")
 		}
 		descriptor := (*packageDescriptor)(pointer)
 		if isolatepolicy.FrozenLibraryPackage(descriptor.Path) {

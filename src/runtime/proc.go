@@ -3465,12 +3465,6 @@ func execute(gp *g, inheritTime bool) {
 		isolateTerminateBeforeStart(gp)
 	}
 	gp.isolateStarted = true
-	// Phase 0 kill probe: the target has already been moved to a safe point
-	// and resumed as runnable. execute permits write barriers, unlike the
-	// async-preemption continuation. The ordinary build inlines this away.
-	if isolatePhase0Kill(gp) {
-		isolatePhase0Terminate(gp)
-	}
 
 	gogo(&gp.sched)
 }
@@ -4632,9 +4626,6 @@ func gdestroy(gp *g) {
 	}
 
 	casgstatus(gp, _Grunning, _Gdead)
-	// Phase 0 kill probe: discard preemption and waiter records only after
-	// the G is dead, before it can enter the G reuse pool.
-	isolatePhase0CleanupDead(gp)
 	gcController.addScannableStack(pp, -int64(gp.stack.hi-gp.stack.lo))
 	if isSystemGoroutine(gp, false) {
 		sched.ngsys.Add(-1)
@@ -4652,8 +4643,7 @@ func gdestroy(gp *g) {
 	gp.waitreason = waitReasonZero
 	gp.param = nil
 	gp.labels = nil
-	gp.isolateE4Base = nil
-	gp.isolateE4Bases = nil
+	gp.isolateState = nil
 	gp.isolateReadOnlyRandLegacy = nil
 	gp.isolateReadOnlyRandom = nil
 	gp.isolateReadOnlyOwner = 0
@@ -5563,8 +5553,7 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	newg.ancestors = saveAncestors(callergp)
 	newg.startpc = fn.fn
 	newg.runningCleanups.Store(false)
-	newg.isolateE4Base = nil
-	newg.isolateE4Bases = nil
+	newg.isolateState = nil
 	newg.isolateReadOnlyRandLegacy = nil
 	newg.isolateReadOnlyRandom = nil
 	newg.isolateReadOnlyOwner = 0
@@ -5592,8 +5581,7 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	} else {
 		// Only user goroutines inherit synctest groups and pprof labels.
 		newg.bubble = callergp.bubble
-		newg.isolateE4Base = callergp.isolateE4Base
-		newg.isolateE4Bases = callergp.isolateE4Bases
+		newg.isolateState = callergp.isolateState
 		newg.isolateOwner = callergp.isolateOwner
 		newg.isolateBoundary = callergp.isolateBoundary
 		newg.isolateGroup = callergp.isolateGroup

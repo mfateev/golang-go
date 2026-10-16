@@ -50,7 +50,7 @@ func TestOwnershipFaultTerminatesInstance(t *testing.T) {
 					processMap[1] = 9 // Runtime owner check must precede the write.
 					after.Store(true)
 				}
-				program := Program{entry: isolatebridge.ProgramEntry{
+				program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 					NewState: func() (func(func()), error) {
 						if where == "initializer" {
 							fail()
@@ -135,7 +135,7 @@ func TestOwnershipFaultUnwindsMetadataLocks(t *testing.T) {
 			ownershipViolation("isolate: foreign heap reference publication")
 			serviceAfter.Store(true)
 		}
-		program := Program{entry: isolatebridge.ProgramEntry{
+		program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 			NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 			Main: func() {
 				defer applicationDefer.Store(true)
@@ -192,7 +192,7 @@ func TestOwnershipFaultMetadataChannelCleanup(t *testing.T) {
 			never := make(chan struct{})
 			var cleaned, after atomic.Bool
 			var lock sync.Mutex
-			program := Program{entry: isolatebridge.ProgramEntry{
+			program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 				NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 				Main: func() {
 					func() {
@@ -259,7 +259,7 @@ func TestOwnershipFaultConcurrentReportAndKill(t *testing.T) {
 	for range 64 {
 		processMap := map[int]int{1: 7}
 		var applicationDefer atomic.Bool
-		program := Program{entry: isolatebridge.ProgramEntry{
+		program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 			NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 			Main: func() {
 				gate := make(chan struct{})
@@ -311,7 +311,7 @@ func TestOwnershipFaultConcurrentReportAndKill(t *testing.T) {
 func TestOwnershipFaultKillWaitsForMetadataCleanup(t *testing.T) {
 	var release, shared sync.Mutex
 	release.Lock()
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			owner := ownershipEnterMetadata()
@@ -362,7 +362,7 @@ func TestOwnershipFaultKillWaitsForMetadataCleanup(t *testing.T) {
 
 func TestOwnershipFaultOrdinaryPanicStillRecoverable(t *testing.T) {
 	var recovered, deferred atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			defer deferred.Store(true)
@@ -392,7 +392,7 @@ func TestOwnershipFaultErrorsDoNotRetainInstances(t *testing.T) {
 	}
 	baseline := isolateAllocCacheCount()
 	processMap := map[int]int{1: 7}
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			state := isolateCachedHeapState(64 << 10)

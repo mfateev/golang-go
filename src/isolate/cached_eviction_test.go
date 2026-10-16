@@ -35,7 +35,7 @@ func TestIsolateCachedEviction(t *testing.T) {
 	baselineGoroutines := runtime.NumGoroutine()
 	var baseline runtime.MemStats
 	runtime.ReadMemStats(&baseline)
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main: func() {
 			state := isolateCachedHeapState(stateBytes)

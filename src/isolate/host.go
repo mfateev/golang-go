@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"internal/goexperiment"
+	"internal/isolateabi"
 	"internal/isolatebridge"
 	"strconv"
 	"sync"
@@ -26,16 +27,6 @@ func (p Program) Name() string { return p.name }
 
 // MetadataVersion returns the compiler metadata contract for this program.
 func (p Program) MetadataVersion() uint32 { return p.entry.MetadataVersion }
-
-// LookupProgram finds a low-level program entry registered in this binary.
-// Workflow applications should use LookupFunction for compiler-marked entries.
-func LookupProgram(name string) (Program, bool) {
-	entry, ok := isolatebridge.LookupProgram(name)
-	if !ok {
-		return Program{}, false
-	}
-	return Program{name: name, entry: entry}, true
-}
 
 // Config selects one program.
 type Config struct {
@@ -208,6 +199,9 @@ func NewContext(ctx context.Context, cfg Config) (*Isolate, error) {
 	}
 	if cfg.Program.entry.Main == nil || cfg.Program.entry.NewState == nil {
 		return nil, errors.New("isolate: unknown program")
+	}
+	if cfg.Program.entry.MetadataVersion != isolateabi.MetadataVersion {
+		return nil, errors.New("isolate: incompatible program metadata version " + strconv.FormatUint(uint64(cfg.Program.entry.MetadataVersion), 10) + ", runtime requires " + strconv.Itoa(isolateabi.MetadataVersion) + "; rebuild with a compatible toolchain")
 	}
 	if !cfg.Deterministic && cfg.RandomSeed != [32]byte{} {
 		return nil, errors.New("isolate: random seed requires deterministic mode")

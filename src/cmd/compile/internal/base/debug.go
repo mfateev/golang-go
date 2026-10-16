@@ -51,7 +51,6 @@ type DebugFlags struct {
 	InlStaticInit         int    `help:"allow static initialization of inlined calls" concurrent:"ok"`
 	InterfaceCycles       int    `help:"allow anonymous interface cycles" concurrent:"ok"`
 	IsolateBuild          int    `help:"enable compulsory isolate checks independently of package state selection"`
-	IsolateE4             int    `help:"redirect the E4 toy package global through the current goroutine base"`
 	IsolateEntrySkip      string `help:"colon-separated imports whose startup initialization is omitted from a generated isolate entry"`
 	IsolateMetadata       int    `help:"enable the pinned protobuf metadata service manifest in an isolate build"`
 	IsolateEffects        int    `help:"enforce isolate effect restrictions"`
@@ -59,7 +58,6 @@ type DebugFlags struct {
 	IsolateEffectEntries  string `help:"colon-separated isolate entry functions for static effect diagnostics"`
 	IsolateHeap           int    `help:"diagnose isolate heap/collection access (1) and typed reference stores/moves (2); incomplete"`
 	IsolateGlobals        int    `help:"redirect this package's globals through a generated isolate layout"`
-	IsolateImports        string `help:"comma-separated imported packages whose globals use isolate layouts"`
 	IsolateInit           int    `help:"keep package initialization assignments executable for isolate replay"`
 	IsolatePackages       string `help:"colon-separated package paths selected for isolate layouts and initialization"`
 	Libfuzzer             int    `help:"enable coverage instrumentation for libfuzzer"`

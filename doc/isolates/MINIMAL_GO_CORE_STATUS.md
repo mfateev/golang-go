@@ -167,3 +167,59 @@ Protobuf/OTel compiler rewriting and their corresponding source guards remain;
 step 4 is not complete. Removing those guards before replacing their privilege
 mechanisms would weaken isolation. They are intentionally retained rather than
 replaced with user-configurable trust or unrestricted owner scopes.
+
+## Generic pass and retired implementation cleanup
+
+Generic effect transformation and global validation now live in
+`cmd/compile/internal/isolate`, with ordering documented relative to imports,
+generic-body rereads, inlining, initialization, escape analysis and SSA.
+Source provenance and backend lowering stay with their existing owners. The
+transitional metadata adapter still runs first; its prefix table is read-only
+once parallel backend work starts.
+
+`internal/isolatestate` retains descriptor validation, initialization ordering
+and frozen standard-library preparation. A concrete `*isolatePackageState` on g
+replaces the opaque table plus the obsolete single-base pointer. Producers,
+consumers, child inheritance and both reuse resets use the same implementation.
+Local/imported lowering uses one key lookup. No E4 aliases, toy global/epoch
+lowering, single-import flag or phase-specific production kill hooks remain.
+The ordinary 64-bit g layout loses one pointer (32-bit alignment leaves its
+size unchanged). A 386 runtime test binary cross-compiles; its type descriptor
+reports g size 440. This is not a 386 execution test.
+
+The cooperative Task/Channel/RangeMap implementation and its experiment-only
+fixtures are deleted. Findings remain in the historical documents. Useful
+regressions map to current native checks:
+
+| Retired coverage | Current coverage |
+|---|---|
+| Initialized pointer/map/closure graph | `build_isolate_manifest` (two independent instances and unchanged host graph) |
+| Exported/imported generic globals | `isolate_generics`, imported/inlined ownership/effect script cases |
+| Descriptor version prefix | `internal/isolatestate/state_test.go` |
+| First dispatch and admission revocation | runtime admission tests, now enabled by the isolate experiment |
+| Mutex/Cond/channel/semaphore wait teardown | isolate host, lifecycle and revocation tests |
+| Prototype FIFO/maps | native isolate determinism and runtime map tests |
+
+The old large-copy stress probe exercised the retired kill path; its measured
+limits remain historical rather than being presented as a current kill bound.
+The current API retains cancellation deadlines and KillPending diagnostics.
+
+Named low-level program registration was used only by tests. It now lives in
+`export_test.go`; production programs come from function handles. `New` validates
+program metadata before calling initialization. The outside-GOROOT contract
+also rejects accessor substitution/alternate linknames and type-checks invoker
+ABIs inside their source package, rather than trusting cross-package linknames.
+
+PASS after consolidation: enabled SDK-owned local bootstrap; runtime/isolate/
+state/library conformance (runtime 130.820s, isolate 4.924s under concurrent
+builds); compiler/script gate (48.948s); full SDK suite; focused lifecycle and
+metadata checks after test-only registry migration (isolate 1.632s); race checks
+(runtime 2.303s, isolate 2.660s); static lock-ranking checks (runtime 0.108s,
+isolate 0.952s). The adapter ABI/provenance negative fixture passes (5.457s).
+The sample suite found one remaining direct typed-map logging loop; it now uses
+SDK entries and skips unset markers, with its focused sample passing (0.327s).
+The final sample/full disabled/distribution checks are recorded below once run.
+
+Upstream canonical quality checks and focused race-enabled unit checks across
+modules pass. Typed-search-attribute, child, and Continue-As-New integration
+checks pass with a dev server; the zero-cache run is recorded in final evidence.

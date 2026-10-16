@@ -32,7 +32,7 @@ func isolateSetBoundary(p unsafe.Pointer) unsafe.Pointer {
 //go:nosplit
 func isolateActive() bool {
 	gp := getg()
-	return gp.isolateOwner != 0 || gp.isolateGroup != nil || gp.isolateBoundary != nil || gp.isolateE4Bases != nil
+	return gp.isolateOwner != 0 || gp.isolateGroup != nil || gp.isolateBoundary != nil || gp.isolateState != nil
 }
 
 func isolateRejectProcessAPI(name string) {

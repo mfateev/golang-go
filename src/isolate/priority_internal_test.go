@@ -17,7 +17,7 @@ import (
 
 func priorityInstance(t *testing.T, main func(), clock ...time.Time) *Isolate {
 	t.Helper()
-	program := Program{entry: isolatebridge.ProgramEntry{
+	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main:     main,
 	}}

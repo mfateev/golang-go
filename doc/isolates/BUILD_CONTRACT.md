@@ -25,10 +25,13 @@ The JSON format version is 1:
 ```
 
 The source is compiled in the entry's own package so it can use private types.
-It supplies a `func() any` value accessor and an invoker with signature
+It supplies a `func() any` accessor that directly returns the selected function,
+and a concrete invoker with signature
 `func(decode, encode func(...isolate.Value) error) error`. Each accessor/invoker
 has a one-argument `//go:linkname` declaration to allow the generated process
-entry to link it. These functions receive ordinary application instrumentation;
+entry to link it. The core validates the accessor and rejects alternate linkname targets; compiler
+type assertions in the source package validate both signatures before linking.
+These functions receive ordinary application instrumentation;
 this contract grants no allocation, reflection, metadata or callback privilege.
 The accessor returns the original function; the invoker decodes typed local
 slots, calls it directly and encodes the result. Both run within the instance.

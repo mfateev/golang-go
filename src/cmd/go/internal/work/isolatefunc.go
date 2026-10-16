@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"io"
@@ -144,20 +145,73 @@ func isolateAdapterSource(p *load.Package) ([]byte, error) {
 	if len(source) == 0 {
 		source = []byte(config.Sources[p.ImportPath])
 	}
-	parsed, err := parser.ParseFile(token.NewFileSet(), "isolate adapter", source, parser.ImportsOnly)
+	parsed, err := parser.ParseFile(token.NewFileSet(), "isolate adapter", source, parser.ParseComments)
 	if err != nil {
 		return nil, err
 	}
 	if parsed.Name.Name != p.Name {
 		return nil, fmt.Errorf("isolate config: adapter for %s declares package %s", p.ImportPath, parsed.Name.Name)
 	}
+	valuePackage := ""
 	for _, spec := range parsed.Imports {
 		path, _ := strconv.Unquote(spec.Path.Value)
+		if path == "isolate" {
+			valuePackage = "isolate"
+			if spec.Name != nil {
+				valuePackage = spec.Name.Name
+			}
+			if valuePackage == "." || valuePackage == "_" {
+				return nil, fmt.Errorf("isolate config: adapter requires a named isolate import")
+			}
+		}
 		// Generated sources may use the public API and the package's own imports.
 		// They cannot acquire privileged internal imports through this build hook.
 		if path != "isolate" && path != "unsafe" && !slices.Contains(p.Imports, path) {
 			return nil, fmt.Errorf("isolate config: adapter for %s adds unsupported import %q", p.ImportPath, path)
 		}
+	}
+	if valuePackage == "" {
+		return nil, fmt.Errorf("isolate config: adapter requires an isolate import")
+	}
+	declarations := make(map[string]*ast.FuncDecl)
+	for _, decl := range parsed.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok {
+			declarations[fn.Name.Name] = fn
+		}
+	}
+	for _, entry := range config.Entries {
+		if entry.Package != p.ImportPath || (entry.ForTest != p.ForTest && !(entry.ForTest == "" && config.Sources[isolatePackageKey(p.ImportPath, p.ForTest)] == "")) {
+			continue
+		}
+		accessor := declarations[entry.Value]
+		valid := accessor != nil && accessor.Recv == nil && accessor.Type.TypeParams == nil && accessor.Type.Params.NumFields() == 0 && accessor.Body != nil && len(accessor.Body.List) == 1
+		if valid {
+			ret, ok := accessor.Body.List[0].(*ast.ReturnStmt)
+			valid = ok && len(ret.Results) == 1
+			if valid {
+				ident, ok := ret.Results[0].(*ast.Ident)
+				valid = ok && ident.Name == entry.Function
+			}
+		}
+		if !valid {
+			return nil, fmt.Errorf("isolate config: accessor %s must return the selected function %s directly", entry.Value, entry.Function)
+		}
+		invoker := declarations[entry.Invoke]
+		if invoker == nil || invoker.Recv != nil || invoker.Type.TypeParams != nil || invoker.Body == nil {
+			return nil, fmt.Errorf("isolate config: invoker %s must be a concrete function with a body", entry.Invoke)
+		}
+		for _, fn := range []*ast.FuncDecl{accessor, invoker} {
+			if fn.Doc != nil {
+				for _, comment := range fn.Doc.List {
+					if strings.HasPrefix(comment.Text, "//go:linkname") && strings.TrimSpace(comment.Text) != "//go:linkname "+fn.Name.Name {
+						return nil, fmt.Errorf("isolate config: adapter %s cannot alias another symbol", fn.Name.Name)
+					}
+				}
+			}
+		}
+		// Let the ordinary Go type checker validate the ABI in the source package.
+		// Linkname declarations in the generated main alone cannot establish this.
+		source = append(source, []byte(fmt.Sprintf("\nvar _ func() any = %s\nvar _ func(func(...%s.Value) error, func(...%s.Value) error) error = %s\n", entry.Value, valuePackage, valuePackage, entry.Invoke))...)
 	}
 	return source, nil
 }

@@ -17,6 +17,11 @@ import (
 // branch itself contains only compiler-created calls or a verified zero store.
 var isolateProtoNativePrefixes = make(map[*ir.Func]bool)
 
+// IsolateGuardPrefix reports an alternate implementation whose boundary checks
+// precede the ordinary effect guard. Metadata adapters register these before
+// the generic isolate pass; the table is immutable during backend compilation.
+func IsolateGuardPrefix(fn *ir.Func) bool { return isolateProtoNativePrefixes[fn] }
+
 func prependProtoNative(fn *ir.Func, branch ir.Node) {
 	fn.Body.Prepend(branch)
 	isolateProtoNativePrefixes[fn] = true

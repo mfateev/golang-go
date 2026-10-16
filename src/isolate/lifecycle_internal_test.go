@@ -22,7 +22,7 @@ import (
 )
 
 func lifecycleProgram(entry func()) Program {
-	return Program{entry: isolatebridge.ProgramEntry{
+	return Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
 		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
 		Main:     entry,
 	}}

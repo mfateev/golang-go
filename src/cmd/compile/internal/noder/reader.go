@@ -19,6 +19,7 @@ import (
 	"cmd/compile/internal/inline"
 	"cmd/compile/internal/inline/interleaved"
 	"cmd/compile/internal/ir"
+	"cmd/compile/internal/isolate"
 	"cmd/compile/internal/objw"
 	"cmd/compile/internal/pgoir"
 	"cmd/compile/internal/reflectdata"
@@ -1428,7 +1429,7 @@ func (r *reader) funcBody(fn *ir.Func) {
 	})
 
 	r.marker.WriteTo(fn)
-	typecheck.ScopeIsolateEffectsInBody(fn, fn)
+	isolate.ScopeEffectsInBody(fn, fn)
 }
 
 // syntheticBody adds a synthetic body to r.curfn if appropriate, and
@@ -3854,7 +3855,7 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 			r.curfn.Endlineno = r.pos()
 		}
 
-		typecheck.ScopeIsolateEffectsInBody(r.curfn, fn)
+		isolate.ScopeEffectsInBody(r.curfn, fn)
 
 		// TODO(mdempsky): This shouldn't be necessary. Inlining might
 		// read in new function/method declarations, which could

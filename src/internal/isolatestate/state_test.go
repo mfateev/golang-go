@@ -4,7 +4,7 @@
 
 //go:build goexperiment.isolates
 
-package isolateproto
+package isolatestate
 
 import (
 	"strings"
@@ -16,7 +16,7 @@ func TestPackageMetadataVersionBeforeLayout(t *testing.T) {
 	// Supply just the fixed prefix. A mismatched descriptor must be rejected
 	// before reading string headers, GC types, dependency records or init tasks.
 	for _, version := range []uint64{0, 2, ^uint64(0)} {
-		_, err := NewPackageInstance([]unsafe.Pointer{unsafe.Pointer(&version)})
+		_, err := New([]unsafe.Pointer{unsafe.Pointer(&version)})
 		if err == nil || !strings.Contains(err.Error(), "incompatible package metadata version") {
 			t.Fatalf("version %d: %v", version, err)
 		}
