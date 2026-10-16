@@ -17,6 +17,6 @@ if ! "$gobin"/go help >/dev/null 2>&1; then
 	exit 1
 fi
 
-"$gobin/tgo" clean -i std
-"$gobin/tgo" tool dist clean
-"$gobin/tgo" clean -i cmd
+"$gobin/go" clean -i std
+"$gobin/go" tool dist clean
+"$gobin/go" clean -i cmd

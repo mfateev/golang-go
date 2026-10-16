@@ -55,6 +55,10 @@ package goexperiment
 //
 // If you change this struct definition, run "go generate".
 type Flags struct {
+	// Isolates enables private package state and the experimental isolate API.
+	// It is disabled by default. SDK builds select it explicitly.
+	Isolates bool
+
 	FieldTrack        bool
 	PreemptibleLoops  bool
 	StaticLockRanking bool

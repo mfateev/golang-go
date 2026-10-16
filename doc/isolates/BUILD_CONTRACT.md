@@ -1,7 +1,7 @@
 # Explicit isolate build contract
 
 `go build -isolate-config=file.json` and `go test -isolate-config=file.json`
-accept an explicit, versioned description of entries and private package state.
+require `GOEXPERIMENT=isolates` and accept an explicit, versioned description of entries and private package state.
 The Go command does not scan source directives or select external dependencies.
 The SDK's `cmd/tgo` owns those policies. Ordinary `go` commands retain ordinary
 behavior, even when source comments contain SDK directives.

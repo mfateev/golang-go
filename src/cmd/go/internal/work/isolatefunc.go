@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 
+	"cmd/go/internal/cfg"
 	"cmd/go/internal/load"
 )
 
@@ -51,6 +52,10 @@ var isolateConfigError error
 func readIsolateConfig() (*isolateConfig, error) {
 	isolateConfigOnce.Do(func() {
 		if buildIsolateConfig == "" {
+			return
+		}
+		if !cfg.Experiment.Isolates {
+			isolateConfigError = fmt.Errorf("isolate config requires GOEXPERIMENT=isolates")
 			return
 		}
 		data, err := os.ReadFile(buildIsolateConfig)

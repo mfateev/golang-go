@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build phase0_e4
+//go:build goexperiment.isolates
 
 // Package e4toy tests whether Go's compiler-generated init function can be
 // rerun with a different global-access base. This is a narrow feasibility

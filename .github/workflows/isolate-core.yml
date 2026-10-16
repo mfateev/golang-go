@@ -1,0 +1,53 @@
+name: Isolate core conformance
+
+on:
+  push:
+    branches: [task/modify-go-runtime-for-isolates]
+    paths: ['src/**', 'test/**', '.github/workflows/isolate-core.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    strategy:
+      fail-fast: true
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel]
+        experiment: [noisolates, isolates]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.7'
+          cache: false
+      - name: Bootstrap the selected experiment
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GOROOT_BOOTSTRAP="$(go env GOROOT)"
+          export GOEXPERIMENT="${{ matrix.experiment }}"
+          echo "GOEXPERIMENT=$GOEXPERIMENT" >> "$GITHUB_ENV"
+          export GOCACHE="$RUNNER_TEMP/core-go-cache"
+          echo "GOCACHE=$GOCACHE" >> "$GITHUB_ENV"
+          cd src
+          ./make.bash
+      - name: Ordinary Go suite with isolates disabled
+        if: matrix.experiment == 'noisolates'
+        shell: bash
+        run: ./bin/go tool dist test
+      - name: Generic compiler and runtime gates
+        if: matrix.experiment == 'isolates'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./bin/go test -short -failfast runtime isolate internal/isolatebridge internal/isolatepolicy go/build context time sync iter reflect internal/runtime/maps math math/rand math/rand/v2
+          ./bin/go test -count=1 -timeout=15m cmd/go -run 'TestIsolate|TestScript/.*isolate'
+          ./bin/go test -race -count=1 runtime isolate internal/isolatebridge -run 'TestIsolate|TestLifecycle|TestKill|TestDeterministic|TestOwnershipFault'
+          GOEXPERIMENT=isolates,staticlockranking ./bin/go test -short -count=1 runtime isolate internal/isolatebridge -run 'TestIsolate|TestLifecycle|TestKill|TestDeterministic|TestOwnershipFault'
+          ./bin/go clean -cache

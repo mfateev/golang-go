@@ -1,0 +1,18 @@
+# Explicitly disabled configurations cannot build an instrumented program.
+env GOEXPERIMENT=noisolates
+! go build -isolate-config=isolate.json .
+stderr 'isolate config requires GOEXPERIMENT=isolates'
+! go build -gcflags=-d=isolatebuild=1 .
+stderr 'isolate instrumentation requires GOEXPERIMENT=isolates'
+go run .
+stdout '^ordinary execution works$'
+
+-- go.mod --
+module example.org/disabled-isolates
+go 1.26
+-- main.go --
+package main
+import "fmt"
+func main(){fmt.Println("ordinary execution works")}
+-- isolate.json --
+{"format_version":1}

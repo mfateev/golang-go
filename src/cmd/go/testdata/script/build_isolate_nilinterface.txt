@@ -1,3 +1,4 @@
+[!isolates] skip
 # Method-table address computation must follow its nil check. Ownership probes
 # make that derived address live across calls; nil+offset is not a GC pointer.
 # Force stack growth and GC in an earlier call, then verify ordinary nil panic

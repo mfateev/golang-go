@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build phase0_e4 && phase2b_layout && phase2b_dependency && phase2b_linkcheck
+//go:build goexperiment.isolates && phase2b_layout && phase2b_dependency && phase2b_linkcheck
 
 package e4linktoy_test
 

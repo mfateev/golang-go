@@ -157,8 +157,8 @@ bootstrapenv() {
 }
 
 export GOROOT="$(cd .. && pwd)"
-IFS=$'\n'; for go_exe in $(type -ap tgo go); do
-	if [[ ! -x "$GOROOT_BOOTSTRAP/bin/tgo" && ! -x "$GOROOT_BOOTSTRAP/bin/go" ]]; then
+IFS=$'\n'; for go_exe in $(type -ap go); do
+	if [[ ! -x "$GOROOT_BOOTSTRAP/bin/go" ]]; then
 		goroot_bootstrap=$GOROOT_BOOTSTRAP
 		GOROOT_BOOTSTRAP=""
 		goroot=$(bootstrapenv "$go_exe" env GOROOT)
@@ -172,19 +172,15 @@ IFS=$'\n'; for go_exe in $(type -ap tgo go); do
 		fi
 	fi
 done; unset IFS
-if [[ ! -x "$GOROOT_BOOTSTRAP/bin/tgo" && ! -x "$GOROOT_BOOTSTRAP/bin/go" ]]; then
-	echo "ERROR: Cannot find tgo or go in $GOROOT_BOOTSTRAP/bin." >&2
+if [[ ! -x "$GOROOT_BOOTSTRAP/bin/go" ]]; then
+	echo "ERROR: Cannot find $GOROOT_BOOTSTRAP/bin/go." >&2
 	echo "Set \$GOROOT_BOOTSTRAP to a working Go tree >= Go $bootgo." >&2
 	exit 1
-fi
-bootstrap_go="$GOROOT_BOOTSTRAP/bin/go"
-if [[ -x "$GOROOT_BOOTSTRAP/bin/tgo" ]]; then
-	bootstrap_go="$GOROOT_BOOTSTRAP/bin/tgo"
 fi
 # Get the exact bootstrap toolchain version to help with debugging.
 # We clear GOOS and GOARCH to avoid an ominous but harmless warning if
 # the bootstrap doesn't support them.
-GOROOT_BOOTSTRAP_VERSION=$(bootstrapenv "$bootstrap_go" version | sed 's/go version //')
+GOROOT_BOOTSTRAP_VERSION=$(bootstrapenv "$GOROOT_BOOTSTRAP/bin/go" version | sed 's/go version //')
 echo "Building Go cmd/dist using $GOROOT_BOOTSTRAP. ($GOROOT_BOOTSTRAP_VERSION)"
 if $verbose; then
 	echo cmd/dist
@@ -195,7 +191,7 @@ if [[ "$GOROOT_BOOTSTRAP" == "$GOROOT" ]]; then
 	exit 1
 fi
 rm -f cmd/dist/dist
-bootstrapenv "$bootstrap_go" build -o cmd/dist/dist ./cmd/dist
+bootstrapenv "$GOROOT_BOOTSTRAP/bin/go" build -o cmd/dist/dist ./cmd/dist
 
 # -e doesn't propagate out of eval, so check success by hand.
 eval $(./cmd/dist/dist env -p || echo FAIL=true)

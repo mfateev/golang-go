@@ -1,3 +1,4 @@
+[!isolates] skip
 # The generated entry records and package layouts carry the build tool's ABI
 # version; the public runtime contract is available without creating an isolate.
 [short] skip

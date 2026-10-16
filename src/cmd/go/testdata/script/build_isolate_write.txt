@@ -1,3 +1,4 @@
+[!isolates] skip
 # One-way writes work in marked builds with enforced ownership and effects.
 [short] skip
 [compiler:gccgo] skip

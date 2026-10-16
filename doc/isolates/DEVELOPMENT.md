@@ -4,6 +4,35 @@ This file is for an agent starting from this Git repository alone. Read
 [TASK_STATUS.md](./TASK_STATUS.md) and
 [PHASE2B_PROGRESS.md](./PHASE2B_PROGRESS.md) before extending the implementation.
 
+## Current toolchain ownership
+
+The Go fork builds conventional `bin/go` and `bin/gofmt`. The isolate experiment
+is disabled by default. Bootstrap and test each configuration explicitly:
+
+```sh
+cd src
+GOROOT_BOOTSTRAP=/usr/local/go-bootstrap GOEXPERIMENT=noisolates ./make.bash
+cd ..
+GOEXPERIMENT=noisolates ./bin/go tool dist test
+cd src
+GOROOT_BOOTSTRAP=/usr/local/go-bootstrap GOEXPERIMENT=isolates ./make.bash
+cd ..
+GOEXPERIMENT=isolates ./bin/go test -short runtime isolate internal/isolatebridge
+GOEXPERIMENT=isolates ./bin/go test cmd/go -run 'TestIsolate|TestScript/.*isolate'
+```
+
+Use matching bootstraps for compiler-script checks: rebuilding cmd/go under a
+different experiment from its installed compiler can create version-fingerprint
+mismatches. Normal application builds select the experiment through the SDK
+launcher. The [generic manifest contract](BUILD_CONTRACT.md) describes Go's hook.
+The SDK owns `cmd/tgo`, source pinning, bootstrap/packaging scripts and installers.
+For a local development checkout, run the SDK's
+`python3 toolchain/build.py --source /absolute/path/to/golang-go --local`.
+
+The recovery notes below document earlier development environments. References
+to Go-owned `bin/tgo`, phase tags and packaging are historical; use the SDK-owned
+launcher and coordinated experiment above for new work.
+
 ## Checkout and build
 
 The active branch is `task/modify-go-runtime-for-isolates` on the fork

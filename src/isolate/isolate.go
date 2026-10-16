@@ -2,14 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package isolate provides the host communication operations available to
-// code running inside an isolate. Functions marked //temporal:workflow are discovered
-// by go build and exposed as handles; legacy package main programs remain
-// available for runtime probes.
+// Package isolate provides private package state, native execution controls and
+// copied-byte host communication. Explicit build manifests select entries and
+// their package layouts. The API requires GOEXPERIMENT=isolates.
 //
-// This trusted POC offers opt-in deterministic native dispatch and host
-// suspension through Config.Deterministic. Marked builds enforce memory and
-// effect restrictions; arbitrary native execution is not contained.
+// Deterministic execution uses controlled native dispatch. Builds with an
+// isolate manifest enforce memory ownership and effect restrictions.
 package isolate
 
 import "internal/isolatebridge"

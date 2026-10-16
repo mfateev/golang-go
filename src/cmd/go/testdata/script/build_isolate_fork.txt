@@ -1,3 +1,4 @@
+[!isolates] skip
 # Heap checks must preserve the no-stack-growth contract after fork.
 [short] skip
 go build -gcflags=syscall=-d=isolateheap=2 -o fork.exe .

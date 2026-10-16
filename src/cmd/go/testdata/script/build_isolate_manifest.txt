@@ -1,3 +1,4 @@
+[!isolates] skip
 # An external module supplies typed adapters through an explicit generic manifest.
 # Compiler-owned descriptors and state factories never cross the public API.
 [short] skip

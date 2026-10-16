@@ -4,7 +4,10 @@
 
 package base
 
-import "strings"
+import (
+	"internal/buildcfg"
+	"strings"
+)
 
 var isolateSelectedPackages map[string]bool
 var isolateSelectedImports map[string]bool
@@ -19,6 +22,9 @@ func IsolateBuildEnabled() bool {
 // each compiler invocation. It runs before loading export data, so the local
 // package's layout and initializer modes also apply to exported declarations.
 func InitIsolatePackageSelection() {
+	if (IsolateBuildEnabled() || Debug.IsolateGlobals != 0 || Debug.IsolateInit != 0 || Debug.IsolateHeap != 0 || Debug.IsolateEffects != 0 || Debug.IsolateMetadata != 0) && !buildcfg.Experiment.Isolates {
+		Fatalf("isolate instrumentation requires GOEXPERIMENT=isolates")
+	}
 	if IsolateBuildEnabled() {
 		// Checks remain compulsory when this package and all its dependencies
 		// are process-owned. An empty state selection grants no memory privilege.

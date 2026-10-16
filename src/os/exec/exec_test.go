@@ -1822,13 +1822,13 @@ func TestAbsPathExec(t *testing.T) {
 	// A simple exec after modifying Cmd.Path should work.
 	// This broke on Windows. See go.dev/issue/68314.
 	t.Run("modified", func(t *testing.T) {
-		if exec.Command(filepath.Join(testenv.GOROOT(t), "bin/tgo")).Run() == nil {
+		if exec.Command(filepath.Join(testenv.GOROOT(t), "bin/go")).Run() == nil {
 			// The implementation of the test case below relies on the go binary
 			// exiting with a non-zero exit code when run without any arguments.
 			// In the unlikely case that changes, we need to use another binary.
 			t.Fatal("test case needs updating to verify fix for go.dev/issue/68314")
 		}
-		exe1 := filepath.Join(testenv.GOROOT(t), "bin/tgo")
+		exe1 := filepath.Join(testenv.GOROOT(t), "bin/go")
 		exe2 := filepath.Join(testenv.GOROOT(t), "bin/gofmt")
 		cmd := exec.Command(exe1)
 		cmd.Path = exe2

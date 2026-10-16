@@ -101,7 +101,7 @@ func TestRepeatBootstrap(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		cmd = exec.Command(filepath.Join(goroot, "bin", "tgo"), "env", "GOFIPS140")
+		cmd = exec.Command(filepath.Join(goroot, "bin", "go"), "env", "GOFIPS140")
 		cmd.Env = append(cmd.Environ(), "GOROOT=", "GOFIPS140=")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -125,7 +125,7 @@ func main() {
 		if err := os.WriteFile(mainGo, []byte(program), 0666); err != nil {
 			t.Fatal(err)
 		}
-		cmd = exec.Command(filepath.Join(goroot, "bin", "tgo"), "run", mainGo)
+		cmd = exec.Command(filepath.Join(goroot, "bin", "go"), "run", mainGo)
 		cmd.Env = append(cmd.Environ(), "GOROOT=", "GOFIPS140=")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("%s failed: %v\n%s", cmd, err, out)

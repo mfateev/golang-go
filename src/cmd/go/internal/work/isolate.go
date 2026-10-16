@@ -55,34 +55,6 @@ func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, ho
 	prepareStaticIsolates(ctx, ld, b, host, loaded, functions, false)
 }
 
-// TestHasIsolates includes declarations and imports from both kinds of test
-// package. Call before creating build actions so phase0_e4 can be reloaded.
-func TestHasIsolates(ctx context.Context, ld *modload.Loader, opts load.PackageOpts, packages []*load.Package) bool {
-	for _, p := range packages {
-		if p.Standard {
-			continue
-		}
-		// TestPackagesFor resolves test imports in place. Discovery must not
-		// feed expanded vendor paths back into the actual test package load.
-		copy := *p
-		copy.TestImports = slices.Clone(p.TestImports)
-		copy.XTestImports = slices.Clone(p.XTestImports)
-		_, ptest, pxtest, perr := load.TestPackagesFor(ld, ctx, opts, &copy, nil)
-		if perr != nil {
-			continue // The test command reports setup errors per package.
-		}
-		roots := []*load.Package{ptest}
-		if pxtest != nil {
-			roots = append(roots, pxtest)
-		}
-		functions, err := discoverIsolateFunctions(roots)
-		if err != nil || len(functions) != 0 {
-			return true
-		}
-	}
-	return false
-}
-
 var isolateTestPackages, isolateTestEntries []string
 
 // PrepareIsolateTest wraps the generated testing main with isolate registration.

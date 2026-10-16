@@ -1,3 +1,4 @@
+[!isolates] skip
 # Ownership is compulsory for the entire marked-function dependency graph.
 [short] skip
 [compiler:gccgo] skip

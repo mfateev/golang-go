@@ -1,3 +1,4 @@
+[!isolates] skip
 # Explicit entries preserve typed invocation, state selection and cache identity.
 [short] skip
 go build -isolate-config=isolate.json -isolate-report=ownership.json -o host.exe ./host

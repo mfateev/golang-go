@@ -221,7 +221,7 @@ func cCompilerCmd(t *testing.T) []string {
 }
 
 func goEnv(t *testing.T, key string) string {
-	out, err := exec.Command("tgo", "env", key).CombinedOutput()
+	out, err := exec.Command("go", "env", key).CombinedOutput()
 	if err != nil {
 		t.Logf("go env %s\n", key)
 		t.Logf("%s", out)

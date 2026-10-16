@@ -143,7 +143,7 @@ func goCmd() string {
 	if runtime.GOOS == "windows" {
 		exeSuffix = ".exe"
 	}
-	path := filepath.Join(runtime.GOROOT(), "bin", "tgo"+exeSuffix)
+	path := filepath.Join(runtime.GOROOT(), "bin", "go"+exeSuffix)
 	if _, err := os.Stat(path); err == nil {
 		return path
 	}

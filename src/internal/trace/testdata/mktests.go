@@ -96,7 +96,7 @@ func (ctx *context) runGenerators() error {
 		testPath := filepath.Join(genroot, fmt.Sprintf("%s.test", name))
 
 		// Run generator.
-		cmd := exec.Command("tgo", "run", path, testPath)
+		cmd := exec.Command("go", "run", path, testPath)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("running generator %s: %v:\n%s", name, err, out)
 		}
@@ -121,7 +121,7 @@ func (ctx *context) runTestProg(progPath string) error {
 
 	// Create command.
 	var trace, stderr bytes.Buffer
-	cmd := exec.Command("tgo", "run", progPath)
+	cmd := exec.Command("go", "run", progPath)
 	cmd.Stdout = &trace
 	cmd.Stderr = &stderr
 

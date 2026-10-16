@@ -39,6 +39,8 @@ func scriptConditions(t *testing.T) map[string]script.Cond {
 		return script.OnceCondition(summary, func() (bool, error) { return f(), nil })
 	}
 
+	add("isolates", lazyBool("isolate experiment is enabled", func() bool { return buildcfg.Experiment.Isolates }))
+
 	add("abscc", script.Condition("default $CC path is absolute and exists", defaultCCIsAbsolute))
 	add("case-sensitive", script.OnceCondition("$WORK filesystem is case-sensitive", isCaseSensitive))
 	add("cc", script.PrefixCondition("go env CC = <suffix> (ignoring the go/env file)", ccIs))

@@ -1,3 +1,4 @@
+[!isolates] skip
 # Both internal and external test declarations are registered before TestMain.
 # Separate marked packages share descriptors in a multi-package invocation.
 go test -isolate-config=isolate.json ./...

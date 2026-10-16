@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build isolate_len
+//go:build isolate_len && goexperiment.isolates
 
 package isolate_test
 

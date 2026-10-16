@@ -41,12 +41,12 @@ BSD-style license found in the LICENSE file.
 
 ### Download and Install
 
-#### tgo Isolate Toolchain
+#### Isolate SDK toolchain
 
-The fork's [binary release and installer setup](misc/tgo/README.md) packages
-precompiled `tgo` toolchains for macOS and Linux on arm64 and amd64, including
-a download installer and a generated Homebrew formula. See that guide for
-release publication and installation instructions.
+The [SDK-owned tgo driver and distributions](https://github.com/mfateev/sdk-go-poc/tree/task/modify-go-runtime-for-isolates/toolchain)
+provide workflow discovery, build policy and installation. This fork builds a
+conventional `bin/go`. Isolate builds require `GOEXPERIMENT=isolates`; the default
+is disabled. See the [generic build contract](doc/isolates/BUILD_CONTRACT.md).
 
 #### Binary Distributions
 

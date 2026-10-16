@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build phase0_e4 && phase0_e4_compile
+//go:build goexperiment.isolates && goexperiment.isolates_compile
 
 // Package e4compiletoy probes compiler redirection of an initialized global.
 // Only its global variable is special-cased by -d=isolatee4. This does not

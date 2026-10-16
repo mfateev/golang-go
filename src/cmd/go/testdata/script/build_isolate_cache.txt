@@ -1,3 +1,4 @@
+[!isolates] skip
 # Reuse shared instrumented dependencies across different workflow programs.
 # Host-only code and private layouts must keep different cache identities.
 [short] skip

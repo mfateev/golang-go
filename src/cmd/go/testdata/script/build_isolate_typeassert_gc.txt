@@ -1,3 +1,4 @@
+[!isolates] skip
 # Ownership probes are GC safepoints. Large comma-ok type assertions must not
 # expose an uninitialized pointer temporary when a probe grows the stack.
 go build -gcflags=example.com/assert-gc=-d=isolateheap=2 -o check$GOEXE .

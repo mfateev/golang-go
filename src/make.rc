@@ -59,7 +59,7 @@ if(~ $"GOROOT_BOOTSTRAP ''){
 			GOROOT_BOOTSTRAP = $home/$d
 }
 for(p in $path){
-	if(! test -x $GOROOT_BOOTSTRAP/bin/go && ! test -x $GOROOT_BOOTSTRAP/bin/tgo){
+	if(! test -x $GOROOT_BOOTSTRAP/bin/go){
 		if(go_exe = `{path=$p whatis go}){
 			goroot_bootstrap = $GOROOT_BOOTSTRAP
 			GOROOT_BOOTSTRAP = ()
@@ -75,7 +75,7 @@ for(p in $path){
 		}
 	}
 }
-if(! test -x $GOROOT_BOOTSTRAP/bin/go && ! test -x $GOROOT_BOOTSTRAP/bin/tgo){
+if(! test -x $GOROOT_BOOTSTRAP/bin/go){
 	echo 'ERROR: Cannot find '$GOROOT_BOOTSTRAP'/bin/go.' >[1=2]
 	echo 'Set $GOROOT_BOOTSTRAP to a working Go tree >= Go '$bootgo'.' >[1=2]
 	exit bootstrap
@@ -86,18 +86,14 @@ if(~ $GOROOT_BOOTSTRAP $GOROOT){
 	exit bootstrap
 }
 
-bootstrap_go = $GOROOT_BOOTSTRAP/bin/go
-if(test -x $GOROOT_BOOTSTRAP/bin/tgo)
-	bootstrap_go = $GOROOT_BOOTSTRAP/bin/tgo
-
 # Get the exact bootstrap toolchain version to help with debugging.
 # We clear GOOS and GOARCH to avoid an ominous but harmless warning if
 # the bootstrap doesn't support them.
-GOROOT_BOOTSTRAP_VERSION=`{bootstrapenv $bootstrap_go version | sed 's/go version //'}
+GOROOT_BOOTSTRAP_VERSION=`{bootstrapenv $GOROOT_BOOTSTRAP/bin/go version | sed 's/go version //'}
 echo 'Building Go cmd/dist using '$GOROOT_BOOTSTRAP'. ('$"GOROOT_BOOTSTRAP_VERSION')'
 if(~ $#vflag 1)
 	echo cmd/dist
-bootstrapenv $bootstrap_go build -o cmd/dist/dist ./cmd/dist
+bootstrapenv $GOROOT_BOOTSTRAP/bin/go build -o cmd/dist/dist ./cmd/dist
 
 eval `{./cmd/dist/dist env -9}
 if(~ $#vflag 1)

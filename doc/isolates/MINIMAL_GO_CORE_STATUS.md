@@ -87,3 +87,45 @@ The old dependency-source guard deliberately remains in Go while dependency-
 specific compiler metadata rewrites exist. Removing it before those rewrites
 would grant unaudited sources the existing name-based service privileges. This
 is a transitional constraint, not a completed metadata-policy migration.
+
+## Experiment, conventional commands and distribution ownership
+
+Added `GOEXPERIMENT=isolates` (default off), explicit disabled-build rejection,
+and a disabled public-API regression. Replaced the active `phase0_e4` build tag
+and removed the Go command's discovery/reload cycle. Restored upstream executable
+names, bootstrap scripts, command forwarding and command-location tests.
+SDK-owned packaging, installers, integration CI and source pinning replace
+`misc/tgo` and the fork's integration/release workflows. Go CI now owns only
+compiler/runtime conformance with explicit enabled/disabled bootstraps.
+
+PASS: disabled bootstrap (`GOROOT_BOOTSTRAP=/usr/local/go-bootstrap`,
+`GOEXPERIMENT=noisolates`); enabled runtime/conformance package checks (runtime
+108.371s under concurrent full-suite load) and focused enabled race checks
+(runtime 2.351s, isolate 3.146s). The disabled full suite exposed a remaining
+`go doc` command-name override and non-inlined RWMutex fast paths. Restored
+upstream doc command lookup and compiled mutex/read-only probes only when the
+experiment is enabled. Focused `Test/inline_sync.go`, runtime isolate internals,
+sync and internal/sync checks then pass. A final full disabled rerun remains
+required after all core changes.
+
+The first enabled compiler-script run used a disabled-bootstrap compiler and
+failed with the command/compiler experiment fingerprint mismatch. This is not
+recorded as a passing enabled bootstrap or script gate. Rebuild the matching
+configuration before rerunning it.
+
+SDK driver discovery now respects overlays, test variants and `-C`; negative
+dependency-source tests, paths-with-spaces invocation and experiment selection
+pass. The example driver needed a no-op `RegisterResetHandler` for the upstream
+SDK's newer environment interface; the fixture never resets cached executions.
+With that fixture repair its serial/concurrent smoke passes (0.241s wall,
+32,460 KiB max RSS). This cannot be compared with the failed starting fixture
+as a performance regression measurement.
+
+Samples at `0229414` now select the SDK's same sibling Temporal checkout through
+a workspace override. Their full `tgo test -failfast -timeout=20m ./...` passes.
+The starting sample workspace had conflicting module replacements before that
+override. SDK/Go/sample revisions will be reconciled in the final handoff.
+
+Remote CI checked with `gh run list`: latest completed fork run at `9ac0e230f3`
+is [successful](https://github.com/mfateev/golang-go/actions/runs/38840464433).
+This does not validate the local migration commits or the newly moved CI jobs.

@@ -7,6 +7,7 @@ package isolate
 import (
 	"context"
 	"errors"
+	"internal/goexperiment"
 	"internal/isolatebridge"
 	"strconv"
 	"sync"
@@ -196,6 +197,9 @@ func New(cfg Config) (*Isolate, error) {
 // startup revokes its children and attempts cleanup for at most 100 ms. If any
 // remain, InitializationError carries a cleanup notification and diagnostics.
 func NewContext(ctx context.Context, cfg Config) (*Isolate, error) {
+	if !goexperiment.Isolates {
+		return nil, errors.New("isolate: requires GOEXPERIMENT=isolates; rebuild with the isolate toolchain")
+	}
 	if ctx == nil {
 		return nil, errors.New("isolate: nil initialization context")
 	}

@@ -222,12 +222,12 @@ func do(ctx context.Context, writer io.Writer, flagSet *flag.FlagSet, args []str
 		// depending on whether we're in a module or workspace. The pkgsite homepage
 		// is often not the most useful page.
 		if len(flagSet.Args()) == 0 {
-			mod, err := runCmd(append(os.Environ(), "GOWORK=off"), filepath.Join(cfg.GOROOTbin, "tgo"), "list", "-m")
+			mod, err := runCmd(append(os.Environ(), "GOWORK=off"), "go", "list", "-m")
 			if err == nil && mod != "" && mod != "command-line-arguments" {
 				// If there's a module, go to the module's doc page.
 				return doPkgsite(ctx, mod, "")
 			}
-			gowork, err := runCmd(nil, filepath.Join(cfg.GOROOTbin, "tgo"), "env", "GOWORK")
+			gowork, err := runCmd(nil, "go", "env", "GOWORK")
 			if err == nil && gowork != "" {
 				// Outside a module, but in a workspace, go to the home page
 				// with links to each of the modules' pages.
@@ -326,7 +326,7 @@ func objectPath(userPath string, pkg *Package, symbol, method string) (string, s
 		// go/build couldn't determine the import path, probably
 		// because this was a relative path into a module. Use
 		// go list to get the import path.
-		path, err = runCmd(nil, filepath.Join(cfg.GOROOTbin, "tgo"), "list", userPath)
+		path, err = runCmd(nil, "go", "list", userPath)
 		if err != nil {
 			return "", "", err
 		}

@@ -1,3 +1,4 @@
+[!isolates] skip
 [short] skip
 [compiler:gccgo] skip
 

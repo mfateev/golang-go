@@ -1,3 +1,4 @@
+[!isolates] skip
 # Compiler-generated struct/array hashing and equality use pointer operations
 # but must remain callable in isolates. Application unsafe guards still apply.
 [short] skip

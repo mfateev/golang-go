@@ -9,6 +9,7 @@
 package sync
 
 import (
+	"internal/goexperiment"
 	"internal/race"
 	"sync/atomic"
 	"unsafe"
@@ -59,7 +60,9 @@ const (
 //
 // See package [sync.Mutex] documentation.
 func (m *Mutex) Lock() {
-	runtime_isolateReadOnlyWrite(unsafe.Pointer(m), unsafe.Sizeof(*m))
+	if goexperiment.Isolates {
+		runtime_isolateReadOnlyWrite(unsafe.Pointer(m), unsafe.Sizeof(*m))
+	}
 	// Fast path: grab unlocked mutex.
 	if atomic.CompareAndSwapInt32(&m.state, 0, mutexLocked) {
 		if race.Enabled {
@@ -75,7 +78,9 @@ func (m *Mutex) Lock() {
 //
 // See package [sync.Mutex] documentation.
 func (m *Mutex) TryLock() bool {
-	runtime_isolateReadOnlyWrite(unsafe.Pointer(m), unsafe.Sizeof(*m))
+	if goexperiment.Isolates {
+		runtime_isolateReadOnlyWrite(unsafe.Pointer(m), unsafe.Sizeof(*m))
+	}
 	old := m.state
 	if old&(mutexLocked|mutexStarving) != 0 {
 		return false
@@ -187,7 +192,9 @@ func (m *Mutex) lockSlow() {
 //
 // See package [sync.Mutex] documentation.
 func (m *Mutex) Unlock() {
-	runtime_isolateReadOnlyWrite(unsafe.Pointer(m), unsafe.Sizeof(*m))
+	if goexperiment.Isolates {
+		runtime_isolateReadOnlyWrite(unsafe.Pointer(m), unsafe.Sizeof(*m))
+	}
 	if race.Enabled {
 		_ = m.state
 		race.Release(unsafe.Pointer(m))

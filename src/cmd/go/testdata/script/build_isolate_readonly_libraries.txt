@@ -1,3 +1,4 @@
+[!isolates] skip
 # Shared library backing data is frozen; variable bindings remain private.
 [short] skip
 [compiler:gccgo] skip

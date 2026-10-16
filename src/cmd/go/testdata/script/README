@@ -405,6 +405,8 @@ The available conditions are:
 	the local 'git' version is recent enough to support sha256 object/commit hashes
 [go-builder]
 	GO_BUILDER_NAME is non-empty
+[isolates]
+	isolate experiment is enabled
 [link]
 	testenv.HasLink()
 [msan]

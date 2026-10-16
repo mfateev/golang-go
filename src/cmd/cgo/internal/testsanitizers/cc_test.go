@@ -69,7 +69,7 @@ var env struct {
 func goEnv(key string) (string, error) {
 	env.Once.Do(func() {
 		var out []byte
-		out, env.err = exec.Command("tgo", "env", "-json").Output()
+		out, env.err = exec.Command("go", "env", "-json").Output()
 		if env.err != nil {
 			return
 		}
@@ -444,7 +444,7 @@ func (c *config) goCmd(subcommand string, args ...string) *exec.Cmd {
 // "GOEXPERIMENT=$experiments go $subcommand $args" with appropriate
 // additional flags and CGO-related environment variables.
 func (c *config) goCmdWithExperiments(subcommand string, args []string, experiments []string) *exec.Cmd {
-	cmd := exec.Command("tgo", subcommand)
+	cmd := exec.Command("go", subcommand)
 	cmd.Args = append(cmd.Args, c.goFlags...)
 	cmd.Args = append(cmd.Args, args...)
 	replaceEnv(cmd, "CGO_CFLAGS", strings.Join(c.cFlags, " "))

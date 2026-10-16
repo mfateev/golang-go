@@ -1,3 +1,4 @@
+[!isolates] skip
 # Effects are rejected before execution; logs use one-way copied-byte writes.
 [short] skip
 [compiler:gccgo] skip

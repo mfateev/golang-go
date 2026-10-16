@@ -1046,13 +1046,6 @@ var resolvedImportCache par.Cache[importSpec, resolvedImport]
 // packageDataCache maps canonical package names (string) to package metadata.
 var packageDataCache par.ErrCache[string, *build.Package]
 
-// InvalidatePackageCache discards source metadata after changing build tags.
-// The caller must finish package loading (including preloading) first.
-func InvalidatePackageCache(ld *modload.Loader) {
-	clear(ld.PackageCache())
-	packageDataCache = par.ErrCache[string, *build.Package]{}
-}
-
 // preloadWorkerCount is the number of concurrent goroutines that can load
 // packages. Experimentally, there are diminishing returns with more than
 // 4 workers. This was measured on the following machines.
@@ -1780,9 +1773,6 @@ func (p *Package) exeFromFiles() string {
 
 // DefaultExecName returns the default executable name for a package
 func (p *Package) DefaultExecName() string {
-	if p.Standard && p.ImportPath == "cmd/go" {
-		return "tgo"
-	}
 	if p.Internal.CmdlineFiles {
 		return p.exeFromFiles()
 	}

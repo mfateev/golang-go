@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build phase0_e4 && phase2b_layout
+//go:build goexperiment.isolates && phase2b_layout
 
 // Package e4layouttoy probes generated layout and GC metadata for all mutable
 // globals in an opt-in package. It contains no process-owned registration.

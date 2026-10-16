@@ -1,3 +1,4 @@
+[!isolates] skip
 # Initial heap diagnostic checks compiler-emitted accesses independently of
 # the package-state builder. These deliberately privileged test helpers attach
 # runtime groups and expose foreign pointers; application transport cannot do so.

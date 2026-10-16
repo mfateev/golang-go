@@ -1,3 +1,4 @@
+[!isolates] skip
 # Application assembly must be rejected before it can inject foreign pointers.
 # Runtime diagnostic tests cover typed read/write/publication ownership checks;
 # the production build permits no injection exemption.

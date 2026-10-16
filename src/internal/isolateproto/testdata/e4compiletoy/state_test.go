@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build phase0_e4 && phase0_e4_compile
+//go:build goexperiment.isolates && goexperiment.isolates_compile
 
 package e4compiletoy
 

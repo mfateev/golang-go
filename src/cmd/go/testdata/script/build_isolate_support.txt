@@ -1,3 +1,4 @@
+[!isolates] skip
 # Support functions contribute their own state and initialize shared deps once.
 [short] skip
 go build -isolate-config=isolate.json -o host.exe ./host
