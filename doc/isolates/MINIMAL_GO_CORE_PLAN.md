@@ -1,5 +1,7 @@
 # Minimal Go isolate core execution plan
 
+Progress and baseline evidence: [MINIMAL_GO_CORE_STATUS.md](MINIMAL_GO_CORE_STATUS.md).
+
 ## Objective and agreed decisions
 
 Keep a small, generic isolate implementation in the Go fork that follows the

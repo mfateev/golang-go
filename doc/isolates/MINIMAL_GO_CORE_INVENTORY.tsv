@@ -1,0 +1,455 @@
+path	classification	reason
+.github/scripts/context_dispatch_diagnostics.py	SDK integration	Trace callers before moving build or dependency policy
+.github/workflows/isolate-context-diagnostics.yml	SDK integration	Trace callers before moving build or dependency policy
+.github/workflows/isolate-determinism.yml	SDK integration	Trace callers before moving build or dependency policy
+.github/workflows/tgo-release.yml	SDK integration	Trace callers before moving build or dependency policy
+AGENTS.md	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+README.md	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+doc/isolates/ALTERNATIVES.md	historical finding	Retain findings; reconcile current contracts after migration
+doc/isolates/DETERMINISM.md	historical finding	Retain findings; reconcile current contracts after migration
+doc/isolates/DEVELOPMENT.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/DYNAMIC_LOADING.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/EFFECT_RESTRICTIONS_PLAN.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/IMPLEMENTATION_PLAN.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/INTEGRATION_CONTRACTS_PLAN.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/ISOLATES_DESIGN.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/ISOLATE_API.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/ISOLATE_SUBSET.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/LIFECYCLE_PLAN.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/MEMORY_DENSITY.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/MEMORY_OWNERSHIP_HISTORY.md	historical finding	Retain findings; reconcile current contracts after migration
+doc/isolates/MEMORY_OWNERSHIP_PLAN.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/MINIMAL_GO_CORE_PLAN.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/NATIVE_DETERMINISM_PLAN.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/PACKAGE_STATE.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/PHASE0_RESULTS.md	historical finding	Retain findings; reconcile current contracts after migration
+doc/isolates/PHASE2B_PROGRESS.md	historical finding	Retain findings; reconcile current contracts after migration
+doc/isolates/PRODUCTIZATION_PLAN.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/README.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/READ_ONLY_HANDLERS.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/RESOURCE_CONTROLS_PLAN.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/RUNTIME_REVOCATION.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/STATIC_PROGRAMS.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/STRUCTURED_FAILURES_POC.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/TASK_STATUS.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/TEMPORAL_INTEGRATION.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/TEMPORAL_POC.md	documentation	Retain findings; reconcile current contracts after migration
+doc/isolates/experiments/layout_floor/README.md	historical finding	Retain findings; reconcile current contracts after migration
+doc/isolates/experiments/layout_floor/empty/main.go	historical finding	Retain findings; reconcile current contracts after migration
+doc/isolates/experiments/layout_floor/go.mod	historical finding	Retain findings; reconcile current contracts after migration
+doc/isolates/experiments/layout_floor/host/main.go	historical finding	Retain findings; reconcile current contracts after migration
+doc/isolates/experiments/layout_floor/inspect/main.go	historical finding	Retain findings; reconcile current contracts after migration
+doc/isolates/experiments/layout_floor/inspecttime/main.go	historical finding	Retain findings; reconcile current contracts after migration
+doc/isolates/experiments/layout_floor/withjson/main.go	historical finding	Retain findings; reconcile current contracts after migration
+doc/isolates/experiments/layout_floor/withjsontext/main.go	historical finding	Retain findings; reconcile current contracts after migration
+doc/isolates/experiments/layout_floor/withreflect/main.go	historical finding	Retain findings; reconcile current contracts after migration
+doc/isolates/experiments/layout_floor/withtime/main.go	historical finding	Retain findings; reconcile current contracts after migration
+doc/isolates/experiments/layout_floor/withv2/main.go	historical finding	Retain findings; reconcile current contracts after migration
+misc/tgo/README.md	SDK integration	Trace callers before moving build or dependency policy
+misc/tgo/install.sh	SDK integration	Trace callers before moving build or dependency policy
+misc/tgo/release.py	SDK integration	Trace callers before moving build or dependency policy
+src/all.bash	SDK integration	Tool executable branding; restore conventional Go names
+src/all.bat	SDK integration	Tool executable branding; restore conventional Go names
+src/all.rc	SDK integration	Tool executable branding; restore conventional Go names
+src/bootstrap.bash	SDK integration	Tool executable branding; restore conventional Go names
+src/buildall.bash	SDK integration	Tool executable branding; restore conventional Go names
+src/clean.bash	SDK integration	Tool executable branding; restore conventional Go names
+src/cmd/api/main_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/cgo/internal/testcarchive/carchive_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/cgo/internal/testcshared/cshared_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/cgo/internal/testerrors/badsym_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/cgo/internal/testplugin/plugin_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/cgo/internal/testsanitizers/cc_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/cgo/internal/testshared/shared_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/cgo/internal/testso/so_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/compile/internal/amd64/versions_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/compile/internal/base/debug.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/base/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/gc/main.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/inline/inl.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/ir/abi.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/ir/func.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/ir/name.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/ir/node.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/noder/noder.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/noder/reader.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/noder/writer.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/pkginit/init.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/reflectdata/alg.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/reflectdata/map.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/ssagen/intrinsics.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/ssagen/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/ssagen/isolate_atomic.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/ssagen/isolate_map.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/ssagen/isolate_string.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/ssagen/ssa.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/testimporter/importer.go	SDK integration	Tool executable branding; restore conventional Go names
+src/cmd/compile/internal/typecheck/_builtin/runtime.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/typecheck/builtin.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/typecheck/isolate_effects.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/compile/internal/typecheck/isolate_metadata.go	SDK integration	Trace callers before moving build or dependency policy
+src/cmd/compile/internal/walk/builtin.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/cover/func.go	SDK integration	Tool executable branding; restore conventional Go names
+src/cmd/dist/build.go	SDK integration	Tool executable branding; restore conventional Go names
+src/cmd/dist/buildtool.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/distpack/pack.go	SDK integration	Tool executable branding; restore conventional Go names
+src/cmd/distpack/test.go	SDK integration	Tool executable branding; restore conventional Go names
+src/cmd/go/alldocs.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/go/internal/bug/bug.go	SDK integration	Tool executable branding; restore conventional Go names
+src/cmd/go/internal/doc/dirs.go	SDK integration	Tool executable branding; restore conventional Go names
+src/cmd/go/internal/doc/doc.go	SDK integration	Tool executable branding; restore conventional Go names
+src/cmd/go/internal/load/pkg.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/go/internal/test/test.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/go/internal/version/version.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/go/internal/work/build.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/go/internal/work/cover.go	SDK integration	Tool executable branding; restore conventional Go names
+src/cmd/go/internal/work/exec.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/go/internal/work/gc.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/go/internal/work/isolate.go	SDK integration	Trace callers before moving build or dependency policy
+src/cmd/go/internal/work/isolateflags.go	SDK integration	Trace callers before moving build or dependency policy
+src/cmd/go/internal/work/isolateflags_test.go	SDK integration	Trace callers before moving build or dependency policy
+src/cmd/go/internal/work/isolatefunc.go	SDK integration	Trace callers before moving build or dependency policy
+src/cmd/go/testdata/script/build_isolate_cache.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/build_isolate_contract.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/build_isolate_effects.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/build_isolate_fault.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/build_isolate_fork.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/build_isolate_functions.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/build_isolate_heap.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/build_isolate_lifecycle.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/build_isolate_metadata.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/build_isolate_nilinterface.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/build_isolate_ownership.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/build_isolate_readonly_libraries.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/build_isolate_resources.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/build_isolate_structeq.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/build_isolate_support.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/build_isolate_typeassert_gc.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/build_isolate_write.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/isolate_generic_move.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/go/testdata/script/isolate_test_entries.txt	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/internal/bootstrap_test/experiment_toolid_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/internal/bootstrap_test/reboot_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/internal/isolatepolicy/libraries.go	SDK integration	Trace callers before moving build or dependency policy
+src/cmd/internal/isolatepolicy/metadata.go	SDK integration	Trace callers before moving build or dependency policy
+src/cmd/internal/isolatepolicy/metadata_test.go	SDK integration	Trace callers before moving build or dependency policy
+src/cmd/internal/moddeps/moddeps_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/cmd/internal/obj/plist.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/internal/script/scripttest/run.go	SDK integration	Tool executable branding; restore conventional Go names
+src/cmd/link/internal/ld/data.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/link/internal/ld/pcln.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/link/internal/ld/symtab.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/cmd/trace/testdata/mktests.go	SDK integration	Tool executable branding; restore conventional Go names
+src/cmd/vendor/golang.org/x/tools/internal/gcimporter/exportdata.go	SDK integration	Tool executable branding; restore conventional Go names
+src/context/context.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/crypto/internal/fips140/drbg/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/crypto/internal/fips140/drbg/rand.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/crypto/internal/fips140/sha256/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/crypto/internal/fips140/sha256/sha256.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/crypto/internal/rand/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/crypto/internal/rand/rand.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/crypto/internal/sysrand/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/crypto/internal/sysrand/rand.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/crypto/rand/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/crypto/rand/rand.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/crypto/rand/text.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/crypto/rand/util.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/encoding/json/v2/inline_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/expvar/expvar.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/expvar/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/flag/flag.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/flag/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/fmt/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/fmt/print.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/fmt/scan.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/go/build/build.go	SDK integration	Tool executable branding; restore conventional Go names
+src/go/build/deps_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/go/doc/comment/std.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/go/internal/gcimporter/gcimporter_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/go/internal/srcimporter/srcimporter.go	SDK integration	Tool executable branding; restore conventional Go names
+src/internal/abi/symtab.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/exportdata/exportdata.go	SDK integration	Tool executable branding; restore conventional Go names
+src/internal/godebugs/godebugs_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateabi/version.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/isolatebridge/bridge.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/isolatebridge/bridge_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolatebridge/function.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/isolatebridge/log.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/isolatebridge/metadata_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolatebridge/program.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/isolatebridge/resources.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/isolatebridge/write.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/isolatebridge/write_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolatepolicy/effects.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/isolatepolicy/effects_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolatepolicy/libraries.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/isolateproto/adapter.go	superseded experiment	Remove only after checking native implementation callers
+src/internal/isolateproto/channel.go	superseded experiment	Remove only after checking native implementation callers
+src/internal/isolateproto/doc.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/isolateproto/frozen_libraries.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/isolateproto/generic_guard_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/global_e4_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/globals_phase2_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/isolate.go	superseded experiment	Remove only after checking native implementation callers
+src/internal/isolateproto/isolate_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/kill_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/map.go	superseded experiment	Remove only after checking native implementation callers
+src/internal/isolateproto/map_bench_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/map_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/memory_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/native_e1_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/order_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/package_state_probe.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/isolateproto/package_version_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/replay_arch_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/task.go	superseded experiment	Remove only after checking native implementation callers
+src/internal/isolateproto/testdata/e4base64caller/state.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/testdata/e4base64toy/state.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/testdata/e4base64toy/state_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/testdata/e4compiletoy/state.go	superseded experiment	Remove only after checking native implementation callers
+src/internal/isolateproto/testdata/e4compiletoy/state_test.go	superseded experiment	Remove only after checking native implementation callers
+src/internal/isolateproto/testdata/e4deptoy/state.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/testdata/e4genericguard/state.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/testdata/e4importtoy/autoselection_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/testdata/e4importtoy/state.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/testdata/e4importtoy/state_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/testdata/e4layouttoy/crossbase_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/testdata/e4layouttoy/inline_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/testdata/e4layouttoy/state.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/testdata/e4layouttoy/state_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/testdata/e4linktoy/state.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/testdata/e4linktoy/state_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/testdata/e4toy/state.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/isolateproto/testdata/e4toy/state_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/platform/zosarch_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/runtime/maps/group.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/runtime/maps/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/runtime/maps/isolate_iter.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/runtime/maps/map.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/runtime/maps/mapaccess1_inline_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/runtime/maps/runtime.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/runtime/maps/runtime_fast32.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/runtime/maps/runtime_fast64.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/runtime/maps/runtime_faststr.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/runtime/maps/table.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/sync/mutex.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/internal/testenv/testenv.go	SDK integration	Tool executable branding; restore conventional Go names
+src/internal/testenv/testenv_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/internal/trace/testdata/mktests.go	SDK integration	Tool executable branding; restore conventional Go names
+src/internal/trace/traceviewer/pprof.go	SDK integration	Tool executable branding; restore conventional Go names
+src/isolate/cached_eviction_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/control_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/crypto_rand_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/determinism_library_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/determinism_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/dispatch_internal_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/function.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/isolate/function_state.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/isolate/function_state_stub.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/isolate/host.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/isolate/host_internal_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/host_netpoll_linux_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/inbound_internal_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/isolate/isolate_effect_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/isolate_len_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/isolate_process_launch_linux_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/isolate_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/library_ownership_internal_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/lifecycle_internal_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/log.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/isolate/log_internal_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/math_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/ownership_internal_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/priority_internal_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/protobuf.go	SDK integration	Trace callers before moving build or dependency policy
+src/isolate/reflection_metadata_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/resources.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/isolate/resources_internal_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/stack_internal_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/isolate/version.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/isolate/write_internal_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/log/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/log/log.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/log/slog/handler.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/log/slog/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/log/slog/logger.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/make.bash	SDK integration	Tool executable branding; restore conventional Go names
+src/make.bat	SDK integration	Tool executable branding; restore conventional Go names
+src/make.rc	SDK integration	Tool executable branding; restore conventional Go names
+src/math/big/escape_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/math/exp.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/math/export_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/math/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/math/isolate_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/math/log.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/math/rand/exp.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/math/rand/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/math/rand/normal.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/math/rand/rand.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/math/rand/v2/exp.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/math/rand/v2/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/math/rand/v2/normal.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/math/rand/v2/rand.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/os/env.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/os/exec.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/os/exec/exec.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/os/exec/exec_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/os/exec/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/os/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/os/proc.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/os/signal/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/os/signal/signal.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/reflect/isolate_metadata.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/reflect/isolate_protobuf.go	SDK integration	Trace callers before moving build or dependency policy
+src/reflect/map.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/reflect/type.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/reflect/value.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/regexp/syntax/compile.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/regexp/syntax/isolate_phase0.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/regexp/syntax/rune_table.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/run.bash	SDK integration	Tool executable branding; restore conventional Go names
+src/run.bat	SDK integration	Tool executable branding; restore conventional Go names
+src/run.rc	SDK integration	Tool executable branding; restore conventional Go names
+src/runtime/arena.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/chan.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/coro.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/cpuprof.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/debug.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/debug/garbage.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/debug/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/debug/mod.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/debug/stack.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/export_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/heapdump.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/iface.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_alloc.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_alloc_origin_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_alloc_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_api.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_atomic.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_bytes.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_bytes_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_coro.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_crypto_rand.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_determinism.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_dispatch.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_dispatch_export_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_dispatch_norace.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_dispatch_race.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_dispatch_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_e4_probe.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_effect.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_effect_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_equal.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_error_metadata.go	SDK integration	Trace callers before moving build or dependency policy
+src/runtime/isolate_fault.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_heap.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_heap_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_inbound.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_initialization.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_initialization_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_itab.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_itab_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_kill_acceptance_phase0_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_library.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_library_e4.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_library_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_lifecycle.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_lifecycle_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_log.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_memmove_phase0_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_metadata.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_metadata_export_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_metadata_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_park.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_phase0_hook.go	superseded experiment	Remove only after checking native implementation callers
+src/runtime/isolate_phase0_hook_stub.go	superseded experiment	Remove only after checking native implementation callers
+src/runtime/isolate_preempt_export_phase0_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_preempt_phase0_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_priority.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_protobuf.go	SDK integration	Trace callers before moving build or dependency policy
+src/runtime/isolate_protobuf_cache.go	SDK integration	Trace callers before moving build or dependency policy
+src/runtime/isolate_protobuf_cache_test.go	SDK integration	Trace callers before moving build or dependency policy
+src/runtime/isolate_readonly.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_readonly_stub.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_readonly_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_resources.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_revocation.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_revocation_export_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_revocation_probe_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_search_attribute_key.go	SDK integration	Trace callers before moving build or dependency policy
+src/runtime/isolate_sema_phase0_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/isolate_stack.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/isolate_stack_phase0_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/lock_wasip1.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/lockrank.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/malloc.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/malloc_generated.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/malloc_stubs.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/map.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/map_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/mbarrier.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/mcache.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/mcentral.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/mcleanup.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/metrics/description.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/metrics/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/metrics/sample.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/mfinal.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/mgc.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/mgcmark.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/mgcsweep.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/mheap.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/mklockrank.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/mprof.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/mstats.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/netpoll.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/netpoll_stub.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/panic.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/pprof/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/pprof/pprof.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/proc.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/race/syso_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/runtime.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/runtime1.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/runtime2.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/select.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/sema.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/signal_unix.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/sigqueue.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/sigqueue_plan9.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/sizeof_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/stack.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/symtab.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/time.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/time_test.go	retained test	Convert useful compiler/runtime regressions to generic fixtures
+src/runtime/trace/annotation.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/trace/flightrecorder.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/trace/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/trace/trace.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/traceback.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/runtime/type.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/sync/atomic/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/sync/atomic/value.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/sync/cond.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/sync/isolate_map.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/sync/map.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/sync/pool.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/sync/runtime.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/sync/rwmutex.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/sync/waitgroup.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/syscall/env_unix.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/syscall/env_windows.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/syscall/exec_plan9.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/syscall/exec_unix.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/syscall/exec_windows.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/syscall/isolate.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/syscall/mksyscall_windows.go	SDK integration	Tool executable branding; restore conventional Go names
+src/time/sleep.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/time/tick.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/time/time.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/time/zoneinfo.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/unique/handle.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
+src/vendor/golang.org/x/tools/internal/gcimporter/exportdata.go	SDK integration	Tool executable branding; restore conventional Go names
+test/live_regabi.go	generic core	Keep enforcement, lowering, initialization, or native runtime integration; review mixed policy separately
