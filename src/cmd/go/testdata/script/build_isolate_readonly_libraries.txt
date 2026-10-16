@@ -1,10 +1,10 @@
 # Shared library backing data is frozen; variable bindings remain private.
 [short] skip
 [compiler:gccgo] skip
-go build -o frozen$GOEXE ./host
+go build -isolate-config=isolate.json -o frozen$GOEXE ./host
 exec ./frozen$GOEXE
 stdout '^frozen library tables shared; host and isolate bindings remain private$'
-[race] go build -race -o frozen-race$GOEXE ./host
+[race] go build -isolate-config=isolate.json -race -o frozen-race$GOEXE ./host
 [race] exec ./frozen-race$GOEXE
 [race] stdout '^frozen library tables shared; host and isolate bindings remain private$'
 
@@ -26,7 +26,7 @@ import (
  "time"
  "unicode"
 )
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Probe(mode byte) (string,error) {
  if mode==1 { unicode.L.R16[0].Lo=0 }
  if mode==2 { unicode.Categories["L"]=nil }
@@ -131,4 +131,97 @@ func main() {
  if got:=base32.StdEncoding.EncodeToString([]byte{0xfb});got!=hostBase32 {panic("isolate changed host base32")}
  if got:=base64.StdEncoding.EncodeToString([]byte{0xfb});got!=hostBase64 {panic("isolate changed host base64")}
  fmt.Println("frozen library tables shared; host and isolate bindings remain private")
+}
+
+-- isolate.json --
+{
+ "format_version": 1,
+ "entries": [
+  {
+   "package": "example.org/frozenlibraries/jobs",
+   "function": "Probe",
+   "value": "__isolate_value_Probe",
+   "invoke": "__isolate_invoke_Probe"
+  }
+ ],
+ "sources": {
+  "example.org/frozenlibraries/jobs": "package jobs\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Probe\nfunc __isolate_value_Probe() any { return Probe }\n\n//go:linkname __isolate_invoke_Probe\nfunc __isolate_invoke_Probe(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tvar arg0 byte\n\tif err := decode(isolateGeneratedBridge.Value{Value: arg0, Pointer: \u0026arg0}); err != nil {\n\t\treturn err\n\t}\n\tresult, err := Probe(arg0)\n\tif err != nil {\n\t\treturn err\n\t}\n\treturn encode(isolateGeneratedBridge.Value{Value: result, Pointer: \u0026result})\n}\n"
+ },
+ "state_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "example.org/frozenlibraries/host",
+  "example.org/frozenlibraries/jobs",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "readonly_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "support_packages": null
 }

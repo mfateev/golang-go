@@ -68,3 +68,22 @@ also cannot reproduce cmd/go test-main construction or action cache identity.
 The proposed small Go hook accepts explicit entry and package configuration;
 SDK policy chooses it, while Go owns linking and hashes effective compiler flags
 and generated source contents. This configuration must grant no metadata trust.
+
+## Explicit build contract and SDK driver
+
+Implemented `-isolate-config` for build/test, typed SDK-owned adapters, explicit
+state and scratch package selection, and SDK source-directive discovery. Go's
+public adapter API uses `isolate.Value`; privileged registration imports and
+compiler-created descriptor access stay in a toolchain-generated entry.
+See [BUILD_CONTRACT.md](BUILD_CONTRACT.md).
+
+PASS: the outside-GOROOT manifest fixture, all 14 migrated generic compiler
+script cases (15.533s), and the full SDK `tgo test -failfast -timeout=20m ./...`
+through the new SDK driver. The focused baseline replay checks also pass through
+the driver. Test-only adapters retain separate identities so tests imported as
+ordinary dependencies cannot receive `_test.go` declarations.
+
+The old dependency-source guard deliberately remains in Go while dependency-
+specific compiler metadata rewrites exist. Removing it before those rewrites
+would grant unaudited sources the existing name-based service privileges. This
+is a transitional constraint, not a completed metadata-policy migration.

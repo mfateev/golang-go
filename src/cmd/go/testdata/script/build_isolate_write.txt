@@ -2,11 +2,11 @@
 [short] skip
 [compiler:gccgo] skip
 
-go build -o writes$GOEXE ./host
+go build -isolate-config=isolate.json -o writes$GOEXE ./host
 exec ./writes$GOEXE
 stdout '^compiled one-way writes passed$'
 
-[cgo] [race] go build -race -gcflags=example.org/isolatewrite/host=-d=isolateheap=2 -o writes-race$GOEXE ./host
+[cgo] [race] go build -isolate-config=isolate.json -race -gcflags=example.org/isolatewrite/host=-d=isolateheap=2 -o writes-race$GOEXE ./host
 [cgo] [race] exec ./writes-race$GOEXE
 [cgo] [race] stdout '^compiled one-way writes passed$'
 
@@ -20,7 +20,7 @@ import "isolate"
 
 var state = []byte{7}
 
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Work() {
     state[0]++
     isolate.Write(1, state)
@@ -75,4 +75,97 @@ func main() {
         run(deterministic)
     }
     fmt.Println("compiled one-way writes passed")
+}
+
+-- isolate.json --
+{
+ "format_version": 1,
+ "entries": [
+  {
+   "package": "example.org/isolatewrite/jobs",
+   "function": "Work",
+   "value": "__isolate_value_Work",
+   "invoke": "__isolate_invoke_Work"
+  }
+ ],
+ "sources": {
+  "example.org/isolatewrite/jobs": "package jobs\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Work\nfunc __isolate_value_Work() any { return Work }\n\n//go:linkname __isolate_invoke_Work\nfunc __isolate_invoke_Work(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tif err := decode(); err != nil {\n\t\treturn err\n\t}\n\tWork()\n\treturn encode()\n}\n"
+ },
+ "state_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "example.org/isolatewrite/host",
+  "example.org/isolatewrite/jobs",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "readonly_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "support_packages": null
 }

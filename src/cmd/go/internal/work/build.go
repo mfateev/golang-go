@@ -60,7 +60,7 @@ in the last two paragraphs. If the named output is an existing directory or
 ends with a slash or backslash, then any resulting executables
 will be written to that directory.
 
-Functions marked //temporal:workflow in a host's import graph are experimental isolate
+Functions marked explicit isolate entries in a host's import graph are experimental isolate
 entry points. An ordinary single-executable build generates typed invokers,
 function handles, and per-instance package state without directory configs.
 The function retains its Go signature; its SDK supplies the byte protocol.
@@ -325,6 +325,7 @@ const (
 // AddBuildFlags adds the flags common to the build, clean, get,
 // install, list, run, and test commands.
 func AddBuildFlags(cmd *base.Command, mask BuildFlagMask) {
+	cmd.Flag.StringVar(&buildIsolateConfig, "isolate-config", "", "read explicit isolate build configuration from `file`")
 	base.AddBuildFlagsNX(&cmd.Flag)
 	base.AddChdirFlag(&cmd.Flag)
 	cmd.Flag.BoolVar(&cfg.BuildA, "a", false, "force rebuilding of packages that are already up-to-date")
@@ -492,7 +493,7 @@ func runBuild(ctx context.Context, cmd *base.Command, args []string) {
 	}
 	if len(functions) != 0 && len(pkgs) == 1 && pkgs[0].Name == "main" {
 		if cfg.BuildBuildmode != "default" || cfg.BuildContext.Compiler != "gc" || cfg.BuildN || cfg.BuildCover {
-			base.Fatalf("go build with //temporal:workflow requires the default gc build mode without -n or -cover")
+			base.Fatalf("go build with explicit isolate entries requires the default gc build mode without -n or -cover")
 		}
 		if !slices.Contains(cfg.BuildContext.BuildTags, "phase0_e4") {
 			cfg.BuildContext.BuildTags = append(cfg.BuildContext.BuildTags, "phase0_e4")
@@ -516,7 +517,7 @@ func runBuild(ctx context.Context, cmd *base.Command, args []string) {
 		return
 	}
 	if buildIsolateReport != "" {
-		base.Fatalf("-isolate-report requires a //temporal:workflow function in the host import graph")
+		base.Fatalf("-isolate-report requires explicit isolate entries in the host import graph")
 	}
 
 	explicitO := len(cfg.BuildO) > 0

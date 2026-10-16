@@ -1,9 +1,9 @@
 # Both internal and external test declarations are registered before TestMain.
 # Separate marked packages share descriptors in a multi-package invocation.
-go test ./...
+go test -isolate-config=isolate.json ./...
 stdout '^ok\s+example.com/isolate-tests/a'
 stdout '^ok\s+example.com/isolate-tests/b'
-go test -c -o a.test ./a
+go test -isolate-config=isolate.json -c -o a.test ./a
 exec ./a.test -test.run TestInternalEntry
 stdout PASS
 
@@ -23,7 +23,7 @@ import (
  "testing"
  "github.com/stretchr/testify/suite"
 )
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func internalEntry(v int) (int, error) { State++; return State+v,nil }
 func TestMain(m *testing.M) {
  if _,ok:=isolate.LookupFunction(internalEntry);!ok { panic("internal entry missing before TestMain") }
@@ -42,7 +42,7 @@ import (
  "isolate"
  "testing"
 )
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func externalEntry() error { return nil }
 func TestExternalEntry(t *testing.T) {
  if _,ok:=isolate.LookupFunction(externalEntry);!ok {t.Fatal("external entry missing")}
@@ -50,7 +50,7 @@ func TestExternalEntry(t *testing.T) {
 }
 -- b/b.go --
 package b
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Entry() error { return nil }
 -- b/b_test.go --
 package b
@@ -65,7 +65,7 @@ func TestImportedEntry(t *testing.T) {
 }
 -- c/c.go --
 package c
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Entry() error {return nil}
 -- testify/go.mod --
 module github.com/stretchr/testify
@@ -82,3 +82,130 @@ func Run() { fmt.Fprintln(os.Stderr, "host suite") }
 -- testify/testmock/mock.go --
 package testmock
 func New() int {return 7}
+
+-- isolate.json --
+{
+ "format_version": 1,
+ "entries": [
+  {
+   "package": "example.com/isolate-tests/a",
+   "for_test": "example.com/isolate-tests/a",
+   "function": "internalEntry",
+   "value": "__isolate_value_internalEntry",
+   "invoke": "__isolate_invoke_internalEntry"
+  },
+  {
+   "package": "example.com/isolate-tests/a_test",
+   "for_test": "example.com/isolate-tests/a",
+   "function": "externalEntry",
+   "value": "__isolate_value_externalEntry",
+   "invoke": "__isolate_invoke_externalEntry"
+  },
+  {
+   "package": "example.com/isolate-tests/b",
+   "for_test": "example.com/isolate-tests/b",
+   "function": "Entry",
+   "value": "__isolate_value_Entry",
+   "invoke": "__isolate_invoke_Entry"
+  },
+  {
+   "package": "example.com/isolate-tests/b",
+   "function": "Entry",
+   "value": "__isolate_value_Entry",
+   "invoke": "__isolate_invoke_Entry"
+  },
+  {
+   "package": "example.com/isolate-tests/c",
+   "function": "Entry",
+   "value": "__isolate_value_Entry",
+   "invoke": "__isolate_invoke_Entry"
+  }
+ ],
+ "sources": {
+  "example.com/isolate-tests/a [example.com/isolate-tests/a.test]": "package a\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_internalEntry\nfunc __isolate_value_internalEntry() any { return internalEntry }\n\n//go:linkname __isolate_invoke_internalEntry\nfunc __isolate_invoke_internalEntry(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tvar arg0 int\n\tif err := decode(isolateGeneratedBridge.Value{Value: arg0, Pointer: \u0026arg0}); err != nil {\n\t\treturn err\n\t}\n\tresult, err := internalEntry(arg0)\n\tif err != nil {\n\t\treturn err\n\t}\n\treturn encode(isolateGeneratedBridge.Value{Value: result, Pointer: \u0026result})\n}\n",
+  "example.com/isolate-tests/a_test [example.com/isolate-tests/a.test]": "package a_test\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_externalEntry\nfunc __isolate_value_externalEntry() any { return externalEntry }\n\n//go:linkname __isolate_invoke_externalEntry\nfunc __isolate_invoke_externalEntry(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tif err := decode(); err != nil {\n\t\treturn err\n\t}\n\tif err := externalEntry(); err != nil {\n\t\treturn err\n\t}\n\treturn encode()\n}\n",
+  "example.com/isolate-tests/b": "package b\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Entry\nfunc __isolate_value_Entry() any { return Entry }\n\n//go:linkname __isolate_invoke_Entry\nfunc __isolate_invoke_Entry(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tif err := decode(); err != nil {\n\t\treturn err\n\t}\n\tif err := Entry(); err != nil {\n\t\treturn err\n\t}\n\treturn encode()\n}\n",
+  "example.com/isolate-tests/b [example.com/isolate-tests/b.test]": "package b\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Entry\nfunc __isolate_value_Entry() any { return Entry }\n\n//go:linkname __isolate_invoke_Entry\nfunc __isolate_invoke_Entry(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tif err := decode(); err != nil {\n\t\treturn err\n\t}\n\tif err := Entry(); err != nil {\n\t\treturn err\n\t}\n\treturn encode()\n}\n",
+  "example.com/isolate-tests/c": "package c\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Entry\nfunc __isolate_value_Entry() any { return Entry }\n\n//go:linkname __isolate_invoke_Entry\nfunc __isolate_invoke_Entry(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tif err := decode(); err != nil {\n\t\treturn err\n\t}\n\tif err := Entry(); err != nil {\n\t\treturn err\n\t}\n\treturn encode()\n}\n"
+ },
+ "state_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "example.com/isolate-tests/a",
+  "example.com/isolate-tests/a_test",
+  "example.com/isolate-tests/b",
+  "example.com/isolate-tests/c",
+  "example.com/isolate-tests/testify/testmock",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "readonly_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "support_packages": null
+}

@@ -2,10 +2,10 @@
 # but must remain callable in isolates. Application unsafe guards still apply.
 [short] skip
 [compiler:gccgo] skip
-go build -o check$GOEXE ./host
+go build -isolate-config=isolate.json -o check$GOEXE ./host
 exec ./check$GOEXE
 stdout '^generated equality and hash passed$'
-[race] go build -race -o check-race$GOEXE ./host
+[race] go build -isolate-config=isolate.json -race -o check-race$GOEXE ./host
 [race] exec ./check-race$GOEXE
 [race] stdout '^generated equality and hash passed$'
 
@@ -19,7 +19,7 @@ import "reflect"
 
 type key struct { Name string; Kind int32; Type reflect.Type }
 
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Probe() (string,error) {
  a:=key{"owned",3,reflect.TypeFor[int64]()}
  b:=key{"owned",3,reflect.TypeFor[int64]()}
@@ -61,4 +61,97 @@ func main(){
  }
  if err:=instance.Wait();err!=nil{panic(err)}
  fmt.Println("generated equality and hash passed")
+}
+
+-- isolate.json --
+{
+ "format_version": 1,
+ "entries": [
+  {
+   "package": "example.org/structeq/jobs",
+   "function": "Probe",
+   "value": "__isolate_value_Probe",
+   "invoke": "__isolate_invoke_Probe"
+  }
+ ],
+ "sources": {
+  "example.org/structeq/jobs": "package jobs\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Probe\nfunc __isolate_value_Probe() any { return Probe }\n\n//go:linkname __isolate_invoke_Probe\nfunc __isolate_invoke_Probe(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tif err := decode(); err != nil {\n\t\treturn err\n\t}\n\tresult, err := Probe()\n\tif err != nil {\n\t\treturn err\n\t}\n\treturn encode(isolateGeneratedBridge.Value{Value: result, Pointer: \u0026result})\n}\n"
+ },
+ "state_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "example.org/structeq/host",
+  "example.org/structeq/jobs",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "readonly_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "support_packages": null
 }

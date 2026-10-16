@@ -1,9 +1,9 @@
 # Support functions contribute their own state and initialize shared deps once.
 [short] skip
-go build -o host.exe ./host
+go build -isolate-config=isolate.json -o host.exe ./host
 exec ./host.exe
 stdout 'support state independent'
-go build -race -o race.exe ./host
+go build -isolate-config=isolate.json -race -o race.exe ./host
 exec ./race.exe
 stdout 'support state independent'
 
@@ -19,13 +19,13 @@ func init() { Counter++ }
 package support
 import "example.org/isolatesupport/shared/v1.2.0"
 var Count = 10
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Factory() (int,error) { Count++; shared.Counter++; return Count+shared.Counter,nil }
 -- entry/entry.go --
 package entry
 import "example.org/isolatesupport/shared/v1.2.0"
 var Count = 1
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Work(input int) (int,error) { Count++; shared.Counter++; return input+Count+shared.Counter,nil }
 -- host/main.go --
 package main
@@ -72,3 +72,105 @@ func dispatch(h,f isolate.Handle){
     _,err:=isolate.Call(1,nil); return err
    }); if err!=nil { panic(err) }
   }
+
+-- isolate.json --
+{
+ "format_version": 1,
+ "entries": [
+  {
+   "package": "example.org/isolatesupport/entry",
+   "function": "Work",
+   "value": "__isolate_value_Work",
+   "invoke": "__isolate_invoke_Work"
+  },
+  {
+   "package": "example.org/isolatesupport/support/v1.2.0",
+   "function": "Factory",
+   "value": "__isolate_value_Factory",
+   "invoke": "__isolate_invoke_Factory"
+  }
+ ],
+ "sources": {
+  "example.org/isolatesupport/entry": "package entry\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Work\nfunc __isolate_value_Work() any { return Work }\n\n//go:linkname __isolate_invoke_Work\nfunc __isolate_invoke_Work(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tvar arg0 int\n\tif err := decode(isolateGeneratedBridge.Value{Value: arg0, Pointer: \u0026arg0}); err != nil {\n\t\treturn err\n\t}\n\tresult, err := Work(arg0)\n\tif err != nil {\n\t\treturn err\n\t}\n\treturn encode(isolateGeneratedBridge.Value{Value: result, Pointer: \u0026result})\n}\n",
+  "example.org/isolatesupport/support/v1.2.0": "package support\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Factory\nfunc __isolate_value_Factory() any { return Factory }\n\n//go:linkname __isolate_invoke_Factory\nfunc __isolate_invoke_Factory(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tif err := decode(); err != nil {\n\t\treturn err\n\t}\n\tresult, err := Factory()\n\tif err != nil {\n\t\treturn err\n\t}\n\treturn encode(isolateGeneratedBridge.Value{Value: result, Pointer: \u0026result})\n}\n"
+ },
+ "state_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "example.org/isolatesupport/entry",
+  "example.org/isolatesupport/host",
+  "example.org/isolatesupport/shared/v1.2.0",
+  "example.org/isolatesupport/support/v1.2.0",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "readonly_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "support_packages": null
+}

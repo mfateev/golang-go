@@ -5,14 +5,14 @@
 [compiler:gccgo] skip
 [!GOARCH:amd64] [!GOARCH:arm64] skip
 
-go build -o fault.exe ./host
+go build -isolate-config=isolate.json -o fault.exe ./host
 exec ./fault.exe
 stdout -count=2 '^managed read terminated$'
 stdout -count=2 '^managed write terminated$'
 stdout -count=2 '^managed publication terminated$'
 stdout '^host alive$'
 
-[race] go build -race -o fault-race.exe ./host
+[race] go build -isolate-config=isolate.json -race -o fault-race.exe ./host
 [race] exec ./fault-race.exe
 [race] stdout -count=2 '^managed read terminated$'
 [race] stdout -count=2 '^managed write terminated$'
@@ -22,7 +22,7 @@ stdout '^host alive$'
 # External modules cannot inherit the GOROOT runtime namespace exemption.
 go run ./rename
 go mod edit -module=runtime/rogue
-go build -o namespaced$GOEXE ./host
+go build -isolate-config=isolate.json -o namespaced$GOEXE ./host
 exec ./namespaced$GOEXE
 stdout -count=2 '^managed read terminated$'
 stdout -count=2 '^managed write terminated$'
@@ -37,7 +37,7 @@ package jobs
 
 import "example.org/isolatefault/dispatch"
 
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Probe(p *int, mode int) {
     defer func() {
         _ = recover()
@@ -160,9 +160,104 @@ TEXT ·inject(SB),NOSPLIT,$0-16
 package main
 import ("os"; "strings")
 func main() {
- for _, path := range []string{"jobs/jobs.go","host/main.go"} {
+ for _, path := range []string{"jobs/jobs.go","host/main.go","isolate.json"} {
   data,err := os.ReadFile(path); if err != nil { panic(err) }
   data = []byte(strings.ReplaceAll(string(data),"example.org/isolatefault","runtime/rogue"))
   if err := os.WriteFile(path,data,0600); err != nil { panic(err) }
  }
+}
+
+-- isolate.json --
+{
+ "format_version": 1,
+ "entries": [
+  {
+   "package": "example.org/isolatefault/jobs",
+   "function": "Probe",
+   "value": "__isolate_value_Probe",
+   "invoke": "__isolate_invoke_Probe"
+  }
+ ],
+ "sources": {
+  "example.org/isolatefault/jobs": "package jobs\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Probe\nfunc __isolate_value_Probe() any { return Probe }\n\n//go:linkname __isolate_invoke_Probe\nfunc __isolate_invoke_Probe(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tvar arg0 *int\n\tvar arg1 int\n\tif err := decode(isolateGeneratedBridge.Value{Value: arg0, Pointer: \u0026arg0}, isolateGeneratedBridge.Value{Value: arg1, Pointer: \u0026arg1}); err != nil {\n\t\treturn err\n\t}\n\tProbe(arg0, arg1)\n\treturn encode()\n}\n"
+ },
+ "state_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "example.org/isolatefault/dispatch",
+  "example.org/isolatefault/host",
+  "example.org/isolatefault/jobs",
+  "example.org/isolatefault/rename",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "readonly_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "support_packages": null
 }

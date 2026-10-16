@@ -1,20 +1,20 @@
 # Ownership is compulsory for the entire marked-function dependency graph.
 [short] skip
 [compiler:gccgo] skip
-go build -gcflags=all=-d=isolateheap=0 -o owned$GOEXE ./host
+go build -isolate-config=isolate.json -gcflags=all=-d=isolateheap=0 -o owned$GOEXE ./host
 exec ./owned$GOEXE
 stdout '^default ownership enforced$'
 ! stdout 'forbidden private output'
-[race] go build -race -o owned-race$GOEXE ./host
+[race] go build -isolate-config=isolate.json -race -o owned-race$GOEXE ./host
 [race] exec ./owned-race$GOEXE
 [race] stdout '^default ownership enforced$'
-! go build -o rejected-link$GOEXE ./badlink
+! go build -isolate-config=isolate.json -o rejected-link$GOEXE ./badlink
 stderr 'isolate: source cannot link to privileged operation runtime.isolateEnterMetadata'
 
 # A module cannot impersonate a GOROOT metadata callback through its name.
 # Raw hooks here model the audited service; they are deliberately unavailable
 # to the marked workflow above.
-go build -gcflags=all=-d=isolatemetadata=1 -o callback-check$GOEXE ./callbackhost
+go build -isolate-config=isolate.json -gcflags=all=-d=isolatemetadata=1 -o callback-check$GOEXE ./callbackhost
 exec ./callback-check$GOEXE
 stdout '^metadata namespace denied$'
 
@@ -39,7 +39,7 @@ import (
  "isolate"
 )
 var counter = 41
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Probe(mode byte) (string,error) {
  if mode == 1 { return textproto.CanonicalMIMEHeaderKey("content-type"),nil }
  if mode == 2 { fmt.Print("forbidden private output"); return "unexpected",nil }
@@ -140,7 +140,7 @@ package main
 import _ "unsafe"
 //go:linkname enter runtime.isolateEnterMetadata
 func enter() uintptr
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Probe() { enter() }
 func main() {}
 
@@ -209,4 +209,107 @@ func main() {
   if callback.Called { panic("untrusted callback executed in service") }
  }
  fmt.Println("metadata namespace denied")
+}
+
+-- isolate.json --
+{
+ "format_version": 1,
+ "entries": [
+  {
+   "package": "example.org/isolateownership/badlink",
+   "function": "Probe",
+   "value": "__isolate_value_Probe",
+   "invoke": "__isolate_invoke_Probe"
+  },
+  {
+   "package": "example.org/isolateownership/jobs",
+   "function": "Probe",
+   "value": "__isolate_value_Probe",
+   "invoke": "__isolate_invoke_Probe"
+  }
+ ],
+ "sources": {
+  "example.org/isolateownership/badlink": "package main\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Probe\nfunc __isolate_value_Probe() any { return Probe }\n\n//go:linkname __isolate_invoke_Probe\nfunc __isolate_invoke_Probe(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tif err := decode(); err != nil {\n\t\treturn err\n\t}\n\tProbe()\n\treturn encode()\n}\n",
+  "example.org/isolateownership/jobs": "package jobs\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Probe\nfunc __isolate_value_Probe() any { return Probe }\n\n//go:linkname __isolate_invoke_Probe\nfunc __isolate_invoke_Probe(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tvar arg0 byte\n\tif err := decode(isolateGeneratedBridge.Value{Value: arg0, Pointer: \u0026arg0}); err != nil {\n\t\treturn err\n\t}\n\tresult, err := Probe(arg0)\n\tif err != nil {\n\t\treturn err\n\t}\n\treturn encode(isolateGeneratedBridge.Value{Value: result, Pointer: \u0026result})\n}\n"
+ },
+ "state_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "example.org/isolateownership/badlink",
+  "example.org/isolateownership/callbackhost",
+  "example.org/isolateownership/fake/callback",
+  "example.org/isolateownership/host",
+  "example.org/isolateownership/jobs",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "readonly_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "support_packages": null
 }

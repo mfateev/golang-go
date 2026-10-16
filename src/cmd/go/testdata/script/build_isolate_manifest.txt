@@ -1,0 +1,73 @@
+# An external module supplies typed adapters through an explicit generic manifest.
+# Compiler-owned descriptors and state factories never cross the public API.
+[short] skip
+[compiler:gccgo] skip
+go build -isolate-config=isolate.json -o check$GOEXE ./host
+exec ./check$GOEXE
+stdout '^private initialization and generated invocation passed$'
+# Source contents, rather than the temporary manifest path, define cache identity.
+cp isolate.json other.json
+go build -isolate-config=other.json -o cached$GOEXE ./host
+exec ./cached$GOEXE
+stdout '^private initialization and generated invocation passed$'
+# The adapter cannot acquire internal imports through the build hook.
+cp invalid.json other.json
+! go build -isolate-config=other.json -o invalid$GOEXE ./host
+stderr 'adds unsupported import "internal/isolatebridge"'
+# An invalid manifest must fail before constructing a program.
+cp version.json other.json
+! go build -isolate-config=other.json ./host
+stderr 'unsupported format version 100'
+
+-- go.mod --
+module example.org/manifest
+go 1.26
+-- isolate.json --
+{
+ "format_version":1,
+ "entries":[{"package":"example.org/manifest/jobs","function":"Entry","value":"entryValue","invoke":"entryInvoke"}],
+ "state_packages":["example.org/manifest/jobs"],
+ "sources":{"example.org/manifest/jobs":"package jobs\nimport (\"isolate\"; _ \"unsafe\")\n//go:linkname entryValue\nfunc entryValue() any {return Entry}\n//go:linkname entryInvoke\nfunc entryInvoke(decode,encode func(...isolate.Value)error)error {if err:=decode();err!=nil{return err};v:=Entry();return encode(isolate.Value{Value:v,Pointer:&v})}\n"}
+}
+-- invalid.json --
+{
+ "format_version":1,
+ "entries":[{"package":"example.org/manifest/jobs","function":"Entry","value":"entryValue","invoke":"entryInvoke"}],
+ "sources":{"example.org/manifest/jobs":"package jobs\nimport _ \"internal/isolatebridge\"\n"}
+}
+-- version.json --
+{"format_version":100}
+-- jobs/jobs.go --
+package jobs
+var count=40
+func init(){count++}
+func Entry() int {count++;return count}
+func HostCount()int{return count}
+-- host/main.go --
+package main
+import (
+ "fmt"
+ "isolate"
+ "example.org/manifest/jobs"
+)
+func dispatch(h isolate.Handle) {
+ if err:=h.Invoke(func(...isolate.Value)error{return nil},func(values ...isolate.Value)error {
+  if len(values)!=1 || values[0].Value.(int)!=42 {panic("instance state leaked")}
+  _,err:=isolate.Call(1,[]byte("ok"));return err
+ });err!=nil {panic(err)}
+}
+func main(){
+ h,ok:=isolate.LookupFunction(jobs.Entry);if !ok {panic("entry missing")}
+ for range 2 {
+  i,err:=isolate.New(isolate.Config{Program:h.ProgramWithHandle(dispatch)});if err!=nil{panic(err)}
+  if err=i.Start();err!=nil{panic(err)}
+  select {
+  case c:=<-i.Commands():
+   if string(c.Payload)!="ok" {panic("wrong result")};c.Reply(nil,nil)
+  case <-i.Done():panic(i.Wait())
+  }
+  if err=i.Wait();err!=nil{panic(err)}
+ }
+ if jobs.HostCount()!=41 {panic("host initialization changed")}
+ fmt.Println("private initialization and generated invocation passed")
+}

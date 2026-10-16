@@ -4,17 +4,17 @@
 go build -debug-actiongraph=ordinary.json -o ordinary.exe ./ordinary
 exec ./ordinary.exe
 stdout 'ordinary state passed'
-go build -debug-actiongraph=a.json -o a.exe ./hosta
+go build -isolate-config=isolate.json -debug-actiongraph=a.json -o a.exe ./hosta
 exec ./a.exe
 stdout 'private state passed'
-go build -debug-actiongraph=b.json -o b.exe ./hostb
+go build -isolate-config=isolate.json -debug-actiongraph=b.json -o b.exe ./hostb
 exec ./b.exe
 stdout 'private state passed'
 go run ./inspect ordinary.json a.json b.json
 stdout 'shared dependencies reused; ownership layouts separated'
 
 # An empty state selection still enforces isolate privilege checks.
-! go build -o badguard.exe -gcflags=example.com/isolate-cache/badguard=-d=isolatebuild=1 ./badguard
+! go build -isolate-config=isolate.json -o badguard.exe -gcflags=example.com/isolate-cache/badguard=-d=isolatebuild=1 ./badguard
 stderr 'isolate: source cannot link to privileged operation runtime.isolateEnterMetadata'
 
 -- go.mod --
@@ -31,12 +31,12 @@ func Next() int { return leaf.Next() }
 -- a/a.go --
 package a
 import "example.com/isolate-cache/shared"
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Entry() (int,error) { return shared.Next(),nil }
 -- b/b.go --
 package b
 import "example.com/isolate-cache/shared"
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Entry() (int,error) { return shared.Next(),nil }
 -- hosta/main.go --
 package main
@@ -117,3 +117,111 @@ import _ "unsafe"
 //go:linkname enter runtime.isolateEnterMetadata
 func enter()
 func main() {enter()}
+
+-- isolate.json --
+{
+ "format_version": 1,
+ "entries": [
+  {
+   "package": "example.com/isolate-cache/a",
+   "function": "Entry",
+   "value": "__isolate_value_Entry",
+   "invoke": "__isolate_invoke_Entry"
+  },
+  {
+   "package": "example.com/isolate-cache/b",
+   "function": "Entry",
+   "value": "__isolate_value_Entry",
+   "invoke": "__isolate_invoke_Entry"
+  }
+ ],
+ "sources": {
+  "example.com/isolate-cache/a": "package a\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Entry\nfunc __isolate_value_Entry() any { return Entry }\n\n//go:linkname __isolate_invoke_Entry\nfunc __isolate_invoke_Entry(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tif err := decode(); err != nil {\n\t\treturn err\n\t}\n\tresult, err := Entry()\n\tif err != nil {\n\t\treturn err\n\t}\n\treturn encode(isolateGeneratedBridge.Value{Value: result, Pointer: \u0026result})\n}\n",
+  "example.com/isolate-cache/b": "package b\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Entry\nfunc __isolate_value_Entry() any { return Entry }\n\n//go:linkname __isolate_invoke_Entry\nfunc __isolate_invoke_Entry(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tif err := decode(); err != nil {\n\t\treturn err\n\t}\n\tresult, err := Entry()\n\tif err != nil {\n\t\treturn err\n\t}\n\treturn encode(isolateGeneratedBridge.Value{Value: result, Pointer: \u0026result})\n}\n"
+ },
+ "state_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "example.com/isolate-cache/a",
+  "example.com/isolate-cache/b",
+  "example.com/isolate-cache/badguard",
+  "example.com/isolate-cache/host",
+  "example.com/isolate-cache/hosta",
+  "example.com/isolate-cache/hostb",
+  "example.com/isolate-cache/inspect",
+  "example.com/isolate-cache/leaf",
+  "example.com/isolate-cache/ordinary",
+  "example.com/isolate-cache/shared",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "readonly_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "support_packages": null
+}

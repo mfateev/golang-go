@@ -1,17 +1,17 @@
 [short] skip
 [compiler:gccgo] skip
 
-go build -o lifecycle$GOEXE ./host
+go build -isolate-config=isolate.json -o lifecycle$GOEXE ./host
 exec ./lifecycle$GOEXE
 stdout '^compiled lifecycle passed$'
 
 # The same contract holds with instrumented entry closures and dependencies.
-[cgo] [race] go build -race -o lifecycle-race$GOEXE ./host
+[cgo] [race] go build -isolate-config=isolate.json -race -o lifecycle-race$GOEXE ./host
 [cgo] [race] exec ./lifecycle-race$GOEXE
 [cgo] [race] stdout '^compiled lifecycle passed$'
 
 # A generated state factory whose initializer never returns is cancellable.
-go build -o startup-worker$GOEXE ./startup
+go build -isolate-config=isolate.json -o startup-worker$GOEXE ./startup
 exec ./startup-worker$GOEXE
 stdout '^compiled startup canceled$'
 
@@ -29,7 +29,7 @@ import (
 var state = make([]byte, 1<<20)
 func Decode(data []byte, dst any) error { return json.Unmarshal(data, dst) }
 
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Work(mode string) (string, error) {
     state[0]++
     switch mode {
@@ -118,7 +118,7 @@ func init() {
     }
 }
 
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Wait() error { return nil }
 -- startup/main.go --
 package main
@@ -139,4 +139,106 @@ func main() {
     instance, err := isolate.NewContext(ctx, isolate.Config{Program:program})
     if instance != nil || !errors.Is(err, context.DeadlineExceeded) { panic(err) }
     fmt.Println("compiled startup canceled")
+}
+
+-- isolate.json --
+{
+ "format_version": 1,
+ "entries": [
+  {
+   "package": "example.org/lifecycle/blocked",
+   "function": "Wait",
+   "value": "__isolate_value_Wait",
+   "invoke": "__isolate_invoke_Wait"
+  },
+  {
+   "package": "example.org/lifecycle/jobs",
+   "function": "Work",
+   "value": "__isolate_value_Work",
+   "invoke": "__isolate_invoke_Work"
+  }
+ ],
+ "sources": {
+  "example.org/lifecycle/blocked": "package blocked\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Wait\nfunc __isolate_value_Wait() any { return Wait }\n\n//go:linkname __isolate_invoke_Wait\nfunc __isolate_invoke_Wait(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tif err := decode(); err != nil {\n\t\treturn err\n\t}\n\tif err := Wait(); err != nil {\n\t\treturn err\n\t}\n\treturn encode()\n}\n",
+  "example.org/lifecycle/jobs": "package jobs\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Work\nfunc __isolate_value_Work() any { return Work }\n\n//go:linkname __isolate_invoke_Work\nfunc __isolate_invoke_Work(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tvar arg0 string\n\tif err := decode(isolateGeneratedBridge.Value{Value: arg0, Pointer: \u0026arg0}); err != nil {\n\t\treturn err\n\t}\n\tresult, err := Work(arg0)\n\tif err != nil {\n\t\treturn err\n\t}\n\treturn encode(isolateGeneratedBridge.Value{Value: result, Pointer: \u0026result})\n}\n"
+ },
+ "state_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "example.org/lifecycle/blocked",
+  "example.org/lifecycle/host",
+  "example.org/lifecycle/jobs",
+  "example.org/lifecycle/startup",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "readonly_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "support_packages": null
 }

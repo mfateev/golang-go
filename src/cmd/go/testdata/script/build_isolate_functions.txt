@@ -1,11 +1,6 @@
-# Marked functions are discovered by ordinary builds, without configs or flags.
+# Explicit entries preserve typed invocation, state selection and cache identity.
 [short] skip
-exec $GOROOT/bin/tgo$GOEXE version
-stdout '\(isolates POC\)$'
-! exists $GOROOT/bin/go$GOEXE
-go list -f '{{.Target}}' cmd/go
-stdout '[/\\]bin[/\\]tgo(\.exe)?$'
-go build -isolate-report=ownership.json -o host.exe ./host
+go build -isolate-config=isolate.json -isolate-report=ownership.json -o host.exe ./host
 exec ./host.exe
 stdout 'ordinary before 42'
 stdout 'marked first:x:42'
@@ -14,12 +9,12 @@ stdout 'ordinary after 43'
 stdout 'signature preserved'
 go run ./reportcheck ownership.json
 ! go build -isolate-report=unused.json ./reportcheck
-stderr '-isolate-report requires a //temporal:workflow function in the host import graph'
-! go build -isolate-report=clobber.exe -o clobber.exe ./host
+stderr '-isolate-report requires explicit isolate entries in the host import graph'
+! go build -isolate-config=isolate.json -isolate-report=clobber.exe -o clobber.exe ./host
 stderr '-isolate-report must differ from executable output'
 
 # The cached build must retain generated invokers and state metadata.
-go build -o cached.exe ./host
+go build -isolate-config=isolate.json -o cached.exe ./host
 exec ./cached.exe
 stdout 'marked second:y:42'
 stdout 'billing invoice-1:100'
@@ -29,7 +24,7 @@ stdout 'billing host after 101'
 # The trusted entry wrapper must not be inlined into an instrumented caller.
 # Race builds force the handle-bearing environment onto the host heap, making
 # an accidental application-side read observable by the ownership diagnostic.
-go build -race -gcflags=example.org/isolatefunctiontest/host=-d=isolateheap=2 -o owned-entry.exe ./host
+go build -isolate-config=isolate.json -race -gcflags=example.org/isolatefunctiontest/host=-d=isolateheap=2 -o owned-entry.exe ./host
 exec ./owned-entry.exe
 stdout 'marked first:x:42'
 stdout 'marked second:y:42'
@@ -38,38 +33,26 @@ stdout 'billing invoice-2:100'
 stdout 'signature preserved'
 
 # The generated entry table and descriptors remain valid when stacks move.
-[cgo] [race] go build -race -gcflags=runtime=-d=maymorestack=runtime.mayMoreStackMove -o moved-entry.exe ./host
+[cgo] [race] go build -isolate-config=isolate.json -race -gcflags=runtime=-d=maymorestack=runtime.mayMoreStackMove -o moved-entry.exe ./host
 [cgo] [race] exec ./moved-entry.exe
 [cgo] [race] stdout 'billing invoice-2:100'
 
-# Invalid directives fail during discovery, rather than silently running on host.
-! go build ./badgeneric
-stderr '//temporal:workflow requires a concrete, top-level function'
-! go build ./badvariadic
-stderr '//temporal:workflow does not support variadic arguments'
-! go build ./badplacement
-stderr '//temporal:workflow must immediately precede a function declaration'
-! go build ./badarguments
-stderr 'expected one //temporal:workflow directive without arguments'
-! go build ./badduplicate
-stderr 'expected one //temporal:workflow directive without arguments'
-
 # Isolate functions cannot borrow process-owned globals.
-! go build -o badglobal.exe ./badglobal
+! go build -isolate-config=isolate.json -o badglobal.exe ./badglobal
 stderr 'isolate: code references process-owned global os.Stdout'
 stderr 'isolate: code references process-owned global os.Stdin'
 stderr 'isolate: code references process-owned global os.Stderr'
 stderr 'isolate: code references process-owned global os.Args'
 stderr 'isolate: code references process-owned global flag.CommandLine'
-! go build -o badread.exe ./badread
+! go build -isolate-config=isolate.json -o badread.exe ./badread
 stderr 'isolate: code references process-owned global os.Args'
 stderr 'isolate: code references process-owned global os.Stdout'
 stderr 'isolate: code references process-owned global flag.CommandLine'
 
 # Low-level package-state selection checks apply without a workflow executable.
-! go build -gcflags=all=-d=isolatepackages=encoding/json encoding/json
+! go build -isolate-config=isolate.json -gcflags=all=-d=isolatepackages=encoding/json encoding/json
 stderr 'isolate: code writes unselected imported global encoding/json/internal.TransformMarshalError'
-! go build -gcflags=all=-d=isolatepackages=main -o rejectmutation.exe ./badmutation
+! go build -isolate-config=isolate.json -gcflags=all=-d=isolatepackages=main -o rejectmutation.exe ./badmutation
 stderr -count=2 'isolate: code writes unselected imported global example.org/isolatefunctiontest/processstate.Map'
 stderr -count=2 'isolate: code writes unselected imported global example.org/isolatefunctiontest/processstate.Channel'
 stderr -count=2 'isolate: code writes unselected imported global example.org/isolatefunctiontest/processstate.Slice'
@@ -91,7 +74,7 @@ var counter = 41
 type Request struct { Name string }
 type Response struct { Message string; Counter int }
 
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Work(request Request, suffix string, delay time.Duration) (Response, error) {
     data, err := json.Marshal(request)
     if err != nil { return Response{}, err }
@@ -100,7 +83,7 @@ func Work(request Request, suffix string, delay time.Duration) (Response, error)
     return Response{request.Name + ":" + suffix, counter}, nil
 }
 
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func other() error { return nil }
 
 func PlainCounter() int { counter++; return counter }
@@ -143,7 +126,7 @@ import (
     "os"
 )
 
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Bad() {
     os.Stdout = nil
     os.Stdin = nil
@@ -161,7 +144,7 @@ import (
     "os"
 )
 
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Bad() {
     args := os.Args
     if len(args) != 0 { args[0] = "bad" }
@@ -198,7 +181,7 @@ import "strconv"
 
 var counter = 99
 
-//temporal:workflow
+// Explicit isolate entry in isolate.json.
 func Issue(id string) (string, error) {
     counter++
     return id + ":" + strconv.Itoa(counter), nil
@@ -324,29 +307,129 @@ func main() {
     fmt.Println("billing host after", billing.PlainCounter())
     fmt.Println("signature preserved")
 }
--- badgeneric/main.go --
-package main
-//temporal:workflow
-func Bad[T any](arg T) error { return nil }
-func main() {}
--- badvariadic/main.go --
-package main
-//temporal:workflow
-func Bad(args ...string) error { return nil }
-func main() {}
--- badplacement/main.go --
-package main
-//temporal:workflow
-var Bad = 1
-func main() {}
--- badarguments/main.go --
-package main
-//temporal:workflow extra
-func Bad() error { return nil }
-func main() {}
--- badduplicate/main.go --
-package main
-//temporal:workflow
-//temporal:workflow
-func Bad() error { return nil }
-func main() {}
+
+-- isolate.json --
+{
+ "format_version": 1,
+ "entries": [
+  {
+   "package": "example.org/isolatefunctiontest/badglobal",
+   "function": "Bad",
+   "value": "__isolate_value_Bad",
+   "invoke": "__isolate_invoke_Bad"
+  },
+  {
+   "package": "example.org/isolatefunctiontest/badread",
+   "function": "Bad",
+   "value": "__isolate_value_Bad",
+   "invoke": "__isolate_invoke_Bad"
+  },
+  {
+   "package": "example.org/isolatefunctiontest/billing",
+   "function": "Issue",
+   "value": "__isolate_value_Issue",
+   "invoke": "__isolate_invoke_Issue"
+  },
+  {
+   "package": "example.org/isolatefunctiontest/jobs",
+   "function": "Work",
+   "value": "__isolate_value_Work",
+   "invoke": "__isolate_invoke_Work"
+  },
+  {
+   "package": "example.org/isolatefunctiontest/jobs",
+   "function": "other",
+   "value": "__isolate_value_other",
+   "invoke": "__isolate_invoke_other"
+  }
+ ],
+ "sources": {
+  "example.org/isolatefunctiontest/badglobal": "package main\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Bad\nfunc __isolate_value_Bad() any { return Bad }\n\n//go:linkname __isolate_invoke_Bad\nfunc __isolate_invoke_Bad(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tif err := decode(); err != nil {\n\t\treturn err\n\t}\n\tBad()\n\treturn encode()\n}\n",
+  "example.org/isolatefunctiontest/badread": "package main\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Bad\nfunc __isolate_value_Bad() any { return Bad }\n\n//go:linkname __isolate_invoke_Bad\nfunc __isolate_invoke_Bad(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tif err := decode(); err != nil {\n\t\treturn err\n\t}\n\tBad()\n\treturn encode()\n}\n",
+  "example.org/isolatefunctiontest/billing": "package billing\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Issue\nfunc __isolate_value_Issue() any { return Issue }\n\n//go:linkname __isolate_invoke_Issue\nfunc __isolate_invoke_Issue(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tvar arg0 string\n\tif err := decode(isolateGeneratedBridge.Value{Value: arg0, Pointer: \u0026arg0}); err != nil {\n\t\treturn err\n\t}\n\tresult, err := Issue(arg0)\n\tif err != nil {\n\t\treturn err\n\t}\n\treturn encode(isolateGeneratedBridge.Value{Value: result, Pointer: \u0026result})\n}\n",
+  "example.org/isolatefunctiontest/jobs": "package jobs\n\nimport (\n\tisolateGeneratedBridge \"isolate\"\n\tisolateGeneratedImport0 \"time\"\n\t_ \"unsafe\"\n)\n\n//go:linkname __isolate_value_Work\nfunc __isolate_value_Work() any { return Work }\n\n//go:linkname __isolate_invoke_Work\nfunc __isolate_invoke_Work(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tvar arg0 Request\n\tvar arg1 string\n\tvar arg2 isolateGeneratedImport0.Duration\n\tif err := decode(isolateGeneratedBridge.Value{Value: arg0, Pointer: \u0026arg0}, isolateGeneratedBridge.Value{Value: arg1, Pointer: \u0026arg1}, isolateGeneratedBridge.Value{Value: arg2, Pointer: \u0026arg2}); err != nil {\n\t\treturn err\n\t}\n\tresult, err := Work(arg0, arg1, arg2)\n\tif err != nil {\n\t\treturn err\n\t}\n\treturn encode(isolateGeneratedBridge.Value{Value: result, Pointer: \u0026result})\n}\n\n//go:linkname __isolate_value_other\nfunc __isolate_value_other() any { return other }\n\n//go:linkname __isolate_invoke_other\nfunc __isolate_invoke_other(decode, encode func(...isolateGeneratedBridge.Value) error) error {\n\tif err := decode(); err != nil {\n\t\treturn err\n\t}\n\tif err := other(); err != nil {\n\t\treturn err\n\t}\n\treturn encode()\n}\n"
+ },
+ "state_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "example.org/isolatefunctiontest/badglobal",
+  "example.org/isolatefunctiontest/badmutation",
+  "example.org/isolatefunctiontest/badread",
+  "example.org/isolatefunctiontest/billing",
+  "example.org/isolatefunctiontest/host",
+  "example.org/isolatefunctiontest/jobs",
+  "example.org/isolatefunctiontest/processstate",
+  "example.org/isolatefunctiontest/reportcheck",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "readonly_packages": [
+  "bytes",
+  "context",
+  "crypto/rand",
+  "encoding/base32",
+  "encoding/base64",
+  "encoding/binary",
+  "encoding/json",
+  "encoding/json/internal",
+  "encoding/json/internal/jsonflags",
+  "encoding/json/internal/jsonopts",
+  "encoding/json/internal/jsonwire",
+  "encoding/json/jsontext",
+  "encoding/json/v2",
+  "errors",
+  "fmt",
+  "internal/reflectlite",
+  "io",
+  "log",
+  "log/internal",
+  "log/slog",
+  "log/slog/internal",
+  "log/slog/internal/buffer",
+  "math",
+  "math/big",
+  "math/rand",
+  "math/rand/v2",
+  "reflect",
+  "regexp",
+  "regexp/syntax",
+  "strconv",
+  "strings",
+  "time",
+  "unicode",
+  "unicode/utf16",
+  "unicode/utf8"
+ ],
+ "support_packages": null
+}

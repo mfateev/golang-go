@@ -20,8 +20,9 @@ import (
 	"cmd/go/internal/cfg"
 	"cmd/go/internal/load"
 	"cmd/go/internal/modload"
-	"cmd/internal/isolatepolicy"
+	metadatapolicy "cmd/internal/isolatepolicy"
 	"cmd/internal/objabi"
+	"internal/isolatepolicy"
 )
 
 var buildIsolateReport string
@@ -46,51 +47,6 @@ type isolateReportPackage struct {
 	InstanceState  bool   `json:"instance_state"`
 	HostReachable  bool   `json:"host_reachable"`
 	Classification string `json:"classification"`
-}
-
-// These standard packages replay initialization and route mutable globals
-// to each instance. Other standard packages are still instrumented: their
-// unlisted process state is denied to private execution.
-// The JSON v2 initializer writes callback globals in internal and jsonopts;
-// its readers need the same per-instance routing. Reflect is selected with
-// JSON because its type caches can retain values created by an isolate. Time
-// has lazy mutable zone state, but its clock and timer effects remain shared.
-var isolateOwnedStandardPackages = map[string]bool{
-	"encoding/binary":                  true,
-	"math":                             true,
-	"math/big":                         true,
-	"math/rand":                        true,
-	"math/rand/v2":                     true,
-	"crypto/rand":                      true,
-	"regexp":                           true,
-	"regexp/syntax":                    true,
-	"unicode":                          true,
-	"unicode/utf8":                     true,
-	"unicode/utf16":                    true,
-	"io":                               true,
-	"fmt":                              true,
-	"log":                              true,
-	"log/internal":                     true,
-	"log/slog":                         true,
-	"log/slog/internal":                true,
-	"log/slog/internal/buffer":         true,
-	"strconv":                          true,
-	"bytes":                            true,
-	"strings":                          true,
-	"errors":                           true,
-	"internal/reflectlite":             true,
-	"context":                          true,
-	"encoding/base32":                  true,
-	"encoding/base64":                  true,
-	"encoding/json":                    true,
-	"encoding/json/internal":           true,
-	"encoding/json/internal/jsonwire":  true,
-	"encoding/json/internal/jsonflags": true,
-	"encoding/json/internal/jsonopts":  true,
-	"encoding/json/jsontext":           true,
-	"encoding/json/v2":                 true,
-	"reflect":                          true,
-	"time":                             true,
 }
 
 // buildStaticIsolates links compiler-discovered function entries with the
@@ -137,7 +93,7 @@ func PrepareIsolateTest(ctx context.Context, ld *modload.Loader, b *Builder, hos
 		return host, err
 	}
 	if cfg.BuildCover || cfg.BuildN || cfg.BuildContext.Compiler != "gc" || cfg.BuildBuildmode != "default" {
-		return nil, fmt.Errorf("go test with //temporal:workflow requires the default gc build mode without -n or -cover")
+		return nil, fmt.Errorf("go test with explicit isolate entries requires the default gc build mode without -n or -cover")
 	}
 	var roots []*load.Package
 	for _, fn := range functions {
@@ -163,23 +119,39 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 		effectEntries = isolateTestEntries
 	}
 	forcedGcflags = append(forcedGcflags, "-d=isolateeffectentries="+strings.Join(effectEntries, ":"))
+	manifest, err := readIsolateConfig()
+	if err != nil {
+		base.Fatal(err)
+	}
+	var support []*load.Package
+	for _, p := range load.PackageList([]*load.Package{host}) {
+		if slices.Contains(manifest.SupportPackages, p.ImportPath) {
+			support = append(support, p)
+		}
+	}
+	// Adapter imports support invocation, not application state. Select from
+	// the original source graph before adding the public isolate API import.
+	graphs := make([][]*load.Package, len(loaded))
+	for i, root := range loaded {
+		graphs[i] = load.PackageList(append([]*load.Package{root}, support...))
+	}
 	// Runtime support is a set of implicit imports, not a new command's roots.
 	// Keep the module loader's complete graph so later test binaries can resolve
 	// dependencies that appear only in their test files.
 	var implicit []*load.Package
-	for _, path := range []string{"unsafe", "runtime", "internal/isolatebridge", "internal/isolateproto"} {
+	for _, path := range []string{"unsafe", "runtime", "internal/isolatebridge", "internal/isolateproto", "isolate"} {
 		var stack load.ImportStack
 		implicit = append(implicit, load.LoadPackageWithFlags(ld, path, host.Dir, &stack, nil, 0))
 	}
 	load.CheckPackageErrors(implicit)
 	for _, p := range loaded {
-		source, err := isolateInvokerSource(p, functions)
+		source, err := isolateAdapterSource(p)
 		if err != nil {
 			base.Fatal(err)
 		}
 		p.Internal.IsolateSource = source
 		for _, dep := range implicit {
-			if dep.ImportPath != "unsafe" && dep.ImportPath != "internal/isolatebridge" {
+			if dep.ImportPath != "unsafe" && dep.ImportPath != "isolate" {
 				continue
 			}
 			if slices.Contains(p.Imports, dep.ImportPath) {
@@ -208,83 +180,28 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 			b.addTransitiveCompileActions(vet, export)
 		}
 	}
-	// The Temporal dispatcher is entered from a host-created factory, so a
-	// workflow need not import it directly (a clock-only function is one such
-	// example). Include its decoding/encoding state in each function instance.
-	// This is the same trusted POC integration as the converter classification
-	// below; a general SDK support-package declaration is future work.
-	var support []*load.Package
-	for _, p := range load.PackageList([]*load.Package{host}) {
-		if p.ImportPath == "github.com/mfateev/sdk-go-poc/workflow" {
-			support = append(support, p)
-		}
-	}
-	// Application packages reached by a program own instance state. Only
-	// audited standard packages join that selection in this trusted POC.
 	programPaths := make([][]string, len(loaded))
 	programReachable := make([][]string, len(loaded))
 	allReachable := make(map[string]*load.Package)
 	selected := make(map[string]bool)
 	processStd := make(map[string]*load.Package)
-	// Converter dependencies include host registries, gRPC configuration and
-	// environment reads during initialization. Keep their startup on the host;
-	// their process state remains denied by compulsory memory checks. Only the
-	// exact reviewed metadata methods may enter a process service. The converter
-	// package itself replays its error values and default objects per instance.
-	processConverter := make(map[string]bool)
-	// Activities and SDK-compatible option/error/interceptor types may live beside marked
-	// workflow functions. Their SDK imports reach host logging and worker
-	// services that must initialize only in the
-	// process. Keep this pinned SDK graph process-owned too; activity functions
-	// still run exclusively on the host in this trusted POC. Application and
-	// workflow-support packages are not part of that SDK dependency graph.
-	processActivity := make(map[string]bool)
-	for _, root := range loaded {
-		for _, p := range load.PackageList(append([]*load.Package{root}, support...)) {
-			var processGraph map[string]bool
-			switch p.ImportPath {
-			case "go.temporal.io/sdk/converter":
-				processGraph = processConverter
-			case "go.opentelemetry.io/otel/trace", "go.temporal.io/sdk/activity", "go.temporal.io/sdk/temporal", "go.temporal.io/sdk/workflow", "go.temporal.io/sdk/client", "go.temporal.io/sdk/interceptor", "go.temporal.io/sdk/interceptor/tracing", "go.temporal.io/sdk/testsuite", "go.temporal.io/sdk/worker", "github.com/stretchr/testify/suite":
-				processGraph = processActivity
-			default:
-				continue
-			}
-			for _, dep := range load.PackageList([]*load.Package{p}) {
-				if !dep.Standard {
-					processGraph[dep.ImportPath] = true
-				}
-			}
-		}
-	}
-	for i, root := range loaded {
-		for _, p := range load.PackageList(append([]*load.Package{root}, support...)) {
-			if p.ImportPath == "" {
-				base.Fatalf("isolate %q has a dependency without an import path", root.ImportPath)
-			}
+	for i := range loaded {
+		for _, p := range graphs[i] {
 			programReachable[i] = append(programReachable[i], p.ImportPath)
 			allReachable[p.ImportPath] = p
-			// Test declarations also import the host harness. Its registries,
-			// worker configuration and bridge state must not replay inside the
-			// workflow. Workflow APIs and typed reference handles stay private.
-			if p != root && (p.ImportPath == "github.com/mfateev/sdk-go-poc/testsuite" || p.ImportPath == "github.com/mfateev/sdk-go-poc/worker" || p.ImportPath == "github.com/mfateev/sdk-go-poc/temporalbridge") {
-				continue
-			}
-			// UUID's reader and optional byte pool must be private when workflows
-			// use it too. Ordinary ownership/effect checks still apply to its code.
-			if (processConverter[p.ImportPath] || processActivity[p.ImportPath]) && p.ImportPath != "go.temporal.io/sdk/converter" && p.ImportPath != "github.com/google/uuid" && !isolateOwnedObservabilityPackage(p.ImportPath) && !isolateOwnedProtobufPackage(p.ImportPath) {
-				continue
-			}
 			if p.Standard {
 				processStd[p.ImportPath] = p
-				if !isolateOwnedStandardPackages[p.ImportPath] {
-					continue
-				}
 			}
-			programPaths[i] = append(programPaths[i], p.ImportPath)
-			selected[p.ImportPath] = true
+			if slices.Contains(manifest.StatePackages, p.ImportPath) {
+				programPaths[i] = append(programPaths[i], p.ImportPath)
+				selected[p.ImportPath] = true
+			}
 		}
 	}
+
+	// Transitional guard: the compiler still contains dependency-specific
+	// metadata rewrites. Keep their source provenance checks until those
+	// rewrites are replaced; an explicit manifest cannot confer trust.
 	// Compiler service scopes require the owning dependency module. Protobuf,
 	// API and telemetry sources retain exact version checks; the SDK supports
 	// official revisions and explicit development checkouts.
@@ -293,10 +210,10 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 	// Validate every compiled source that could receive callback provenance.
 	for _, p := range load.PackageList(append([]*load.Package{host}, loaded...)) {
 		for _, trusted := range []struct{ path, version string }{
-			{isolatepolicy.ProtobufModule, isolatepolicy.ProtobufVersion},
-			{isolatepolicy.TemporalAPIModule, isolatepolicy.TemporalAPIVersion},
-			{isolatepolicy.TemporalSDKModule, ""},
-			{isolatepolicy.OTelTraceModule, isolatepolicy.OTelVersion},
+			{metadatapolicy.ProtobufModule, metadatapolicy.ProtobufVersion},
+			{metadatapolicy.TemporalAPIModule, metadatapolicy.TemporalAPIVersion},
+			{metadatapolicy.TemporalSDKModule, ""},
+			{metadatapolicy.OTelTraceModule, metadatapolicy.OTelVersion},
 		} {
 			if p.ImportPath != trusted.path && !strings.HasPrefix(p.ImportPath, trusted.path+"/") {
 				continue
@@ -304,19 +221,19 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 			// SDK contrib integrations are separate modules and have no entries
 			// in the compiler service manifest. Their ordinary instrumented
 			// code never inherits the parent SDK's metadata privileges.
-			if trusted.path == isolatepolicy.TemporalSDKModule && strings.HasPrefix(p.ImportPath, trusted.path+"/contrib/") {
+			if trusted.path == metadatapolicy.TemporalSDKModule && strings.HasPrefix(p.ImportPath, trusted.path+"/contrib/") {
 				continue
 			}
 			validSource := p.Module != nil && p.Module.Path == trusted.path && p.Module.Version == trusted.version && p.Module.Replace == nil
-			if trusted.path == isolatepolicy.TemporalSDKModule && p.Module != nil && p.Module.Path == trusted.path {
+			if trusted.path == metadatapolicy.TemporalSDKModule && p.Module != nil && p.Module.Path == trusted.path {
 				var replacementPath, replacementVersion string
 				if p.Module.Replace != nil {
 					replacementPath, replacementVersion = p.Module.Replace.Path, p.Module.Replace.Version
 				}
-				validSource = isolatepolicy.TemporalSDKSource(replacementPath, replacementVersion)
+				validSource = metadatapolicy.TemporalSDKSource(replacementPath, replacementVersion)
 			}
 			if !validSource || cfg.BuildMod == "vendor" {
-				if trusted.path == isolatepolicy.TemporalSDKModule {
+				if trusted.path == metadatapolicy.TemporalSDKModule {
 					base.Fatalf("isolate: SDK metadata services require %s as the owning module, using an official revision or filesystem checkout; replacement modules, nested modules, and vendored sources are unsupported", trusted.path)
 				}
 				base.Fatalf("isolate: metadata services require %s@%s without a replacement, nested module, or vendored source; audit the service manifest before upgrading", trusted.path, trusted.version)
@@ -414,7 +331,7 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 		for _, path := range paths {
 			// UUID caches its Reader and optionally a mutable random-byte pool.
 			// Read-only handlers need a fresh layout, just like standard caches.
-			if isolateOwnedStandardPackages[path] || path == "github.com/google/uuid" || isolateOwnedObservabilityPackage(path) || isolateOwnedProtobufPackage(path) || path == "go.temporal.io/sdk/converter" {
+			if slices.Contains(manifest.ReadOnlyPackages, path) {
 				fmt.Fprintf(&source, "unsafe.Pointer(&isolatePackageDescriptor%d),\n", descriptorIndex[path])
 			}
 		}
@@ -486,7 +403,7 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 		cfg.BuildO = host.DefaultExecName() + cfg.ExeSuffix
 	}
 	if fi, err := os.Stat(cfg.BuildO); err == nil && fi.IsDir() {
-		base.Fatalf("go build with //temporal:workflow requires a file output, not directory %q", cfg.BuildO)
+		base.Fatalf("go build with explicit isolate entries requires a file output, not directory %q", cfg.BuildO)
 	}
 	var reportPath string
 	if buildIsolateReport != "" {
@@ -544,20 +461,6 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 	return pmain
 }
 
-// Value codecs and pools belong to the caller. Descriptor builders and default
-// registries remain process services with pinned, narrow metadata privileges.
-func isolateOwnedProtobufPackage(path string) bool {
-	switch path {
-	case "google.golang.org/protobuf/proto", "google.golang.org/protobuf/encoding/protojson", "google.golang.org/protobuf/encoding/prototext",
-		"google.golang.org/protobuf/reflect/protoreflect",
-		"google.golang.org/protobuf/internal/impl", "google.golang.org/protobuf/internal/order",
-		"google.golang.org/protobuf/internal/detrand", "google.golang.org/protobuf/internal/errors",
-		"google.golang.org/protobuf/internal/encoding/json", "google.golang.org/protobuf/internal/encoding/text":
-		return true
-	}
-	return false
-}
-
 // Match the compiler's GOROOT-only implementation boundary. All other packages
 // receive ownership checks, including dependencies with host-only startup.
 func isolateTrustedRuntimePackage(path string) bool {
@@ -569,27 +472,6 @@ func isolateTrustedRuntimePackage(path string) bool {
 		"internal/abi", "internal/goarch", "internal/goos", "internal/cpu", "internal/bytealg",
 		"internal/race", "internal/asan", "internal/msan", "internal/coverage/rtcov",
 		"internal/isolatebridge", "internal/isolateproto", "internal/isolatepolicy", "isolate":
-		return true
-	}
-	return false
-}
-
-// OTel API attribute encoders and header parsing caches are private, including
-// scratch copies for read-only handlers. The trace API initializes an automatic
-// tracer from process environment; keep that startup on the host. Native sink
-// providers use only its value/context API, never the automatic/global provider.
-func isolateOwnedObservabilityPackage(path string) bool {
-	switch path {
-	// The active read-only interceptor chain must be scratch-owned even when
-	// a query closure passes a context captured from the writable workflow.
-	case "github.com/mfateev/sdk-go-poc/internal/interceptorscope":
-		return true
-	// OpenTracing's context key, error values, optional global tracer and ext
-	// tag descriptors are ordinary private package state. Replay their startup
-	// in query/validator scratch layouts too; grant no process-state access.
-	case "github.com/opentracing/opentracing-go", "github.com/opentracing/opentracing-go/log", "github.com/opentracing/opentracing-go/ext":
-		return true
-	case "go.opentelemetry.io/otel/attribute", "go.opentelemetry.io/otel/attribute/internal", "go.opentelemetry.io/otel/baggage", "go.opentelemetry.io/otel/internal/baggage", "go.opentelemetry.io/otel/propagation":
 		return true
 	}
 	return false
