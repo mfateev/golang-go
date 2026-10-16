@@ -1,19 +1,18 @@
 # Statically linked isolate programs
 
-Status: **experimental static build, application-package state, selected
-standard-library state, and trusted host bridge implemented**. Broad
-standard-library ownership and effect classification and the native scheduler
-remain pending. Dynamic loading is a
+Status: **experimental static build**. Marked workflow functions and their
+package-state factories are linked into the host executable. Broad standard
+library ownership and effect classification and the native scheduler remain
+under development. Dynamic loading is a
 [future enhancement](./DYNAMIC_LOADING.md).
 
 ## Function entry points
 
-The source API now marks ordinary Go functions with `//temporal:workflow`. Build a
-host executable with an ordinary `tgo build`; the build discovers marked
-functions in its import graph and generates their invokers, handles, and
-package-state factories. No workflow `main`, config, or directory flag is
-required. A package may contain multiple marked functions and ordinary
-functions. Each marked function keeps its Go signature:
+Mark ordinary Go functions with `//temporal:workflow`. A normal `tgo build`
+discovers marked functions in the host's import graph and generates typed
+invokers, function handles, and package-state factories. A package may contain
+multiple marked functions and ordinary functions; functions in different
+packages can also be linked into the same executable.
 
 ```go
 //temporal:workflow
@@ -22,267 +21,52 @@ func Orders(input OrderRequest) (OrderResult, error) {
 }
 ```
 
-`isolate.LookupFunction(Orders)` returns a handle only for a discovered marked
-function. `Handle.Signature()` describes the original Go type.
-`Handle.Program(dispatch)` supplies an SDK dispatcher; `Handle.Invoke` calls
-the function directly inside the instance using typed argument and result
-slots. The SDK decodes into those slots and encodes the result there. Go
-values stay inside the isolate; only copied bytes cross the host boundary.
-The Temporal POC's worker wrapper uses this metadata from the ordinary
-`RegisterWorkflow(fn)` API and forwards unmarked registrations to the Go SDK.
-The generated host populates the function table after imported initializers;
-lookup and worker registration of marked functions therefore belong in host
-`main`, rather than package `init`.
+The marker leaves the function signature unchanged. The host uses
+`isolate.LookupFunction(Orders)` to get a handle. An SDK can pass
+`Handle.ProgramWithHandle(dispatch)` to `isolate.New`; the dispatcher decodes
+copied request bytes, invokes the function through typed argument and result
+slots, and returns copied bytes. Go values stay inside the isolate.
 
-The marker supports concrete top-level functions with any number of ordinary
-Go arguments, returning nothing, `error`, or `(result, error)`. Methods,
-generics, variadic arguments, cgo source, dot imports, and Temporal
-`workflow.Context` arguments are rejected. Entry generation currently supports
-a single executable `tgo build`; other command paths remain TODO.
+The generated function table is available after imported package
+initializers, so lookup and worker registration belong in host `main`, not
+package `init`. Each `isolate.New` call creates an instance with the selected
+function's package state and its own runtime configuration.
 
-State selection remains at package level: the containing package and its
-dependency graph get instance copies under the current ownership policy.
-Selected initializers run for every instance, including when the host also
-uses an ordinary function in that package. Function-level graph trimming and
-complete effect validation remain TODO. The trusted Temporal integration
-includes its SDK dispatcher state even for functions that do not import the
-dispatcher, and leaves the default converter graph provisionally process-owned.
-The pinned host activity SDK graph is also process-owned, allowing workflows
-and host activities to share an application package. Calling host activity SDK
-services from an isolate is outside the trusted POC contract.
-General framework support-package declarations remain productization work.
+Marked functions must be concrete, top-level functions with a body. Supported
+results are no values, `error`, or `(result, error)`. Methods, generics,
+variadic arguments, cgo source, dot imports, and Temporal
+`workflow.Context` arguments are rejected. Build integration currently
+requires one host executable using the default gc build mode; `-n` and
+`-cover` are not supported.
 
-`-isolate-report=ownership.json` also works for marked functions, listing each
-fully qualified function identity and its selected graph.
+State selection is currently conservative at package level. A marked
+function's package and dependency graph receive instance state under the
+current ownership policy. Functions in one package share that package's
+compiled definition and state layout; separate isolate instances still get
+separate package state. Function-level graph trimming and complete effect
+validation remain future work.
 
-## Legacy directory contract
-
-The following directory contract remains for earlier runtime probes. New
-workflow code uses marked function entries above.
-
-Each isolate program has its own directory containing `package main` and an
-`isolate.json` file. For example:
-
-```text
-worker/
-  main.go                         # process host
-  isolates/
-    orders/
-      main.go                     # package main
-      isolate.json                # {"name":"orders"}
-    billing/
-      main.go                     # package main
-      isolate.json                # {"name":"billing"}
-```
-
-The config's `name` is the stable logical program identity used by the host
-and persisted instance metadata. It must be unique in the worker. The
-directory is the build input and the config sits beside that program's
-sources. The MVP config does not list dependencies, global variables, or
-plugin paths; the Go loader and compiler must derive the dependency graph and
-state descriptors from the sources. A build should take an explicit set of
-program directories, rather than silently including every directory it can
-find.
-
-Each program's `main` keeps the ordinary Go signature. It imports the new
-[`isolate` package](../../src/isolate/isolate.go) for host communication:
-
-```go
-package main
-
-import "isolate"
-
-func main() {
-    input, err := isolate.Call(2, nil) // SDK-owned NextRequest operation
-    if err != nil { panic(err) }
-    // Decode input, run the workflow, and use isolate.Call for host work.
-    _ = input
-}
-```
-
-`Call` works through a trusted boundary. The host may hold a `NextRequest`
-command until the next input is ready. The static build registers
-each entry by its configured name, and `isolate.New` plus `Start` bind a new
-transport to one invocation. The bridge has no separate isolate heap or
-deterministic scheduler.
-
-From the worker module, build one executable with the host package and the
-selected programs:
-
-```bash
-tgo build -isolate-dir=./isolates/orders -isolate-dir=./isolates/billing -o worker ./host
-```
-
-Add `-isolate-report=ownership.json` to write a JSON inventory after a
-successful build. For each configured program it lists every reachable
-package. The package records distinguish instance state, a selected standard
-package probe, and standard packages still left process-wide. A
-`host_reachable` field identifies packages that have both a process copy and
-instance copies. This report describes the current build selection; a
-process-wide standard package in it has **not** been certified isolate-safe.
-
-The host can look up a program, start it, and answer its calls:
-
-```go
-program, ok := isolate.LookupProgram("orders")
-if !ok { panic("missing orders program") }
-instance, err := isolate.New(isolate.Config{Program: program})
-if err != nil { panic(err) }
-if err := instance.Start(); err != nil { panic(err) }
-requests := incomingRequestStream() // host-provided stream of []byte
-var pending []*isolate.Command
-var queued [][]byte
-for {
-    select {
-    case command := <-instance.Commands():
-        if command.Op == 2 { // SDK-owned NextRequest operation
-            pending = append(pending, command)
-        } else {
-            result, err := handle(command.Op, command.Payload)
-            command.Reply(result, err)
-        }
-    case request := <-requests:
-        queued = append(queued, request)
-    case <-instance.Done():
-        if err := instance.Wait(); err != nil { panic(err) }
-        return
-    }
-    for len(pending) > 0 && len(queued) > 0 {
-        pending[0].Reply(queued[0], nil)
-        pending, queued = pending[1:], queued[1:]
-    }
-}
-```
-
-This host loop is a temporary transport API. It does not yet implement the
-planned `Resume`/quiescence contract. `Wait` reports failure of the main
-goroutine; child goroutine failures and termination are not yet contained.
-The build automatically selects each
-configured `package main`, every reachable non-standard package, and selected
-standard packages `encoding/base32`, `encoding/base64`, the mutable
-`encoding/json` v2 family, `reflect`, and `time` for the package-state probe.
-`isolate.New` allocates their global layouts and replays initializers in
-dependency order for each instance. A build test starts one program twice and
-another once, with both importing an initialized shared package; each run
-observes fresh state. The test also checks separate host and instance copies
-of `encoding/base32.StdEncoding` and `encoding/base64.StdEncoding`. It also
-round-trips data through `encoding/json` and checks that two instances and the
-host see distinct v2 default-options objects. The JSON family and `reflect`
-are marked as selected in the report. The test also mutates `time.Local` in
-each isolate and checks that both start fresh while the host retains its value.
-The report marks `time` as selected. Other standard-library packages remain
-process-owned in this probe and initialize once at process startup. These
-checks do not establish complete JSON heap or effect ownership, and `time`'s
-timer and clock effects are not yet isolated; see
-PACKAGE_STATE.md.
-An isolate-selected package cannot directly assign to an unselected imported
-global. The build script checks direct, indexed, and field writes from
-initializers, `main`, and a closure. Selecting `encoding/json` alone rejects
-its v2 callback assignments into `encoding/json/internal`.
-A second negative build checks direct mutation through `copy`, `clear`,
-`delete`, `append`, channel send, and channel close.
-The generated top-level entry retains selected application packages but omits
-startup init tasks for packages unused by the host. Selected initializers run
-when `isolate.New` creates each instance. Those initializers should be pure:
-the trusted probe does not enforce determinism, and `Call` is
-unavailable until `Start`. The runtime nevertheless binds the instance's
-stable owner token during initializer replay and throughout the state runner,
-`main`, and its child goroutines. Heap allocation still uses the ordinary
-process allocator.
-If the host and an isolate both import a selected application package, the
-package has one compiled definition but separate process and per-instance
-globals. Its process initializer runs at startup, and its initializer also
-runs for each instance. A build test mutates the host copy and starts an
-isolate that sees its own initial state; the host copy stays unchanged.
-Deliberate process-owned application packages need a separate classification
-mechanism; keep them outside the isolate program's import graph for now.
-While an instance runs or initializes, `sync.Pool` returns fresh values and
-discards puts so its process-wide storage cannot pass temporary objects
-between instances. Other standard-library caches remain under audit.
-
-One final executable contains the host and all selected programs. The host
-selects a program by logical name and creates many instances of it. A build
-artifact identity is separate from that name; it changes when code or build
-inputs change. The source `main()` is an entry point for one instance, not a
-process startup function. The build must generate or retain a wrapper that
-binds each program's `main` to the host's entry table. Input, host calls, and
-completion use the isolate boundary API because `main()` has no parameters or
-return value. The Phase 1 `isolateproto.Register` function registry remains a
-reference-model mechanism, not the proposed source-level program contract.
-
-The build compiles each selected `package main` under its own import path and
-generates a synthetic top-level `main` that registers each program entry and
-calls the host's `main`. Ordinary `tgo build` still builds one top-level main;
-the experimental `-isolate-dir` path provides this explicit multi-program
-support.
-
-For every program, the build must identify the reachable packages, classify
-their mutable state as isolate-owned or process-owned, pass one coherent
-selection to all compiler invocations, and retain the selected package
-descriptors in a linked manifest. Instance creation replays only its program's
-selected package initializers in dependency order. Shared code and immutable
-metadata can be used by many instances; selected mutable state is allocated
-per instance. A package reached by several programs must have one compatible
-compiled definition and a consistent ownership classification.
+`-isolate-report=ownership.json` writes each marked function's reachable
+packages and their current state selection. Process-wide standard packages in
+the report have **not** been certified isolate-safe.
 
 ## Dependency versions
 
-The MVP has one linked Go package definition per import path. If two programs
-import the same path, the build uses one compatible version of that package.
-Ordinary Go module selection also resolves a module graph to one selected
-version per module path. Programs that need distinct major-version import
-paths, such as `example.org/dep` (v1) and `example.org/dep/v2`, can carry
-both definitions, subject to the same state and subset checks. This follows
-Go's [major-version import-path rule](https://go.dev/ref/mod#major-version-suffixes).
+A single executable contains one compiled definition for each Go import path,
+using the version selected by its module graph. Distinct major-version import
+paths, such as `example.org/dep` and `example.org/dep/v2`, can coexist if
+they pass the same state and subset checks. This follows Go's
+[major-version import-path rule](https://go.dev/ref/mod#major-version-suffixes).
 
-Two arbitrary versions behind the **same** import path are deferred. Making
-that work would require per-program package-path rewriting or another
-namespace mechanism, with consequences for type identity, shared packages,
-linking, and the ownership audit. Separate `go.mod` files in program
-directories do not by themselves make those versions coexist in one Go
-executable. The config therefore has no dependency-version override field.
+Two versions behind the same import path are not supported. Coexisting versions
+would require rewriting package paths or another namespace mechanism, affecting
+type identity, shared dependencies, linking, and ownership checks. Separate
+`go.mod` files do not make same-path versions coexist in one executable.
 
-## Linker feasibility probe
+## Current limitations
 
-On 2026-09-29, a direct `tgo tool compile`/`tgo tool link` probe on this fork's
-Linux arm64 toolchain compiled two separate `package main` units as
-`isolate/a` and `isolate/b`. A host blank-imported both compiled units and
-used entry stubs to call their `main` functions; the executable printed
-`2 12` after each changed its own global. This proves that distinct internal
-package paths can coexist in one static binary. It does not yet prove safe
-per-instance state, generated entry wrappers, or `cmd/go` integration.
-
-A second probe compiled the two units against different definitions of
-`example.org/dep`. With the **same** dependency import path, linking failed
-with a package fingerprint mismatch. After compiling the definitions as
-`example.org/dep` and `example.org/dep/v2`, the same host linked and
-printed `1 2`. These probes use manual import configurations; a supported
-build must generate and validate them.
-
-After the `isolate` boundary probe was implemented, a third direct-toolchain
-probe compiled `orders` and `billing` directories, each with a normal
-`package main`, an `isolate.json`, and calls to the then-current
-`isolate.Inbox` and `isolate.Call` API. The host linked both mains under unique
-internal package paths, bound a separate trusted boundary to each invocation,
-and answered their commands. It printed:
-
-```text
-orders orders:orders
-billing billing:billing
-seen ok ok
-```
-
-This proved the source-level API works from two separately compiled mains in
-one binary. The later `cmd/go` integration now reads the directory configs
-and generates the entry table automatically; the probe's native owned-state
-manifest remains separate.
-
-## Next build slice
-
-The [config reader](../../src/cmd/go/internal/isolatecfg/config.go),
-multi-main loader, generated entry table, reachable selected-package
-descriptor list, and package ownership report are in place. The remaining
-build work is to classify the broad standard library, support deliberate
-process-owned application packages, validate the complete selection against
-every reachable package, and replace the tagged table with the final
-contiguous instance layout.
+The compiler links all discovered entry functions statically into the host
+binary. Runtime loading and unloading are not implemented. Package ownership
+is selected at package level, the standard library audit is incomplete, and
+the POC is not a security boundary for arbitrary untrusted Go code. See the
+[productization plan](./PRODUCTIZATION_PLAN.md) for the remaining gates.

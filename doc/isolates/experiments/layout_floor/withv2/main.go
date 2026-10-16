@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package main
+package withv2
 
 import jsonv2 "encoding/json/v2"
 
 var options = jsonv2.DefaultOptionsV2()
 
-func main() { _ = options }
+//temporal:workflow
+func Entry() { _ = options }

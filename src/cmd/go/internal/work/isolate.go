@@ -18,26 +18,12 @@ import (
 
 	"cmd/go/internal/base"
 	"cmd/go/internal/cfg"
-	"cmd/go/internal/isolatecfg"
 	"cmd/go/internal/load"
 	"cmd/go/internal/modload"
 	"cmd/internal/isolatepolicy"
 	"cmd/internal/objabi"
 )
 
-type isolateDirsFlag []string
-
-func (f *isolateDirsFlag) String() string { return strings.Join(*f, ",") }
-
-func (f *isolateDirsFlag) Set(dir string) error {
-	if dir == "" {
-		return fmt.Errorf("empty isolate program directory")
-	}
-	*f = append(*f, dir)
-	return nil
-}
-
-var buildIsolateDirs isolateDirsFlag
 var buildIsolateReport string
 
 type isolateBuildReport struct {
@@ -107,78 +93,10 @@ var isolateOwnedStandardPackages = map[string]bool{
 	"time":                             true,
 }
 
-// runBuildIsolates is the first cmd/go integration slice for static isolate
-// programs. It links configured package main directories under their own
-// import paths with one host package main. The generated top-level main
-// registers every program before invoking the host main.
-func runBuildIsolates(ctx context.Context, args []string) {
-	if len(args) != 1 {
-		base.Fatalf("go build -isolate-dir requires exactly one host package")
-	}
-	if cfg.BuildBuildmode != "default" || cfg.BuildContext.Compiler != "gc" {
-		base.Fatalf("go build -isolate-dir currently requires the default gc build mode")
-	}
-	if cfg.BuildN || cfg.BuildCover {
-		base.Fatalf("go build -isolate-dir does not yet support -n or -cover")
-	}
-
-	programs, err := isolatecfg.LoadDirectories(buildIsolateDirs)
-	if err != nil {
-		base.Fatal(err)
-	}
-	if !slices.Contains(cfg.BuildContext.BuildTags, "phase0_e4") {
-		cfg.BuildContext.BuildTags = append(cfg.BuildContext.BuildTags, "phase0_e4")
-	}
-	ld := modload.NewLoader()
-	ld.InitWorkfile()
-	BuildInit(ld)
-	b := NewBuilder("", ld.VendorDirOrEmpty)
-	defer func() {
-		if err := b.Close(); err != nil {
-			base.Fatal(err)
-		}
-	}()
-
-	hosts := load.PackagesAndErrors(ld, ctx, load.PackageOpts{AutoVCS: true}, args)
-	load.CheckPackageErrors(hosts)
-	if len(hosts) != 1 || hosts[0].Name != "main" {
-		base.Fatalf("go build -isolate-dir requires one package main host")
-	}
-	host := hosts[0]
-	if host.ImportPath == "command-line-arguments" {
-		base.Fatalf("go build -isolate-dir requires a host package directory, not a list of Go files")
-	}
-
-	paths := make([]string, len(programs))
-	for i, p := range programs {
-		paths[i] = p.Dir
-	}
-	loaded := load.PackagesAndErrors(ld, ctx, load.PackageOpts{AutoVCS: true}, paths)
-	load.CheckPackageErrors(loaded)
-	if len(loaded) != len(programs) {
-		base.Fatalf("go build -isolate-dir: package loader returned %d packages for %d directories", len(loaded), len(programs))
-	}
-	seenPath := map[string]bool{host.ImportPath: true}
-	for i, p := range loaded {
-		if p.Name != "main" || p.ImportPath == "command-line-arguments" {
-			base.Fatalf("isolate %q in %q must be a package main with a unique import path", programs[i].Name, programs[i].Dir)
-		}
-		abs, err := filepath.Abs(p.Dir)
-		if err != nil || abs != programs[i].Dir {
-			base.Fatalf("isolate %q loaded from %q, want %q", programs[i].Name, p.Dir, programs[i].Dir)
-		}
-		if seenPath[p.ImportPath] {
-			base.Fatalf("duplicate host or isolate import path %q", p.ImportPath)
-		}
-		seenPath[p.ImportPath] = true
-	}
-	buildStaticIsolates(ctx, ld, b, host, programs, loaded, nil)
-}
-
-// buildStaticIsolates shares state selection and entry generation between
-// legacy directory programs and compiler-discovered function entries.
-func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, host *load.Package, programs []isolatecfg.Program, loaded []*load.Package, functions []isolateFunction) {
-	prepareStaticIsolates(ctx, ld, b, host, programs, loaded, functions, false)
+// buildStaticIsolates links compiler-discovered function entries with the
+// host and their per-package state factories.
+func buildStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, host *load.Package, loaded []*load.Package, functions []isolateFunction) {
+	prepareStaticIsolates(ctx, ld, b, host, loaded, functions, false)
 }
 
 // TestHasIsolates includes declarations and imports from both kinds of test
@@ -222,28 +140,21 @@ func PrepareIsolateTest(ctx context.Context, ld *modload.Loader, b *Builder, hos
 		return nil, fmt.Errorf("go test with //temporal:workflow requires the default gc build mode without -n or -cover")
 	}
 	var roots []*load.Package
-	var programs []isolatecfg.Program
 	for _, fn := range functions {
 		if !slices.Contains(roots, fn.Package) {
 			roots = append(roots, fn.Package)
-			programs = append(programs, isolatecfg.Program{Name: fn.Package.ImportPath, Dir: fn.Package.Dir})
 		}
 	}
-	return prepareStaticIsolates(ctx, ld, b, host, programs, roots, functions, true), nil
+	return prepareStaticIsolates(ctx, ld, b, host, roots, functions, true), nil
 }
 
-func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, host *load.Package, programs []isolatecfg.Program, loaded []*load.Package, functions []isolateFunction, testing bool) *load.Package {
+func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, host *load.Package, loaded []*load.Package, functions []isolateFunction, testing bool) *load.Package {
 	// Effect checks are compulsory throughout the linked graph, including
 	// host-initialized dependencies. Host execution returns through each guard.
 	forcedGcflags = append(forcedGcflags, "-d=isolateeffects=1")
 	var effectEntries []string
 	for _, fn := range functions {
 		effectEntries = append(effectEntries, fn.fullName())
-	}
-	if len(functions) == 0 {
-		for _, p := range loaded {
-			effectEntries = append(effectEntries, p.ImportPath+".main")
-		}
 	}
 	if testing {
 		isolateTestEntries = append(isolateTestEntries, effectEntries...)
@@ -261,42 +172,40 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 		implicit = append(implicit, load.LoadPackageWithFlags(ld, path, host.Dir, &stack, nil, 0))
 	}
 	load.CheckPackageErrors(implicit)
-	if len(functions) != 0 {
-		for _, p := range loaded {
-			source, err := isolateInvokerSource(p, functions)
-			if err != nil {
-				base.Fatal(err)
+	for _, p := range loaded {
+		source, err := isolateInvokerSource(p, functions)
+		if err != nil {
+			base.Fatal(err)
+		}
+		p.Internal.IsolateSource = source
+		for _, dep := range implicit {
+			if dep.ImportPath != "unsafe" && dep.ImportPath != "internal/isolatebridge" {
+				continue
 			}
-			p.Internal.IsolateSource = source
-			for _, dep := range implicit {
-				if dep.ImportPath != "unsafe" && dep.ImportPath != "internal/isolatebridge" {
-					continue
-				}
-				if slices.Contains(p.Imports, dep.ImportPath) {
-					continue
-				}
-				p.Imports = append(p.Imports, dep.ImportPath)
-				p.Internal.RawImports = append(p.Internal.RawImports, dep.ImportPath)
-				p.Internal.Imports = append(p.Internal.Imports, dep)
+			if slices.Contains(p.Imports, dep.ImportPath) {
+				continue
 			}
-			// A package without tests may already have a compile action when
-			// a later test binary discovers its marked entries. Its generated
-			// invoker needs the same implicit imports as a newly planned action.
-			export := b.BuildExportAction(ModeBuild, ModeBuild, p)
+			p.Imports = append(p.Imports, dep.ImportPath)
+			p.Internal.RawImports = append(p.Internal.RawImports, dep.ImportPath)
+			p.Internal.Imports = append(p.Internal.Imports, dep)
+		}
+		// A package without tests may already have a compile action when
+		// a later test binary discovers its marked entries. Its generated
+		// invoker needs the same implicit imports as a newly planned action.
+		export := b.BuildExportAction(ModeBuild, ModeBuild, p)
+		for _, dep := range p.Internal.Imports {
+			if !slices.ContainsFunc(export.Deps, func(a *Action) bool { return a.Package == dep }) {
+				export.Deps = append(export.Deps, b.BuildExportAction(ModeBuild, ModeBuild, dep))
+			}
+		}
+		if vet := b.actionCache[cacheKey{"vet", p}]; vet != nil {
 			for _, dep := range p.Internal.Imports {
-				if !slices.ContainsFunc(export.Deps, func(a *Action) bool { return a.Package == dep }) {
-					export.Deps = append(export.Deps, b.BuildExportAction(ModeBuild, ModeBuild, dep))
+				a := b.vetAction(ld, ModeBuild, ModeBuild, dep)
+				if !slices.Contains(vet.Deps, a) {
+					vet.Deps = append(vet.Deps, a)
 				}
 			}
-			if vet := b.actionCache[cacheKey{"vet", p}]; vet != nil {
-				for _, dep := range p.Internal.Imports {
-					a := b.vetAction(ld, ModeBuild, ModeBuild, dep)
-					if !slices.Contains(vet.Deps, a) {
-						vet.Deps = append(vet.Deps, a)
-					}
-				}
-				b.addTransitiveCompileActions(vet, export)
-			}
+			b.addTransitiveCompileActions(vet, export)
 		}
 	}
 	// The Temporal dispatcher is entered from a host-created factory, so a
@@ -305,11 +214,9 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 	// This is the same trusted POC integration as the converter classification
 	// below; a general SDK support-package declaration is future work.
 	var support []*load.Package
-	if len(functions) != 0 {
-		for _, p := range load.PackageList([]*load.Package{host}) {
-			if p.ImportPath == "github.com/mfateev/sdk-go-poc/workflow" {
-				support = append(support, p)
-			}
+	for _, p := range load.PackageList([]*load.Package{host}) {
+		if p.ImportPath == "github.com/mfateev/sdk-go-poc/workflow" {
+			support = append(support, p)
 		}
 	}
 	// Application packages reached by a program own instance state. Only
@@ -353,7 +260,7 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 	for i, root := range loaded {
 		for _, p := range load.PackageList(append([]*load.Package{root}, support...)) {
 			if p.ImportPath == "" {
-				base.Fatalf("isolate %q has a dependency without an import path", programs[i].Name)
+				base.Fatalf("isolate %q has a dependency without an import path", root.ImportPath)
 			}
 			programReachable[i] = append(programReachable[i], p.ImportPath)
 			allReachable[p.ImportPath] = p
@@ -488,16 +395,9 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 	source.WriteString(")\n")
 	fmt.Fprintf(&source, "//go:linkname isolateHostMain %s.main\n", objabi.PathToPrefix(host.ImportPath))
 	source.WriteString("func isolateHostMain()\n")
-	if len(functions) == 0 {
-		for i, p := range loaded {
-			fmt.Fprintf(&source, "//go:linkname isolateProgramMain%d %s.main\n", i, objabi.PathToPrefix(p.ImportPath))
-			fmt.Fprintf(&source, "func isolateProgramMain%d()\n", i)
-		}
-	} else {
-		for i, fn := range functions {
-			fmt.Fprintf(&source, "//go:linkname isolateFunctionValue%d %s.%s\nfunc isolateFunctionValue%d() any\n", i, objabi.PathToPrefix(fn.Package.ImportPath), fn.valueName(), i)
-			fmt.Fprintf(&source, "//go:linkname isolateFunctionInvoke%d %s.%s\nfunc isolateFunctionInvoke%d(decode, encode func(...isolatebridge.Value) error) error\n", i, objabi.PathToPrefix(fn.Package.ImportPath), fn.invokeName(), i)
-		}
+	for i, fn := range functions {
+		fmt.Fprintf(&source, "//go:linkname isolateFunctionValue%d %s.%s\nfunc isolateFunctionValue%d() any\n", i, objabi.PathToPrefix(fn.Package.ImportPath), fn.valueName(), i)
+		fmt.Fprintf(&source, "//go:linkname isolateFunctionInvoke%d %s.%s\nfunc isolateFunctionInvoke%d(decode, encode func(...isolatebridge.Value) error) error\n", i, objabi.PathToPrefix(fn.Package.ImportPath), fn.invokeName(), i)
 	}
 	descriptorIndex := make(map[string]int, len(selectedPaths))
 	for i, path := range selectedPaths {
@@ -530,29 +430,17 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 		}
 	}
 	source.WriteString("})\n")
-	if len(functions) == 0 {
-		for i, p := range programs {
-			fmt.Fprintf(&source, "isolatebridge.RegisterProgram(%s, isolatebridge.ProgramEntry{MetadataVersion:%d, Main: isolateProgramMain%d, NewState: isolateProgramState%d})\n", strconv.Quote(p.Name), isolateabi.MetadataVersion, i, i)
-		}
-	} else {
-		for i, fn := range functions {
-			root := slices.Index(loaded, fn.Package)
-			fmt.Fprintf(&source, "isolatebridge.RegisterFunction(isolatebridge.FunctionEntry{MetadataVersion:%d, Name:%q, Function:isolateFunctionValue%d(), Invoke:isolateFunctionInvoke%d, NewState:isolateProgramState%d, StateDescriptors:isolateProgramDescriptors%d})\n", isolateabi.MetadataVersion, fn.fullName(), i, i, root, root)
-		}
+	for i, fn := range functions {
+		root := slices.Index(loaded, fn.Package)
+		fmt.Fprintf(&source, "isolatebridge.RegisterFunction(isolatebridge.FunctionEntry{MetadataVersion:%d, Name:%q, Function:isolateFunctionValue%d(), Invoke:isolateFunctionInvoke%d, NewState:isolateProgramState%d, StateDescriptors:isolateProgramDescriptors%d})\n", isolateabi.MetadataVersion, fn.fullName(), i, i, root, root)
 	}
 	source.WriteString("}\nfunc main() { isolateHostMain() }\n")
 
 	buildInfo := host.Internal.BuildInfo
 	var entryGcflags []string
 	entryAliases := []string{host.ImportPath + ".main"}
-	if len(functions) == 0 {
-		for _, p := range loaded {
-			entryAliases = append(entryAliases, p.ImportPath+".main")
-		}
-	} else {
-		for _, fn := range functions {
-			entryAliases = append(entryAliases, fn.Package.ImportPath+"."+fn.valueName(), fn.Package.ImportPath+"."+fn.invokeName())
-		}
+	for _, fn := range functions {
+		entryAliases = append(entryAliases, fn.Package.ImportPath+"."+fn.valueName(), fn.Package.ImportPath+"."+fn.invokeName())
 	}
 	entryGcflags = append(entryGcflags, "-d=isolateentryaliases="+strings.Join(entryAliases, ":"))
 	if len(startupSkip) != 0 {
@@ -599,7 +487,7 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 		cfg.BuildO = host.DefaultExecName() + cfg.ExeSuffix
 	}
 	if fi, err := os.Stat(cfg.BuildO); err == nil && fi.IsDir() {
-		base.Fatalf("go build -isolate-dir requires a file output, not directory %q", cfg.BuildO)
+		base.Fatalf("go build with //temporal:workflow requires a file output, not directory %q", cfg.BuildO)
 	}
 	var reportPath string
 	if buildIsolateReport != "" {
@@ -622,18 +510,10 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 	b.Do(ctx, a)
 	if reportPath != "" {
 		report := isolateBuildReport{FormatVersion: 1, MetadataVersion: isolateabi.MetadataVersion, APIVersion: isolateabi.APIVersion, DeterminismVersion: isolateabi.DeterminismVersion}
-		if len(functions) == 0 {
-			for i, program := range programs {
-				paths := slices.Clone(programReachable[i])
-				slices.Sort(paths)
-				report.Programs = append(report.Programs, isolateReportProgram{Name: program.Name, Packages: paths})
-			}
-		} else {
-			for _, fn := range functions {
-				paths := slices.Clone(programReachable[slices.Index(loaded, fn.Package)])
-				slices.Sort(paths)
-				report.Programs = append(report.Programs, isolateReportProgram{Name: fn.fullName(), Packages: paths})
-			}
+		for _, fn := range functions {
+			paths := slices.Clone(programReachable[slices.Index(loaded, fn.Package)])
+			slices.Sort(paths)
+			report.Programs = append(report.Programs, isolateReportProgram{Name: fn.fullName(), Packages: paths})
 		}
 		paths := make([]string, 0, len(allReachable))
 		for path := range allReachable {

@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package main
+package withjsontext
 
 import "encoding/json/jsontext"
 
 var value jsontext.Value
 
-func main() { _ = value }
+//temporal:workflow
+func Entry() { _ = value }

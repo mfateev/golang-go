@@ -16,9 +16,14 @@ package jobs
 import (
  "fmt"
  "isolate"
+ "encoding/base32"
+ "encoding/base64"
+ jsonv2 "encoding/json/v2"
+ "reflect"
  "regexp"
  "regexp/syntax"
  "strconv"
+ "time"
  "unicode"
 )
 //temporal:workflow
@@ -40,9 +45,16 @@ func Probe(mode byte) (string,error) {
  }
  if unicode.Categories["L"]!=unicode.L || !unicode.Is(unicode.L,'A') { panic("host mutation leaked") }
  if !regexp.MustCompile(`\p{L}+`).MatchString("漢字") || strconv.Quote("é")!=`"é"` { panic("library behavior") }
+ if base32.StdEncoding.EncodeToString([]byte{0xfb})!="7M======" || base64.StdEncoding.EncodeToString([]byte{0xfb})!="+w==" { panic("encoding defaults changed") }
+ base32.StdEncoding=base32.HexEncoding
+ base64.StdEncoding=base64.URLEncoding
+ if base32.StdEncoding.EncodeToString([]byte{0xfb})!="VC======" || base64.StdEncoding.EncodeToString([]byte{0xfb})!="-w==" { panic("encoding bindings not private") }
+ if time.Local==time.UTC { panic("time.Local did not start fresh") }
+ time.Local=time.UTC
+ if time.Now().Location()!=time.UTC { panic("time.Local did not control time.Now") }
  // Exercise deterministic iteration of a shared map and reads of its values.
  for _,table:=range unicode.Categories { if table==nil { panic("nil category") } }
- return fmt.Sprintf("%p",unicode.L),nil
+ return fmt.Sprintf("%p|%d",unicode.L,reflect.ValueOf(jsonv2.DefaultOptionsV2()).Pointer()),nil
 }
 func Program(h isolate.Handle) isolate.Program {
  return h.ProgramWithHandle(func(h isolate.Handle) {
@@ -58,14 +70,24 @@ import (
  "context"
  "errors"
  "fmt"
+ "encoding/base32"
+ "encoding/base64"
+ jsonv2 "encoding/json/v2"
  "isolate"
+ "reflect"
  "runtime"
+ "strconv"
+ "strings"
  "time"
  "unicode"
  "example.org/frozenlibraries/jobs"
 )
 func main() {
  handle,ok:=isolate.LookupFunction(jobs.Probe);if !ok {panic("missing handle")}
+ hostBase32:=base32.StdEncoding.EncodeToString([]byte{0xfb})
+ hostBase64:=base64.StdEncoding.EncodeToString([]byte{0xfb})
+ hostOptions:=reflect.ValueOf(jsonv2.DefaultOptionsV2()).Pointer()
+ hostLocal:=time.Local
  // The canonical snapshot must not expose this mutable host backing data.
  unicode.L.R16[0].Lo++
  unicode.Categories["L"]=nil
@@ -90,15 +112,23 @@ func main() {
   }
  }
  identity,err:=run(0);if err!=nil{panic(err)}
+ unicodeIdentity,optionsIdentity,ok:=strings.Cut(identity,"|");if !ok {panic("missing library identities")}
+ hostOptionsText:=strconv.FormatUint(uint64(hostOptions),10)
+ if optionsIdentity==hostOptionsText {panic("JSON options shared with host")}
  runtime.GC()
- if next,err:=run(0);err!=nil || next!=identity {panic(fmt.Sprintf("snapshot reuse: %s %v",next,err))}
+ next,err:=run(0);if err!=nil {panic(err)}
+ nextUnicode,nextOptions,ok:=strings.Cut(next,"|");if !ok {panic("missing second library identities")}
+ if nextUnicode!=unicodeIdentity || nextOptions==optionsIdentity || nextOptions==hostOptionsText {panic("frozen or instance-owned library state changed")}
  for _,mode:=range []byte{1,2} {
   _,err:=run(mode)
   var ownership *isolate.OwnershipError
   if !errors.As(err,&ownership) {panic(fmt.Sprintf("mutation %d: %v",mode,err))}
  }
  if value,err:=run(3);err!=nil || value!="private" {panic(fmt.Sprintf("private binding: %s %v",value,err))}
- if value,err:=run(0);err!=nil || value!=identity {panic(fmt.Sprintf("isolate mutation leaked: %s %v",value,err))}
+ if value,err:=run(0);err!=nil || value=="" {panic(fmt.Sprintf("isolate mutation leaked: %s %v",value,err))}
  if unicode.Categories["L"]!=nil {panic("isolate changed host")}
+ if time.Local!=hostLocal {panic("isolate changed host time.Local")}
+ if got:=base32.StdEncoding.EncodeToString([]byte{0xfb});got!=hostBase32 {panic("isolate changed host base32")}
+ if got:=base64.StdEncoding.EncodeToString([]byte{0xfb});got!=hostBase64 {panic("isolate changed host base64")}
  fmt.Println("frozen library tables shared; host and isolate bindings remain private")
 }

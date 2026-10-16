@@ -5,6 +5,12 @@
 package main
 
 import (
+	_ "example.org/isolate-layout-measure/empty"
+	_ "example.org/isolate-layout-measure/withjson"
+	_ "example.org/isolate-layout-measure/withjsontext"
+	_ "example.org/isolate-layout-measure/withreflect"
+	_ "example.org/isolate-layout-measure/withtime"
+	_ "example.org/isolate-layout-measure/withv2"
 	"fmt"
 	"unsafe"
 )
@@ -12,6 +18,7 @@ import (
 // descriptor mirrors the experimental compiler record. This inspection is
 // intentionally tied to the current fork's runtime type and descriptor ABI.
 type descriptor struct {
+	metadataVersion uint64
 	path           string
 	key            unsafe.Pointer
 	typeSlot       unsafe.Pointer

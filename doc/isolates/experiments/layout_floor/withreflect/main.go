@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package main
+package withreflect
 
 import "reflect"
 
 var typ = reflect.TypeOf(0)
 
-func main() { _ = typ }
+//temporal:workflow
+func Entry() { _ = typ }

@@ -6,7 +6,7 @@
 // isolates. It does not modify the Go runtime or isolate package globals.
 //
 // The Task scheduler, Channel, and RangeMap are prototype APIs; the current
-// -isolate-dir MVP does not use them. Isolate programs use ordinary Go
+// marked-workflow MVP does not use them. Isolate programs use ordinary Go
 // goroutines, channels, and maps. The MVP does use NewPackageInstance from
 // this package to construct per-isolate package state.
 //

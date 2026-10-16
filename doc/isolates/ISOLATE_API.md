@@ -1,6 +1,9 @@
 # The Isolate API
 
-Status: **draft for review**. Companion to [ISOLATES_DESIGN.md](./ISOLATES_DESIGN.md),
+Status: **historical API draft**. Its per-directory program entry was
+superseded by marked workflow functions; see
+[STATIC_PROGRAMS.md](./STATIC_PROGRAMS.md) for the current API. Companion to
+[ISOLATES_DESIGN.md](./ISOLATES_DESIGN.md),
 [ISOLATE_SUBSET.md](./ISOLATE_SUBSET.md), [DETERMINISM.md](./DETERMINISM.md).
 
 Two surfaces: what the **host** calls to create and drive isolates, and what
@@ -223,52 +226,18 @@ answers them independently. No `Selector`, no `Future`.
 
 ### Program entry
 
-Each configured isolate directory contains an ordinary `package main` with an
-ordinary `func main()`. The program imports `isolate` to talk to the host. The
-runtime starts `main` once for each new instance; returning from it completes
-that instance.
-
-```go
-package main
-
-import "isolate"
-
-const (
-    completeOp uint32 = 1
-    nextRequestOp uint32 = 2
-)
-
-func main() {
-    request, err := isolate.Call(nextRequestOp, nil)
-    if err != nil { panic(err) }
-    result := runWorkflow(request)
-    if _, err := isolate.Call(completeOp, result); err != nil {
-        panic(err)
-    }
-}
-```
-
-The build compiles each program's `package main` under a distinct internal
-path and generates a process-owned table from stable names in `isolate.json`
-to program entries. The host holds a selector, never a pointer to an
-isolate-owned closure. See [STATIC_PROGRAMS.md](./STATIC_PROGRAMS.md).
-
-```go
-program, ok := isolate.LookupProgram("orders")
-if !ok { /* unknown program in this worker build */ }
-iso, err := isolate.New(isolate.Config{Program: program})
-```
-
-After `Start`, the host answers the program's first `NextRequest` command with
-the initial request bytes. The SDK may decode that reply and dispatch to a
-typed workflow function. A final SDK `Call` can carry a serialized result; the runtime
-itself only sees bytes and an opaque operation number. The logical program
-name belongs in persisted instance metadata, while a separate build artifact
-identity identifies the exact code and dependencies needed for replay.
+The earlier per-directory `package main` and `isolate.json` proposal has been
+retired. Current builds mark ordinary workflow functions with
+`//temporal:workflow`, then use `isolate.LookupFunction` to obtain a generated
+handle. The handle supplies an isolate program and typed invocation metadata;
+the SDK defines the copied-byte call protocol. See
+[STATIC_PROGRAMS.md](./STATIC_PROGRAMS.md).
 
 The source-level `isolate` package implements copied-byte `Call` through a
-per-goroutine boundary. `//temporal:workflow` functions are the current entry mechanism;
-the directory/configuration form above remains available for runtime probes.
+per-goroutine boundary. Marked builds make ownership and effect checks
+mandatory across dependencies. The runtime uses owner-specific allocations
+under the shared Go collector and supports deterministic native goroutine
+dispatch and host-controlled time.
 Marked builds make ownership and effect checks mandatory across dependencies.
 The runtime uses owner-specific allocations under the shared Go collector and
 supports deterministic native goroutine dispatch and host-controlled time.
@@ -528,12 +497,12 @@ implemented in the source-level `isolate` package.
 ```go
 package isolate
 
-// Program is a process-local handle to one statically linked program.
+// Program is a process-local handle created from a marked function's Handle.
 type Program struct{ id uint32 }
-func LookupProgram(name string) (Program, bool)
+func LookupFunction(fn any) (Handle, bool)
 
 type Config struct {
-	Program      Program       // handle from LookupProgram
+	Program      Program       // created from a marked function handle
 	MemoryLimit  int64         // enforced via span accounting
 	GoroutineLimit int
 	Clock        Clock         // host-injected time (see DETERMINISM.md)

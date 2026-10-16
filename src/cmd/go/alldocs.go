@@ -109,11 +109,6 @@
 // The function retains its Go signature; its SDK supplies the byte protocol.
 // See doc/isolates/STATIC_PROGRAMS.md for the current subset and state selection.
 //
-// The legacy experimental -isolate-dir flag selects a directory containing a package
-// main and an isolate.json file. It may be repeated to link several programs
-// into one executable with the host package main. The build command generates
-// the program lookup table; see doc/isolates/STATIC_PROGRAMS.md for its current
-// limitations.
 // The experimental -isolate-report flag writes a JSON report of reachable
 // packages and their current state selection after a successful isolate build.
 //

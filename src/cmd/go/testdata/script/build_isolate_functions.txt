@@ -5,18 +5,26 @@ stdout '\(isolates POC\)$'
 ! exists $GOROOT/bin/go$GOEXE
 go list -f '{{.Target}}' cmd/go
 stdout '[/\\]bin[/\\]tgo(\.exe)?$'
-go build -o host.exe ./host
+go build -isolate-report=ownership.json -o host.exe ./host
 exec ./host.exe
 stdout 'ordinary before 42'
 stdout 'marked first:x:42'
 stdout 'marked second:y:42'
 stdout 'ordinary after 43'
 stdout 'signature preserved'
+go run ./reportcheck ownership.json
+! go build -isolate-report=unused.json ./reportcheck
+stderr '-isolate-report requires a //temporal:workflow function in the host import graph'
+! go build -isolate-report=clobber.exe -o clobber.exe ./host
+stderr '-isolate-report must differ from executable output'
 
 # The cached build must retain generated invokers and state metadata.
 go build -o cached.exe ./host
 exec ./cached.exe
 stdout 'marked second:y:42'
+stdout 'billing invoice-1:100'
+stdout 'billing invoice-2:100'
+stdout 'billing host after 101'
 
 # The trusted entry wrapper must not be inlined into an instrumented caller.
 # Race builds force the handle-bearing environment onto the host heap, making
@@ -25,7 +33,14 @@ go build -race -gcflags=example.org/isolatefunctiontest/host=-d=isolateheap=2 -o
 exec ./owned-entry.exe
 stdout 'marked first:x:42'
 stdout 'marked second:y:42'
+stdout 'billing invoice-1:100'
+stdout 'billing invoice-2:100'
 stdout 'signature preserved'
+
+# The generated entry table and descriptors remain valid when stacks move.
+[cgo] [race] go build -race -gcflags=runtime=-d=maymorestack=runtime.mayMoreStackMove -o moved-entry.exe ./host
+[cgo] [race] exec ./moved-entry.exe
+[cgo] [race] stdout 'billing invoice-2:100'
 
 # Invalid directives fail during discovery, rather than silently running on host.
 ! go build ./badgeneric
@@ -38,6 +53,26 @@ stderr '//temporal:workflow must immediately precede a function declaration'
 stderr 'expected one //temporal:workflow directive without arguments'
 ! go build ./badduplicate
 stderr 'expected one //temporal:workflow directive without arguments'
+
+# Isolate functions cannot borrow process-owned globals.
+! go build -o badglobal.exe ./badglobal
+stderr 'isolate: code references process-owned global os.Stdout'
+stderr 'isolate: code references process-owned global os.Stdin'
+stderr 'isolate: code references process-owned global os.Stderr'
+stderr 'isolate: code references process-owned global os.Args'
+stderr 'isolate: code references process-owned global flag.CommandLine'
+! go build -o badread.exe ./badread
+stderr 'isolate: code references process-owned global os.Args'
+stderr 'isolate: code references process-owned global os.Stdout'
+stderr 'isolate: code references process-owned global flag.CommandLine'
+
+# Low-level package-state selection checks apply without a workflow executable.
+! go build -gcflags=all=-d=isolatepackages=encoding/json encoding/json
+stderr 'isolate: code writes unselected imported global encoding/json/internal.TransformMarshalError'
+! go build -gcflags=all=-d=isolatepackages=main -o rejectmutation.exe ./badmutation
+stderr -count=2 'isolate: code writes unselected imported global example.org/isolatefunctiontest/processstate.Map'
+stderr -count=2 'isolate: code writes unselected imported global example.org/isolatefunctiontest/processstate.Channel'
+stderr -count=2 'isolate: code writes unselected imported global example.org/isolatefunctiontest/processstate.Slice'
 
 -- go.mod --
 module example.org/isolatefunctiontest
@@ -70,6 +105,106 @@ func other() error { return nil }
 
 func PlainCounter() int { counter++; return counter }
 func Other() any { return other }
+-- reportcheck/main.go --
+package main
+
+import (
+    "encoding/json"
+    "os"
+)
+
+func main() {
+    data, err := os.ReadFile(os.Args[1])
+    if err != nil { panic(err) }
+    var report struct {
+        Programs []struct {
+            Name string `json:"name"`
+            Packages []string `json:"packages"`
+        } `json:"programs"`
+    }
+    if err := json.Unmarshal(data, &report); err != nil { panic(err) }
+    want := map[string]bool{
+        "example.org/isolatefunctiontest/jobs.Work": false,
+        "example.org/isolatefunctiontest/jobs.other": false,
+        "example.org/isolatefunctiontest/billing.Issue": false,
+    }
+    for _, program := range report.Programs {
+        if _, ok := want[program.Name]; !ok { panic("unexpected program " + program.Name) }
+        want[program.Name] = true
+    }
+    if len(report.Programs) != len(want) { panic("wrong program count") }
+    for name, found := range want { if !found { panic("missing program " + name) } }
+}
+-- badglobal/main.go --
+package main
+
+import (
+    "flag"
+    "os"
+)
+
+//temporal:workflow
+func Bad() {
+    os.Stdout = nil
+    os.Stdin = nil
+    os.Stderr = nil
+    os.Args[0] = "bad"
+    flag.CommandLine.Usage = nil
+}
+
+func main() {}
+-- badread/main.go --
+package main
+
+import (
+    "flag"
+    "os"
+)
+
+//temporal:workflow
+func Bad() {
+    args := os.Args
+    if len(args) != 0 { args[0] = "bad" }
+    out := os.Stdout
+    if out == nil { panic("missing stdout") }
+    flags := flag.CommandLine
+    _ = flags.Set("bad", "value")
+}
+
+func main() {}
+-- processstate/processstate.go --
+package processstate
+
+var Map = map[string]int{}
+var Channel = make(chan int, 1)
+var Slice = make([]int, 1, 2)
+-- badmutation/main.go --
+package main
+
+import "example.org/isolatefunctiontest/processstate"
+
+func main() {
+    delete(processstate.Map, "x")
+    clear(processstate.Map)
+    processstate.Channel <- 1
+    close(processstate.Channel)
+    _ = append(processstate.Slice, 1)
+    copy(processstate.Slice, []int{1})
+}
+-- billing/billing.go --
+package billing
+
+import "strconv"
+
+var counter = 99
+
+//temporal:workflow
+func Issue(id string) (string, error) {
+    counter++
+    return id + ":" + strconv.Itoa(counter), nil
+}
+
+func PlainCounter() int { counter++; return counter }
 -- host/main.go --
 package main
 
@@ -80,6 +215,7 @@ import (
     "reflect"
     "time"
 
+    "example.org/isolatefunctiontest/billing"
     "example.org/isolatefunctiontest/jobs"
 )
 
@@ -132,13 +268,60 @@ func run(name, suffix string) {
     if err := instance.Wait(); err != nil { panic(err) }
 }
 
+func runInvoice(id string) {
+    handle, ok := isolate.LookupFunction(billing.Issue)
+    if !ok { panic("missing billing workflow") }
+    program := handle.ProgramWithHandle(dispatchText)
+    instance, err := isolate.New(isolate.Config{Program: program})
+    if err != nil { panic(err) }
+    if err := instance.Start(); err != nil { panic(err) }
+    var command *isolate.Command
+    select {
+    case command = <-instance.Commands():
+    case <-instance.Done(): panic(instance.Wait())
+    }
+    if command.Op != 1 { panic("unexpected billing operation") }
+    command.Reply([]byte(id), nil)
+    select {
+    case command = <-instance.Commands():
+    case <-instance.Done(): panic(instance.Wait())
+    }
+    if command.Op != 2 { panic("unexpected billing completion") }
+    if got, want := string(command.Payload), id+":100"; got != want { panic(fmt.Sprintf("billing result %q, want %q", got, want)) }
+    fmt.Printf("billing %s\n", command.Payload)
+    command.Reply(nil, nil)
+    if err := instance.Wait(); err != nil { panic(err) }
+}
+
+func dispatchText(handle isolate.Handle) {
+    input, err := isolate.Call(1, nil)
+    if err != nil { panic(err) }
+    err = handle.Invoke(func(values ...isolate.Value) error {
+        if len(values) != 1 { panic("wrong argument count") }
+        *values[0].Pointer.(*string) = string(input)
+        return nil
+    }, func(values ...isolate.Value) error {
+        if len(values) != 1 { panic("wrong result count") }
+        output, ok := values[0].Value.(string)
+        if !ok { panic("wrong result type") }
+        _, err := isolate.Call(2, []byte(output))
+        return err
+    })
+    if err != nil { panic(err) }
+}
+
 func main() {
     if _, ok := isolate.LookupFunction(jobs.PlainCounter); ok { panic("unmarked function received isolate handle") }
+    if _, ok := isolate.LookupFunction(billing.PlainCounter); ok { panic("unmarked billing function received isolate handle") }
     if _, ok := isolate.LookupFunction(jobs.Other()); !ok { panic("private marked function not discovered") }
     fmt.Println("ordinary before", jobs.PlainCounter())
     run("first", "x")
     run("second", "y")
     fmt.Println("ordinary after", jobs.PlainCounter())
+    if billing.PlainCounter() != 100 { panic("host billing state changed unexpectedly") }
+    runInvoice("invoice-1")
+    runInvoice("invoice-2")
+    fmt.Println("billing host after", billing.PlainCounter())
     fmt.Println("signature preserved")
 }
 -- badgeneric/main.go --

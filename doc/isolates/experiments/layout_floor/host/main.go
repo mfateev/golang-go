@@ -7,21 +7,60 @@ package main
 import (
 	"fmt"
 	"isolate"
+	"os"
 	"runtime"
+
+	"example.org/isolate-layout-measure/empty"
+	"example.org/isolate-layout-measure/withjson"
+	"example.org/isolate-layout-measure/withjsontext"
+	"example.org/isolate-layout-measure/withreflect"
+	"example.org/isolate-layout-measure/withtime"
+	"example.org/isolate-layout-measure/withv2"
 )
+
+func dispatch(handle isolate.Handle) {
+	if err := handle.Invoke(func(...isolate.Value) error { return nil }, func(...isolate.Value) error { return nil }); err != nil {
+		panic(err)
+	}
+}
+
+func program(name string) isolate.Program {
+	var fn any
+	switch name {
+	case "empty":
+		fn = empty.Entry
+	case "withtime":
+		fn = withtime.Entry
+	case "withreflect":
+		fn = withreflect.Entry
+	case "withjsontext":
+		fn = withjsontext.Entry
+	case "withv2":
+		fn = withv2.Entry
+	case "withjson":
+		fn = withjson.Entry
+	default:
+		panic("unknown variant " + name)
+	}
+	handle, ok := isolate.LookupFunction(fn)
+	if !ok {
+		panic("missing workflow " + name)
+	}
+	return handle.ProgramWithHandle(dispatch)
+}
 
 func main() {
 	const count = 10000
-	program, ok := isolate.LookupProgram("program")
-	if !ok {
-		panic("missing program")
+	if len(os.Args) != 2 {
+		panic("pass one variant name")
 	}
+	selected := program(os.Args[1])
 	runtime.GC()
 	var before runtime.MemStats
 	runtime.ReadMemStats(&before)
 	instances := make([]*isolate.Isolate, count)
 	for index := range instances {
-		instance, err := isolate.New(isolate.Config{Program: program})
+		instance, err := isolate.New(isolate.Config{Program: selected})
 		if err != nil {
 			panic(err)
 		}

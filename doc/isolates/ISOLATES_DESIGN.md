@@ -98,17 +98,16 @@ and `reflect`. This list probes the compiler path; it is not the intended
 default ownership rule or a complete standard-library audit. Heap allocation
 ownership and cross-owner pointer enforcement are not implemented yet.
 
-### Statically linked programs
+### Statically linked workflow functions
 
-Each isolate program can live in its own directory with `package main` and a
-small `isolate.json` containing its stable logical name. The build selects
-program directories, compiles their mains under distinct internal paths, and
-links their entry wrappers into the host executable. Many instances of one
-program share its code while retaining separate selected package state. See
-[STATIC_PROGRAMS.md](./STATIC_PROGRAMS.md) for the proposed contract and the
-current linker probe. All programs in the executable use one compatible
-definition per Go import path. Arbitrary versions of the same import path in
-different programs are a future build-system question.
+The early per-directory `package main` and `isolate.json` proposal has been
+retired. The current source contract marks ordinary functions with
+`//temporal:workflow`. A normal build links every discovered function into
+one executable, and the host selects an entry with its generated handle. Each
+instance gets the selected entry's package state. See
+[STATIC_PROGRAMS.md](./STATIC_PROGRAMS.md) for the implemented subset and
+limitations. The executable contains one compatible definition per Go import
+path; arbitrary versions behind the same path remain unsupported.
 
 ### Suspend → compact → drop from root set
 

@@ -11,7 +11,7 @@ stdout '^compiled lifecycle passed$'
 [cgo] [race] stdout '^compiled lifecycle passed$'
 
 # A generated state factory whose initializer never returns is cancellable.
-go build -isolate-dir=./blocked -o startup-worker$GOEXE ./startup
+go build -o startup-worker$GOEXE ./startup
 exec ./startup-worker$GOEXE
 stdout '^compiled startup canceled$'
 
@@ -107,12 +107,19 @@ func main() {
     }
     fmt.Println("compiled lifecycle passed")
 }
--- blocked/isolate.json --
-{"name":"blocked"}
--- blocked/main.go --
-package main
-func init() { select {} }
-func main() {}
+-- blocked/blocked.go --
+package blocked
+
+import "isolate"
+
+func init() {
+    if isolate.IsActive() {
+        select {}
+    }
+}
+
+//temporal:workflow
+func Wait() error { return nil }
 -- startup/main.go --
 package main
 import (
@@ -121,13 +128,15 @@ import (
     "fmt"
     "isolate"
     "time"
+    "example.org/lifecycle/blocked"
 )
 func main() {
-    program, ok := isolate.LookupProgram("blocked")
-    if !ok { panic("missing startup program") }
+    handle, ok := isolate.LookupFunction(blocked.Wait)
+    if !ok { panic("missing startup workflow") }
     ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
     defer cancel()
-    instance, err := isolate.NewContext(ctx, isolate.Config{Program:program, Deterministic:true})
+    program := handle.ProgramWithHandle(func(isolate.Handle) {})
+    instance, err := isolate.NewContext(ctx, isolate.Config{Program:program})
     if instance != nil || !errors.Is(err, context.DeadlineExceeded) { panic(err) }
     fmt.Println("compiled startup canceled")
 }

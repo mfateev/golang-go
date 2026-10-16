@@ -5,12 +5,14 @@
 package main
 
 import (
+	_ "example.org/isolate-layout-measure/withtime"
 	"fmt"
 	"unsafe"
 )
 
 // descriptor mirrors the experimental compiler record.
 type descriptor struct {
+	metadataVersion uint64
 	path           string
 	key            unsafe.Pointer
 	typeSlot       unsafe.Pointer

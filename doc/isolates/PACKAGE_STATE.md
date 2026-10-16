@@ -212,10 +212,10 @@ independently reference the dependency's layout symbols.
 
 ## Static build integration
 
-The experimental `tgo build -isolate-dir` path now walks each configured
-program's package graph and selects its non-standard packages with one
-build-wide `-d=isolatepackages` value. The generated top-level main retains
-one descriptor for each selected package and passes the reachable subset to
+The `//temporal:workflow` build walks each entry package's dependency graph
+and selects its non-standard packages with one build-wide
+`-d=isolatepackages` value. The generated top-level main retains descriptors
+for the selected packages and passes each entry's reachable subset to
 `NewPackageInstance` when the host creates an instance. This reuses the
 descriptor validation and dependency-ordered initializer replay above.
 

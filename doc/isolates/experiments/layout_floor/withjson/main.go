@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package main
+package withjson
 
 import "encoding/json"
 
 var check = json.Valid
 
-func main() { _ = check }
+//temporal:workflow
+func Entry() { _ = check }

@@ -26,7 +26,8 @@ func (p Program) Name() string { return p.name }
 // MetadataVersion returns the compiler metadata contract for this program.
 func (p Program) MetadataVersion() uint32 { return p.entry.MetadataVersion }
 
-// LookupProgram finds a program selected by go build -isolate-dir.
+// LookupProgram finds a low-level program entry registered in this binary.
+// Workflow applications should use LookupFunction for compiler-marked entries.
 func LookupProgram(name string) (Program, bool) {
 	entry, ok := isolatebridge.LookupProgram(name)
 	if !ok {

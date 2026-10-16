@@ -1,5 +1,9 @@
 # Task Status: Modify Go runtime to support isolates
 
+This checklist preserves implementation history. The earlier per-directory
+`isolate.json` build path has been retired; `//temporal:workflow` is the
+current entry contract.
+
 ## Task Overview
 
 Add **isolates** to the Go runtime — a very large number of small, fully
@@ -13,7 +17,7 @@ isolates. Driving use case is Temporal workflow isolation.
 - [ISOLATE_API.md](./ISOLATE_API.md) — host API, isolate-side primitives, what workflow code looks like
 - [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) — **the plan**: phases, gating experiments, decision point
 - [PACKAGE_STATE.md](./PACKAGE_STATE.md) — initial process/isolate package-state partition and dependency probe
-- [STATIC_PROGRAMS.md](./STATIC_PROGRAMS.md) — per-directory config and static multi-program build direction
+- [STATIC_PROGRAMS.md](./STATIC_PROGRAMS.md) — marked function entries and static linking
 - [RUNTIME_REVOCATION.md](./RUNTIME_REVOCATION.md) — scheduler waiter ownership and `Kill` acceptance cases
 - [DYNAMIC_LOADING.md](./DYNAMIC_LOADING.md) — deferred feasibility of independently built programs loaded into one runtime
 - [TEMPORAL_POC.md](./TEMPORAL_POC.md) — trusted Temporal SDK integration plan and gates

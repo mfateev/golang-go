@@ -57,7 +57,6 @@ var bootstrapDirs = []string{
 	"cmd/go/internal/gover",
 	"cmd/go/internal/help",
 	"cmd/go/internal/imports",
-	"cmd/go/internal/isolatecfg",
 	"cmd/go/internal/list",
 	"cmd/go/internal/load",
 	"cmd/go/internal/lockedfile",

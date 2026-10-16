@@ -1,8 +1,10 @@
 # Future enhancement: independently built and loaded isolate programs
 
-Status: **deferred future enhancement, not part of the static MVP**. The MVP
-borrows the per-directory `package main` and `isolate.json` ideas while
-building every selected program into [one executable](./STATIC_PROGRAMS.md).
+Status: **deferred future enhancement, not part of the static MVP**. The
+current source contract marks ordinary Go functions with
+`//temporal:workflow`; the compiler links every discovered entry into
+[one executable](./STATIC_PROGRAMS.md). Dynamic loading would be a separate
+build and runtime capability.
 
 ## Finding
 
