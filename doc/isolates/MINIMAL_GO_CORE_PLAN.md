@@ -99,6 +99,18 @@ dependencies between removals. Update this plan as facts are established.
 
 - Add SDK-owned build and packaging entrypoints that fetch or use an explicitly
   pinned Go fork revision. Keep local development checkout support explicit.
+- Establish a generic compiler/core entry-registration contract before moving
+  registration generation into the SDK. Current generation injects imports of
+  `internal/isolatebridge` and `internal/isolateproto`, constructs state factories,
+  publishes compiler descriptors, and supplies entry-alias compiler flags.
+  Ordinary external generated sources cannot import those internal packages.
+  Define supported access to compiler-created entries, descriptors, and state
+  factories, with provenance and validation enforced by the core. Do not expose
+  arbitrary descriptor pointers or privileged callbacks as the replacement.
+- Add a generic fixture outside GOROOT that builds and executes through that
+  contract, including per-instance package initialization and generated entry
+  invocation. Require this fixture and migrated SDK builds/tests to pass before
+  removing the existing Go orchestration.
 - Move workflow discovery, registration generation, dependency/version policy,
   installers, release metadata, and Temporal integration CI into the SDK.
 - Preserve the `tgo` user command through the SDK driver. Preserve ordinary Go
@@ -170,7 +182,10 @@ the core exposes only documented, generic contracts needed by the integration.
   lifetime, race-detector, and goroutine-reuse patterns. Review every new field's
   initialization, inheritance, reset, and GC visibility.
 - Use the repository's `GOEXPERIMENT` machinery for coordinated experimental
-  feature enablement. Retain debug flags only for useful diagnostics and
+  feature enablement. Document the default and the bootstrap/build settings for
+  enabled and disabled configurations. Have the SDK driver explicitly select and
+  verify the required configuration for isolate builds/tests, including installed
+  and local-source toolchains. Retain debug flags only for useful diagnostics and
   development controls; remove superseded modes and phase-specific tags.
 - Reduce opaque pointers where concrete runtime types can express the contract.
   Keep justified unsafe ABI boundaries small and documented.
@@ -206,7 +221,19 @@ each change and the full applicable gates before completing the migration.
 
 - Ordinary non-isolate Go builds and tests still work. The SDK driver forwards
   ordinary commands correctly and builds/tests marked workflow programs.
-- Bootstrap and compiler script tests pass, including imports, inlining,
+- Bootstrap succeeds with the isolate experiment explicitly disabled and enabled.
+  Run the full ordinary Go suite with it disabled, and the isolate compiler,
+  runtime, race, SDK, and replay gates with it enabled. Record the actual bootstrap
+  and build settings for each configuration; enabled checks alone do not establish
+  that the disabled configuration works.
+- Verify that the SDK driver selects and checks the required experiment for
+  isolate builds/tests across installed and local-source toolchains. Unsupported
+  configurations fail clearly before an isolate can run without instrumentation.
+- The outside-GOROOT fixture builds and executes using the generic registration
+  contract, without Temporal dependencies or direct imports of Go internal
+  packages. Entry registration preserves compiler-metadata provenance and
+  per-instance initialization.
+- Compiler script tests pass, including imports, inlining,
   generics, package initialization, negative enforcement cases, and build-cache
   invalidation/reuse.
 - Runtime ownership, reference transfer, readonly access, resource accounting,
