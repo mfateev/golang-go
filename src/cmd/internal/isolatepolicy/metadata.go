@@ -6,7 +6,10 @@
 // metadata operations. It grants no package-wide allocation or access privilege.
 package isolatepolicy
 
-import "strings"
+import (
+	"path/filepath"
+	"strings"
+)
 
 const ProtobufModule = "google.golang.org/protobuf"
 const ProtobufVersion = "v1.36.11"
@@ -15,16 +18,17 @@ const TemporalAPIModule = "go.temporal.io/api"
 const TemporalAPIVersion = "v1.63.6"
 
 const TemporalSDKModule = "go.temporal.io/sdk"
-const TemporalSDKVersion = "v1.49.0"
 
-const TemporalSDKForkModule = "github.com/mfateev/temporal-go-sdk"
-const TemporalSDKForkVersion = "v1.49.0-isolates.1.0.20261012175541-b87b0a1d5dda"
-
-// TemporalSDKSource accepts only the upstream baseline and its audited patch.
-// Local directories and other fork revisions cannot inherit metadata privileges.
-func TemporalSDKSource(version, replacementPath, replacementVersion string) bool {
-	return version == TemporalSDKVersion && ((replacementPath == "" && replacementVersion == "") ||
-		(replacementPath == TemporalSDKForkModule && replacementVersion == TemporalSDKForkVersion))
+// TemporalSDKSource supports official SDK revisions and development checkouts.
+// The caller must also verify the owning module is TemporalSDKModule. Replacing
+// it with another module does not grant that module SDK metadata privileges.
+func TemporalSDKSource(replacementPath, replacementVersion string) bool {
+	if replacementPath == "" {
+		return replacementVersion == ""
+	}
+	return replacementVersion == "" && (filepath.IsAbs(replacementPath) ||
+		strings.HasPrefix(replacementPath, "./") || strings.HasPrefix(replacementPath, "../") ||
+		replacementPath == "." || replacementPath == "..")
 }
 
 const OTelTraceModule = "go.opentelemetry.io/otel/trace"

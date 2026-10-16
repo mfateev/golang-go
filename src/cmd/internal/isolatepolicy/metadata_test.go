@@ -8,20 +8,21 @@ import "testing"
 
 func TestTemporalSDKSource(t *testing.T) {
 	for _, test := range []struct {
-		version, path, replacement string
-		want                       bool
+		path, replacement string
+		want              bool
 	}{
-		{TemporalSDKVersion, "", "", true},
-		{TemporalSDKVersion, TemporalSDKForkModule, TemporalSDKForkVersion, true},
-		{"v1.50.0", TemporalSDKForkModule, TemporalSDKForkVersion, false},
-		{TemporalSDKVersion, "../temporal-go-sdk", "", false},
-		{TemporalSDKVersion, TemporalSDKForkModule, "", false},
-		{TemporalSDKVersion, TemporalSDKForkModule, "v1.49.0-isolates.2", false},
-		{TemporalSDKVersion, "example.org/temporal-go-sdk", TemporalSDKForkVersion, false},
-		{TemporalSDKVersion, "", TemporalSDKForkVersion, false},
+		{"", "", true},
+		{"../temporal-go-sdk-main", "", true},
+		{"./sdk", "", true},
+		{".", "", true},
+		{"/tmp/sdk-go-main", "", true},
+		{"../temporal-go-sdk-main", "v1.50.0", false},
+		{"github.com/mfateev/temporal-go-sdk", "v1.49.0-isolates.1", false},
+		{"example.org/temporal-go-sdk", "", false},
+		{"", "v1.50.0", false},
 	} {
-		if got := TemporalSDKSource(test.version, test.path, test.replacement); got != test.want {
-			t.Errorf("TemporalSDKSource(%q, %q, %q) = %v, want %v", test.version, test.path, test.replacement, got, test.want)
+		if got := TemporalSDKSource(test.path, test.replacement); got != test.want {
+			t.Errorf("TemporalSDKSource(%q, %q) = %v, want %v", test.path, test.replacement, got, test.want)
 		}
 	}
 }

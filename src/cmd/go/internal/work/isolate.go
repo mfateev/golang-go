@@ -285,9 +285,9 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 			selected[p.ImportPath] = true
 		}
 	}
-	// Compiler service scopes and their dynamic calls are valid only for the
-	// reviewed module versions. Replacements and nested modules cannot inherit
-	// a trusted namespace without a source audit.
+	// Compiler service scopes require the owning dependency module. Protobuf,
+	// API and telemetry sources retain exact version checks; the SDK supports
+	// official revisions and explicit development checkouts.
 	metadataServices := false
 	// Host-only implementations can be reached through process registries too.
 	// Validate every compiled source that could receive callback provenance.
@@ -295,7 +295,7 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 		for _, trusted := range []struct{ path, version string }{
 			{isolatepolicy.ProtobufModule, isolatepolicy.ProtobufVersion},
 			{isolatepolicy.TemporalAPIModule, isolatepolicy.TemporalAPIVersion},
-			{isolatepolicy.TemporalSDKModule, isolatepolicy.TemporalSDKVersion},
+			{isolatepolicy.TemporalSDKModule, ""},
 			{isolatepolicy.OTelTraceModule, isolatepolicy.OTelVersion},
 		} {
 			if p.ImportPath != trusted.path && !strings.HasPrefix(p.ImportPath, trusted.path+"/") {
@@ -313,14 +313,13 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 				if p.Module.Replace != nil {
 					replacementPath, replacementVersion = p.Module.Replace.Path, p.Module.Replace.Version
 				}
-				validSource = isolatepolicy.TemporalSDKSource(p.Module.Version, replacementPath, replacementVersion)
+				validSource = isolatepolicy.TemporalSDKSource(replacementPath, replacementVersion)
 			}
 			if !validSource || cfg.BuildMod == "vendor" {
-				var forkHint string
 				if trusted.path == isolatepolicy.TemporalSDKModule {
-					forkHint = "; the audited replacement " + isolatepolicy.TemporalSDKForkModule + "@" + isolatepolicy.TemporalSDKForkVersion + " is also supported"
+					base.Fatalf("isolate: SDK metadata services require %s as the owning module, using an official revision or filesystem checkout; replacement modules, nested modules, and vendored sources are unsupported", trusted.path)
 				}
-				base.Fatalf("isolate: metadata services require %s@%s without a replacement, nested module, or vendored source%s; audit the service manifest before upgrading", trusted.path, trusted.version, forkHint)
+				base.Fatalf("isolate: metadata services require %s@%s without a replacement, nested module, or vendored source; audit the service manifest before upgrading", trusted.path, trusted.version)
 			}
 			metadataServices = true
 		}

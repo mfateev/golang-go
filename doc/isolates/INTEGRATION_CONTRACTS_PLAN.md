@@ -14,7 +14,7 @@ ordinary Go SDK workflows on their existing execution path.
 | Isolate API | 1 | `isolate.CurrentContract`; checked by the POC SDK before definition creation and in startup requests/replies |
 | Determinism | 1 | Current shared random/select stream; checked as above and protected by retained observable histories |
 | Temporal byte protocol | 1 | Fixed `ISOL` startup header plus four little-endian uint32 versions; validated before application decoding |
-| SDK fork bindings | 1 | `internalbindings.IntegrationVersion`; exact audited module pin and definition-creation check |
+| SDK integration bindings | 1 | `internalbindings.IntegrationVersion` and definition-creation check; official SDK revisions or a local development checkout |
 
 Unsupported versions are rejected, including zero. There is no negotiated
 downgrade or silent fallback. The startup header is internal transport metadata;
@@ -63,7 +63,7 @@ versioned-integration fixture at GOMAXPROCS 1/8. This tests SDK upgrade and roll
 within determinism 1, not arbitrary old toolchain or application-code compatibility.
 The native CI matrix runs it on Linux/macOS arm64/amd64.
 
-Deploy matching host/workflow code, pin the audited SDK dependency, record
+Deploy matching host/workflow code, record the SDK source revision and
 `worker.GetIntegrationInfo()`, and run the retained replay corpus before upgrading.
 Workflow versioning controls application command changes. Future incompatible
 runtime behavior needs a new determinism version and a reviewed migration policy;

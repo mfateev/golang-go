@@ -134,7 +134,7 @@ converters, batch codecs and arbitrary converter I/O inside isolates remain
 excluded. See the SDK README and INTERCEPTORS.md for contracts and checks.
 Feature **9 (stable integration contracts)** versions compiler metadata, the
 isolate API, determinism and the startup byte protocol independently. The
-Temporal SDK integration uses supported hooks in an audited, pinned SDK fork
+Temporal SDK integration uses supported hooks on a branch synchronized with upstream main
 instead of private field access. Upgrade/rollback replay checks keep both older
 and candidate histories. See [Integration contracts](./INTEGRATION_CONTRACTS_PLAN.md).
 Feature 3 remains deferred. The validated determinism contract still excludes
