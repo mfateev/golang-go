@@ -19,6 +19,9 @@ stderr 'adds unsupported import "internal/isolatebridge"'
 cp bad-accessor.json other.json
 ! go build -isolate-config=other.json ./host
 stderr 'accessor entryValue must return the selected function Entry directly'
+cp bad-alias.json other.json
+! go build -isolate-config=other.json -o bad-alias$GOEXE ./host
+stderr 'adapter entryInvoke cannot alias another symbol'
 cp bad-abi.json other.json
 ! go build -isolate-config=other.json -o bad-abi$GOEXE ./host
 stderr 'cannot use entryInvoke'
@@ -93,3 +96,6 @@ func main(){
 
 -- bad-abi.json --
 {"format_version":1,"entries":[{"package":"example.org/manifest/jobs","function":"Entry","value":"entryValue","invoke":"entryInvoke"}],"sources":{"example.org/manifest/jobs":"package jobs\nimport(\"isolate\";_ \"unsafe\")\n//go:linkname entryValue\nfunc entryValue()any{return Entry}\n//go:linkname entryInvoke\nfunc entryInvoke(){}\n"}}
+
+-- bad-alias.json --
+{"format_version":1,"entries":[{"package":"example.org/manifest/jobs","function":"Entry","value":"entryValue","invoke":"entryInvoke"}],"sources":{"example.org/manifest/jobs":"package jobs\nimport(\"isolate\";_ \"unsafe\")\nfunc entryValue()any{return Entry}\nfunc entryInvoke(decode,encode func(...isolate.Value)error)error{return nil}\n\n//go:linkname entryInvoke example.org/other.Invoke\n"}}

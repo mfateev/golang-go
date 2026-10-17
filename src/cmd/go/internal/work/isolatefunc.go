@@ -179,6 +179,15 @@ func isolateAdapterSource(p *load.Package) ([]byte, error) {
 			declarations[fn.Name.Name] = fn
 		}
 	}
+	alternateAliases := make(map[string]bool)
+	for _, group := range parsed.Comments {
+		for _, comment := range group.List {
+			fields := strings.Fields(comment.Text)
+			if len(fields) > 2 && fields[0] == "//go:linkname" {
+				alternateAliases[fields[1]] = true
+			}
+		}
+	}
 	for _, entry := range config.Entries {
 		if entry.Package != p.ImportPath || (entry.ForTest != p.ForTest && !(entry.ForTest == "" && config.Sources[isolatePackageKey(p.ImportPath, p.ForTest)] == "")) {
 			continue
@@ -201,12 +210,8 @@ func isolateAdapterSource(p *load.Package) ([]byte, error) {
 			return nil, fmt.Errorf("isolate config: invoker %s must be a concrete function with a body", entry.Invoke)
 		}
 		for _, fn := range []*ast.FuncDecl{accessor, invoker} {
-			if fn.Doc != nil {
-				for _, comment := range fn.Doc.List {
-					if strings.HasPrefix(comment.Text, "//go:linkname") && strings.TrimSpace(comment.Text) != "//go:linkname "+fn.Name.Name {
-						return nil, fmt.Errorf("isolate config: adapter %s cannot alias another symbol", fn.Name.Name)
-					}
-				}
+			if alternateAliases[fn.Name.Name] {
+				return nil, fmt.Errorf("isolate config: adapter %s cannot alias another symbol", fn.Name.Name)
 			}
 		}
 		// Let the ordinary Go type checker validate the ABI in the source package.
