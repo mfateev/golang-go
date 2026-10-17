@@ -2,109 +2,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package isolatepolicy is the pinned compiler/build policy for trusted
-// metadata operations. It grants no package-wide allocation or access privilege.
+// Package isolatepolicy defines standard-library metadata boundaries.
+// Third-party libraries use explicit host integration APIs.
 package isolatepolicy
 
 import (
 	"strings"
 )
 
-const ProtobufModule = "google.golang.org/protobuf"
-const ProtobufVersion = "v1.36.11"
-
-const TemporalAPIModule = "go.temporal.io/api"
-const TemporalAPIVersion = "v1.63.6"
-
-const OTelTraceModule = "go.opentelemetry.io/otel/trace"
-const OTelVersion = "v1.44.0"
-
-// MetadataScope identifies functions that only construct/cache type descriptions
-// or read the built-in registries. Marshal/unmarshal, value allocation, and
-// application callbacks are deliberately absent. Private or custom descriptor
-// implementations are outside this initial manifest.
-func MetadataScope(pkg, function string) bool {
-	switch pkg {
-	case ProtobufModule + "/internal/impl":
-		return function == "(*MessageInfo).init" || function == "(*MessageInfo).initOnce" || function == "(*MessageInfo).Descriptor" || function == "needsInitCheck" || function == "(*ExtensionInfo).lazyInitSlow"
-	case ProtobufModule + "/internal/filedesc":
-		switch function {
-		case "(*Base).ParentFile", "(*Base).Parent", "(*Base).Index", "(*Base).Syntax", "(*Base).Name", "(*Base).FullName",
-			"(*Fields).Len", "(*Fields).Get", "(*Fields).ByNumber", "(*Oneofs).Len", "(*Oneofs).Get", "(*Oneof).IsSynthetic", "(*Oneof).Fields",
-			"(*Message).IsMessageSet", "(*Message).IsMapEntry", "(*Message).Oneofs", "(*Message).RequiredNumbers", "(*Message).ExtensionRanges",
-			"(*FieldRanges).Len", "(*FieldRanges).Get", "(*FieldRanges).Has", "(*FieldNumbers).Len", "(*FieldNumbers).Get",
-			"(*Fields).ByJSONName", "(*Fields).ByTextName", "(*OneofFields).Len", "(*OneofFields).Get", "(*OneofFields).ByNumber",
-			"(*Enum).Values", "(*Enum).IsClosed", "(*EnumValues).Len", "(*EnumValues).Get", "(*EnumValues).ByNumber", "(*EnumValues).ByName", "(*EnumValue).Number",
-			"(*Field).Number", "(*Field).Cardinality", "(*Field).Kind",
-			"(*Field).HasJSONName", "(*Field).JSONName", "(*Field).TextName",
-			"(*Field).HasPresence", "(*Field).HasOptionalKeyword", "(*Field).IsPacked",
-			"(*Field).IsList", "(*Field).IsMap", "(*Field).MapKey", "(*Field).MapValue",
-			"(*Field).HasDefault", "(*Field).Default", "(*Field).DefaultEnumValue",
-			"(*Field).ContainingOneof", "(*Field).ContainingMessage", "(*Field).Enum", "(*Field).Message",
-			"(*Field).IsMapEntry", "(*Field).EnforceUTF8", "(*Field).IsLazy":
-			return true
-		case "(*File).lazyInitOnce", "(*stringName).lazyInit",
-			"(*Message).Fields", "(*Fields).ByName",
-			"(*Names).lazyInit", "(*EnumRanges).lazyInit", "(*FieldRanges).lazyInit",
-			"(*FieldNumbers).Has", "(*OneofFields).lazyInit", "(*SourceLocations).lazyInit",
-			"(*Enums).lazyInit", "(*EnumValues).lazyInit", "(*Messages).lazyInit",
-			"(*Fields).lazyInit", "(*Oneofs).lazyInit", "(*Extensions).lazyInit",
-			"(*Services).lazyInit", "(*Methods).lazyInit":
-			return true
-		}
-	case ProtobufModule + "/reflect/protoregistry":
-		switch function {
-		case "(*Files).FindDescriptorByName", "(*Files).FindFileByPath", "(*Files).NumFiles", "(*Files).NumFilesByPackage",
-			"(*Types).FindEnumByName", "(*Types).FindMessageByName", "(*Types).FindMessageByURL",
-			"(*Types).FindExtensionByName", "(*Types).FindExtensionByNumber",
-			"(*Types).NumEnums", "(*Types).NumMessages", "(*Types).NumExtensions", "(*Types).NumExtensionsByMessage":
-			return true
-		}
-	}
-	return false
-}
-
-// RejectedMetadata preserves host behavior and fails explicitly in an isolate.
-// Registry visitors hold a process lock while invoking caller code, so granting
-// the whole method a service scope would give that caller metadata privileges.
-// Lazy option decoders and legacy descriptor hooks need a separate audit.
-func RejectedMetadata(pkg, function string) bool {
-	switch pkg {
-	case ProtobufModule + "/reflect/protoregistry":
-		switch function {
-		case "(*Files).RegisterFile", "(*Files).RangeFiles", "(*Files).RangeFilesByPackage",
-			"(*Types).RegisterEnum", "(*Types).RegisterMessage", "(*Types).RegisterExtension",
-			"(*Types).RangeEnums", "(*Types).RangeMessages", "(*Types).RangeExtensions", "(*Types).RangeExtensionsByMessage":
-			return true
-		}
-	case ProtobufModule + "/internal/impl":
-		switch function {
-		case "legacyLoadMessageInfo", "legacyLoadMessageDesc", "aberrantLoadMessageDesc":
-			return true
-		}
-	case ProtobufModule + "/internal/filedesc":
-		switch function {
-		case "(*File).Options", "(*Enum).Options", "(*Message).Options", "(*Field).Options",
-			"(*Message).ExtensionRangeOptions", "(*Oneof).Options", "(*Extension).Options", "(*Service).Options", "(*Method).Options", "(*File).OptionImports":
-			return true
-		}
-	}
-	return false
-}
-
-// These cells hold opaque metadata handles from the pinned process builder.
-// Only reads of the cell itself are allowed. This grants no read of arbitrary
-// receiver fields, mutation, array resizing, or private-reference publication.
+// MetadataGlobal identifies bounded reads of fixed standard-library tables.
 func MetadataGlobal(symbol string) bool {
-	if symbol == ProtobufModule+"/internal/order.IndexNameFieldOrder" || symbol == ProtobufModule+"/internal/order.GenericKeyOrder" {
-		return true
-	}
-	// These unexported arrays are fixed zero ID sentinels in the pinned OTel
-	// trace API. Reading their bytes exposes no heap object or mutable provider.
-	if symbol == OTelTraceModule+".nilTraceID" || symbol == OTelTraceModule+".nilSpanID" {
-		return true
-	}
-
 	// SHA backend flags select equivalent implementations. These scalar reads
 	// and the fixed round table expose no application object or write privilege.
 	switch symbol {
@@ -119,14 +26,7 @@ func MetadataGlobal(symbol string) bool {
 		"crypto/internal/fips140/sha256.ppc64sha2", "crypto/internal/fips140/sha256._K":
 		return true
 	}
-	if symbol == ProtobufModule+"/reflect/protoregistry.GlobalTypes" || symbol == ProtobufModule+"/reflect/protoregistry.GlobalFiles" {
-		return true
-	}
-	if !strings.HasPrefix(symbol, TemporalAPIModule+"/") {
-		return false
-	}
-	i := strings.LastIndexByte(symbol, '.')
-	return i != -1 && strings.HasPrefix(symbol[i+1:], "file_") && strings.HasSuffix(symbol, "_msgTypes")
+	return false
 }
 
 // The collector calls this implementation with the world stopped. It must not
@@ -180,14 +80,14 @@ func RuntimeHook(pkg, function string) bool {
 
 // MetadataCallbackPackage lists library implementations whose dynamic calls
 // may run inside an audited service. The compiler must also verify GOROOT
-// provenance or the pinned module source; matching this name is insufficient.
+// provenance; matching this package name is insufficient.
 func MetadataCallbackPackage(pkg string) bool {
 	switch pkg {
 	case "runtime", "reflect", "sync", "sync/atomic", "bytes", "strings",
 		"strconv", "fmt", "errors", "sort", "cmp", "slices", "maps", "iter", "unicode", "regexp/syntax":
 		return true
 	}
-	for _, prefix := range []string{"runtime/", "internal/", "encoding/", "unicode/", ProtobufModule + "/", TemporalAPIModule + "/"} {
+	for _, prefix := range []string{"runtime/", "internal/", "encoding/", "unicode/"} {
 		if strings.HasPrefix(pkg, prefix) {
 			return true
 		}

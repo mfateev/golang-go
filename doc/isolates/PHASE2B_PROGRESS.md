@@ -1006,3 +1006,20 @@ cross-compiled successfully.
 
 The unchanged `sdk-go-poc` passed its complete `tgo test ./...` suite using this
 toolchain, including example checks, worker, testsuite, and toolchain tests.
+
+
+## External library integration removed from Go
+
+The SDK now implements protobuf/generated-message and OTel source adapters with
+ordinary typed host operations and allocation scopes. Go no longer has external
+module pins, protobuf compiler rewriting, generated-message classification or
+protobuf runtime layout/registry privileges. Standard reflection and audited
+GOROOT metadata scopes remain. Generic constructor/pool, callback provenance and
+read-only opaque-host-write regressions are covered in core tests.
+
+The final enabled full distribution suite passed. Enabled/disabled bootstraps,
+disabled short runtime/reflect/sync/isolate/bridge tests, focused race plus static
+lock ranking and low-GC runs, and Linux/386 and Plan 9/amd64 cross-compilation
+passed. The final SDK full suite passed with SDK-owned adapters and saved-history
+replay. See [migration evidence](MINIMAL_GO_CORE_STATUS.md) and the complete
+[implemented API reference](RUNTIME_API.md).

@@ -1,7 +1,7 @@
 [!isolates] skip
 # A generic aggregate return converts a shape address to the concrete type.
 # Ownership probes must pass its address using the pointer ABI.
-go build -gcflags=all=-d=isolateheap=2,isolatemetadata=1 -o move.exe .
+go build -gcflags=all=-d=isolateheap=2 -o move.exe .
 exec ./move.exe
 
 -- go.mod --

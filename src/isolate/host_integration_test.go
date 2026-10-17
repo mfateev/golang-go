@@ -822,3 +822,30 @@ func TestHostReentryDoesNotInheritMetadataScope(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestHostConstructionDoesNotShareProcessPools(t *testing.T) {
+	var pool sync.Pool
+	pool.New = func() any { return new([256]byte) }
+	host := pool.Get().(*[256]byte)
+	pool.Put(host)
+	for range 2 {
+		instance := hostIntegrationInstance(t, false, func() {})
+		value, err := Allocate(instance.Allocator(), func() *[256]byte {
+			value := pool.Get().(*[256]byte)
+			pool.Put(value)
+			return value
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if hostIntegrationOwner(unsafe.Pointer(value)) == 0 {
+			t.Fatal("constructor borrowed a host pool entry")
+		}
+	}
+	pool.New = nil
+	for range 4 {
+		if value := pool.Get(); value != nil && hostIntegrationOwner(unsafe.Pointer(value.(*[256]byte))) != 0 {
+			t.Fatal("process pool retained a private constructor allocation")
+		}
+	}
+}

@@ -83,8 +83,8 @@ type poolLocal struct {
 //go:linkname runtime_randn runtime.randn
 func runtime_randn(n uint32) uint32
 
-//go:linkname runtime_isolateActive runtime.isolateActive
-func runtime_isolateActive() bool
+//go:linkname runtime_isolatePrivateAllocation runtime.isolatePrivateAllocation
+func runtime_isolatePrivateAllocation() bool
 
 var poolRaceHash [128]uint64
 
@@ -104,8 +104,9 @@ func (p *Pool) Put(x any) {
 	if x == nil {
 		return
 	}
-	if runtime_isolateActive() {
-		// An isolate-owned value must not enter a process-wide per-P pool.
+	if runtime_isolatePrivateAllocation() {
+		// Private construction also owns its allocations while executing host code.
+		// Neither application nor constructor values may enter process pools.
 		return
 	}
 	if race.Enabled {
@@ -137,7 +138,7 @@ func (p *Pool) Put(x any) {
 // If Get would otherwise return nil and p.New is non-nil, Get returns
 // the result of calling p.New.
 func (p *Pool) Get() any {
-	if runtime_isolateActive() {
+	if runtime_isolatePrivateAllocation() {
 		// Pool entries may come from another isolate or the host. Treat
 		// the pool as empty while an isolate is executing.
 		if p == nil {

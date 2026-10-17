@@ -196,56 +196,6 @@ func TestIsolateHeapCanonicalTypes(t *testing.T) {
 	runtime.KeepAlive(group)
 }
 
-func TestIsolateHeapMessageInfoPrefixes(t *testing.T) {
-	// The final 32 bytes remain unapproved, like size-class padding. The first
-	// three records each have eight immutable bytes followed by mutable cells.
-	data := runtime.IsolateMetadataBytesForTest(128)
-	base := unsafe.Pointer(unsafe.SliceData(data))
-	runtime.IsolateMessageInfoLayoutForTest(base, 32, 8, 3, []bool{true, true, false})
-	group := runtime.IsolateMetadataGroupForTest()
-	owner := nextAllocTestOwner()
-	check := func(want string, fn func()) {
-		defer func() {
-			got := recover()
-			if want == "" && got != nil || want != "" && got != want {
-				// testing.T owns process state. In particular, Helper must
-				// never allocate its helper-PC map under a synthetic owner.
-				runtime.IsolateMetadataRunForTest(nil, 0, func() {
-					t.Errorf("got %v, want %q", got, want)
-				})
-			}
-		}()
-		fn()
-	}
-	runtime.IsolateMetadataRunForTest(group, owner, func() {
-		dst := runtime.IsolateMetadataBytesForTest(8)
-		for i := 0; i < 3; i++ {
-			p := unsafe.Add(base, i*32)
-			check("", func() { runtime.IsolateHeapAccessForTest(p, 8, false) })
-			check("", func() { runtime.IsolateHeapAccessForTest(unsafe.Add(p, 7), 1, false) })
-			check("isolate: read from foreign heap", func() { runtime.IsolateHeapAccessForTest(unsafe.Add(p, 7), 2, false) })
-			check("isolate: read from foreign heap", func() { runtime.IsolateHeapAccessForTest(unsafe.Add(p, 8), 1, false) })
-			check("isolate: read from foreign heap", func() { runtime.IsolateHeapAccessForTest(p, 32, false) })
-			check("isolate: write to foreign heap", func() { runtime.IsolateHeapAccessForTest(p, 1, true) })
-			want := ""
-			if i == 2 { // An empty map-entry slot is not a canonical message root.
-				want = "isolate: foreign heap reference publication"
-			}
-			check(want, func() { runtime.IsolateHeapReferenceForTest(unsafe.Pointer(&dst[0]), p) })
-			check("isolate: foreign heap reference publication", func() { runtime.IsolateHeapReferenceForTest(unsafe.Pointer(&dst[0]), unsafe.Add(p, 1)) })
-		}
-		check("isolate: read from foreign heap", func() { runtime.IsolateHeapAccessForTest(unsafe.Add(base, 96), 1, false) })
-		runtime.IsolateMetadataScopeForTest(func() {
-			check("", func() { runtime.IsolateHeapAccessForTest(base, 128, false) })
-		})
-	})
-	// Ordinary process access to its own metadata is unaffected.
-	check("", func() { runtime.IsolateHeapAccessForTest(base, 128, true) })
-	runtime.GC()
-	runtime.KeepAlive(data)
-	runtime.KeepAlive(group)
-}
-
 //go:noinline
 func isolateUnregisteredType() *abi.ArrayType { return new(abi.ArrayType) }
 
@@ -554,4 +504,22 @@ func TestIsolateHeapStaticAndStack(t *testing.T) {
 		})
 	})
 	runtime.KeepAlive(group)
+}
+
+// Opaque host handles need no library-specific immutable-range registration.
+// A failed query write must leave both host memory and the workflow usable.
+func TestIsolateReadOnlyOpaqueHostWrite(t *testing.T) {
+	value := runtime.IsolateMetadataBytesForTest(8)
+	value[0] = 42
+	var failure any
+	runtime.IsolateReadOnlyRunForTest(runtime.IsolateMetadataGroupForTest(), nextAllocTestOwner(), nextAllocTestOwner(), func() {
+		defer func() { failure = recover() }()
+		runtime.IsolateHeapAccessForTest(unsafe.Pointer(&value[0]), uintptr(len(value)), true)
+	})
+	if failure != "isolate: read-only handler cannot mutate host state" {
+		t.Fatalf("host write diagnostic: %v", failure)
+	}
+	if value[0] != 42 {
+		t.Fatal("query modified host state")
+	}
 }

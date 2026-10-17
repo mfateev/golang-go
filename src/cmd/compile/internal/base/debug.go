@@ -52,7 +52,6 @@ type DebugFlags struct {
 	InterfaceCycles       int    `help:"allow anonymous interface cycles" concurrent:"ok"`
 	IsolateBuild          int    `help:"enable compulsory isolate checks independently of package state selection"`
 	IsolateEntrySkip      string `help:"colon-separated imports whose startup initialization is omitted from a generated isolate entry"`
-	IsolateMetadata       int    `help:"enable the pinned protobuf metadata service manifest in an isolate build"`
 	IsolateEffects        int    `help:"enforce isolate effect restrictions"`
 	IsolateEntryAliases   string `help:"compiler-generated entry linkname targets"`
 	IsolateEffectEntries  string `help:"colon-separated isolate entry functions for static effect diagnostics"`

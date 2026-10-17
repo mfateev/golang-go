@@ -110,11 +110,7 @@ func ScopeEffectsInBody(fn, source *ir.Func) {
 	if reason != "" {
 		fn.Pragma |= ir.Noinline | ir.IsolateEffectGuarded
 		guard := typecheck.Stmt(typecheck.Call(fn.Pos(), typecheck.LookupRuntime("isolateRejectEffect"), []ir.Node{ir.NewString(fn.Pos(), reason)}, false))
-		if typecheck.IsolateGuardPrefix(fn) {
-			fn.Body = append(fn.Body[:1], append([]ir.Node{guard}, fn.Body[1:]...)...)
-		} else {
-			fn.Body.Prepend(guard)
-		}
+		fn.Body.Prepend(guard)
 	}
 }
 

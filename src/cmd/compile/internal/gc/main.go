@@ -258,7 +258,6 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	// Apply bloop markings.
 	bloop.Walk(typecheck.Target)
 
-	typecheck.ScopeIsolateMetadata()
 	isolate.ScopeEffects()
 
 	// Interleaved devirtualization and inlining.

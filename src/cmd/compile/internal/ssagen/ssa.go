@@ -1521,7 +1521,7 @@ func (s *state) instrumentMove(t *types.Type, dst, src *ssa.Value) {
 func (s *state) instrument2(t *types.Type, addr, addr2 *ssa.Value, kind instrumentKind) {
 	if s.isolateHeapEnabled() && t.Size() != 0 {
 		check := func(p *ssa.Value, write bool) {
-			if !write && base.Debug.IsolateMetadata != 0 {
+			if !write && base.Debug.IsolateHeap != 0 {
 				root := p
 				for root.Op == ssaop.OpOffPtr || root.Op == ssaop.OpCopy || root.Op == ssaop.OpAddPtr || root.Op == ssaop.OpPtrIndex {
 					root = root.Args[0]
@@ -4972,7 +4972,7 @@ func (s *state) openDeferRecord(n *ir.CallExpr) {
 	if s.isolateHeapEnabled() {
 		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHostClosure"), true, nil, closureVal)
 	}
-	if base.Debug.IsolateMetadata != 0 && !base.Flag.CompilingRuntime {
+	if base.Debug.IsolateEffects != 0 && !base.Flag.CompilingRuntime {
 		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckMetadataClosure"), true, nil, closureVal)
 	}
 	if s.isolateEffectsEnabled() {
@@ -5100,7 +5100,7 @@ func (s *state) openDeferExit() {
 				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHostClosure"), true, nil, v)
 			}
 			codeptr := s.rawLoad(types.Types[types.TUINTPTR], v)
-			if base.Debug.IsolateMetadata != 0 && !base.Flag.CompilingRuntime {
+			if base.Debug.IsolateEffects != 0 && !base.Flag.CompilingRuntime {
 				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckMetadataCall"), true, nil, codeptr)
 			}
 			aux := ssa.ClosureAuxCall(s.f.ABIDefault.ABIAnalyzeTypes(nil, nil))
@@ -5400,7 +5400,7 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 		// supplied descriptor. Validate its target before granting caller code
 		// the service's process owner and revocation mask. Runtime internals have
 		// their own callback contracts and cannot grow stacks at these sites.
-		if base.Debug.IsolateMetadata != 0 && !base.Flag.CompilingRuntime && (k == callNormal || k == callTail || k == callDefer) {
+		if base.Debug.IsolateEffects != 0 && !base.Flag.CompilingRuntime && (k == callNormal || k == callTail || k == callDefer) {
 			if closure != nil {
 				codeptr = s.rawLoad(types.Types[types.TUINTPTR], closure)
 			}

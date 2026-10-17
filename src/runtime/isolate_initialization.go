@@ -4,7 +4,11 @@
 
 package runtime
 
-import "internal/runtime/atomic"
+import (
+	"internal/abi"
+	"internal/runtime/atomic"
+	"unsafe"
+)
 
 // Shared-cache initialization is process work, not persistent goroutine state.
 // Keep entries only while initializers run, rather than growing every g. The
@@ -18,7 +22,7 @@ import "internal/runtime/atomic"
 type isolateInitializationEntry struct {
 	gp    *g
 	next  atomic.Pointer[isolateInitializationEntry]
-	state *isolateProtoInitialization
+	state *isolateInitialization
 	depth uint32
 }
 
@@ -38,22 +42,22 @@ func isolateInitializationForG(gp *g) *isolateInitializationEntry {
 }
 
 //go:nosplit
-func isolateCurrentInitialization() *isolateProtoInitialization {
+func isolateCurrentInitialization() *isolateInitialization {
 	if entry := isolateInitializationForG(getg()); entry != nil {
 		return entry.state
 	}
 	return nil
 }
 
-func isolateBeginInitialization(info any, library bool) *isolateProtoInitialization {
+func isolateBeginInitialization() *isolateInitialization {
 	gp := getg()
 	entry := isolateInitializationForG(gp)
-	var parent *isolateProtoInitialization
+	var parent *isolateInitialization
 	if entry != nil {
 		parent = entry.state
 		entry.state = nil // Exclude the recorder's own allocations.
 	}
-	state := &isolateProtoInitialization{info: info, parent: parent, library: library}
+	state := &isolateInitialization{parent: parent}
 	if entry == nil {
 		entry = &isolateInitializationEntry{gp: gp}
 		lock(&isolateInitializations.mu)
@@ -67,7 +71,7 @@ func isolateBeginInitialization(info any, library bool) *isolateProtoInitializat
 	return state
 }
 
-func isolateEndInitialization(state *isolateProtoInitialization) {
+func isolateEndInitialization(state *isolateInitialization) {
 	entry := state.entry
 	if entry.gp != getg() || entry.state != state || entry.depth == 0 {
 		throw("isolate: cache initialization scope changed")
@@ -88,4 +92,29 @@ func isolateEndInitialization(state *isolateProtoInitialization) {
 		link = &current.next
 	}
 	throw("isolate: cache initialization entry missing")
+}
+
+// Only audited standard-library initializers use this allocation recorder.
+type isolateInitializationAllocation struct {
+	p    unsafe.Pointer
+	size uintptr
+	typ  *abi.Type
+	next *isolateInitializationAllocation
+}
+type isolateInitialization struct {
+	allocations *isolateInitializationAllocation
+	parent      *isolateInitialization
+	entry       *isolateInitializationEntry
+}
+
+func isolateRecordInitializationAllocation(p unsafe.Pointer, size uintptr, typ *abi.Type) {
+	gp := getg()
+	state := isolateCurrentInitialization()
+	if state == nil || gp.isolateOwner != 0 {
+		return
+	}
+	state.entry.state = nil
+	record := &isolateInitializationAllocation{p: p, size: size, typ: typ, next: state.allocations}
+	state.allocations = record
+	state.entry.state = state
 }

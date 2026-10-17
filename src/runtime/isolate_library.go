@@ -83,8 +83,8 @@ func isolateReadOnlyLibraryRange(p unsafe.Pointer, size uintptr) bool {
 // Follow only allocations recorded while audited table initializers execute.
 // Publishing an owner-zero root never grants access to unrelated process
 // objects, allocation padding, lazy caches, or another isolate's data.
-func isolatePublishLibraryGraph(next *isolateLibrarySnapshot, roots []unsafe.Pointer, allocations *isolateProtoAllocation) {
-	byBase := make(map[unsafe.Pointer][]*isolateProtoAllocation)
+func isolatePublishLibraryGraph(next *isolateLibrarySnapshot, roots []unsafe.Pointer, allocations *isolateInitializationAllocation) {
+	byBase := make(map[unsafe.Pointer][]*isolateInitializationAllocation)
 	for allocation := allocations; allocation != nil; allocation = allocation.next {
 		base := unsafe.Pointer(isolateTypeObjectBase(allocation.p))
 		byBase[base] = append(byBase[base], allocation)

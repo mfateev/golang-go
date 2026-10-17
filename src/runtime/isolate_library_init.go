@@ -34,7 +34,7 @@ func isolatePrepareFrozenLibraries(paths []string, keys, types, tasks []unsafe.P
 			next.parts[base] = append([]isolateTypePart(nil), parts...)
 		}
 	}
-	state := isolateBeginInitialization(nil, true)
+	state := isolateBeginInitialization()
 	oldBases := gp.isolateState
 	gp.isolateState = table
 	defer func() {

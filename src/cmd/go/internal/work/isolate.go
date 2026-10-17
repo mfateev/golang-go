@@ -20,7 +20,6 @@ import (
 	"cmd/go/internal/cfg"
 	"cmd/go/internal/load"
 	"cmd/go/internal/modload"
-	metadatapolicy "cmd/internal/isolatepolicy"
 	"cmd/internal/objabi"
 	"internal/isolatepolicy"
 )
@@ -169,35 +168,6 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 				selected[p.ImportPath] = true
 			}
 		}
-	}
-
-	// Transitional guard: the compiler still contains dependency-specific
-	// metadata rewrites. Keep their source provenance checks until those
-	// rewrites are replaced; an explicit manifest cannot confer trust.
-	// Compiler service scopes require the owning dependency module. Protobuf,
-	// API and telemetry sources retain exact version checks; the SDK supports
-	// official revisions and explicit development checkouts.
-	metadataServices := false
-	// Host-only implementations can be reached through process registries too.
-	// Validate every compiled source that could receive callback provenance.
-	for _, p := range load.PackageList(append([]*load.Package{host}, loaded...)) {
-		for _, trusted := range []struct{ path, version string }{
-			{metadatapolicy.ProtobufModule, metadatapolicy.ProtobufVersion},
-			{metadatapolicy.TemporalAPIModule, metadatapolicy.TemporalAPIVersion},
-			{metadatapolicy.OTelTraceModule, metadatapolicy.OTelVersion},
-		} {
-			if p.ImportPath != trusted.path && !strings.HasPrefix(p.ImportPath, trusted.path+"/") {
-				continue
-			}
-			validSource := p.Module != nil && p.Module.Path == trusted.path && p.Module.Version == trusted.version && p.Module.Replace == nil
-			if !validSource || cfg.BuildMod == "vendor" {
-				base.Fatalf("isolate: metadata services require %s@%s without a replacement, nested module, or vendored source; audit the service manifest before upgrading", trusted.path, trusted.version)
-			}
-			metadataServices = true
-		}
-	}
-	if metadataServices {
-		forcedGcflags = append(forcedGcflags, "-d=isolatemetadata=1")
 	}
 
 	hostReachable := make(map[string]bool)

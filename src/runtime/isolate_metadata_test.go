@@ -355,30 +355,6 @@ func TestIsolateMetadataStringOwnership(t *testing.T) {
 	runtime.KeepAlive(group)
 }
 
-func TestIsolatePrivateProtoMetadataOwner(t *testing.T) {
-	group := runtime.IsolateMetadataGroupForTest()
-	var cache []byte
-	runtime.IsolateMetadataRunForTest(group, 973, func() {
-		cache = runtime.IsolateMetadataBytesForTest(128)
-		runtime.IsolatePrivateProtoScopeForTest(unsafe.Pointer(&cache[0]), func() {
-			if runtime.IsolateMetadataOwnerForTest() != 973 || runtime.IsolateMetadataDepthForTest() != 0 {
-				t.Fatal("private coder cache acquired process privileges")
-			}
-			value := runtime.IsolateMetadataBytesForTest(128)
-			if owner, ok := runtime.IsolateAllocOriginForTest(unsafe.Pointer(&value[0])); !ok || owner != 973 {
-				t.Fatalf("private cache allocation owner=(%d,%v)", owner, ok)
-			}
-		})
-	})
-	runtime.IsolateMetadataRunForTest(runtime.IsolateMetadataGroupForTest(), 974, func() {
-		defer func() {
-			if recover() == nil {
-				t.Error("foreign private cache receiver accepted")
-			}
-		}()
-		runtime.IsolatePrivateProtoScopeForTest(unsafe.Pointer(&cache[0]), func() { t.Error("foreign cache callback ran") })
-	})
-}
 func TestIsolateMetadataReturnStringOwnership(t *testing.T) {
 	source := strings.Repeat("descriptor-name", 200)
 	group := runtime.IsolateMetadataGroupForTest()

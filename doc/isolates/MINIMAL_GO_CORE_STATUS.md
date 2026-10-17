@@ -52,7 +52,7 @@ existing toolchain defaults and the existing build cache.
    then restore conventional executable names and remove Go-owned packaging.
 6. [ ] Move actual search-attribute traversals and sentinel handling into SDK
    integration; verify saved histories before deleting runtime exceptions.
-7. [ ] Replace protobuf/OTel compiler and runtime special cases with audited
+7. [x] Replace protobuf/OTel compiler and runtime special cases with audited
    SDK dependency adaptations and small generic mechanisms. No arbitrary trust
    configuration or unrestricted process allocation scope is acceptable.
 8. [ ] Consolidate generic compiler passes, experimental configuration and
@@ -223,3 +223,45 @@ The final sample/full disabled/distribution checks are recorded below once run.
 Upstream canonical quality checks and focused race-enabled unit checks across
 modules pass. Typed-search-attribute, child, and Continue-As-New integration
 checks pass with a dev server; the zero-cache run is recorded in final evidence.
+
+
+## SDK-owned library adapters (2026-10-17)
+
+Replaced the transitional protobuf/compiler integration with SDK-owned source
+adapters using typed host operations and allocation scopes. Removed the pinned
+module policy from `cmd/go`, the `isolatemetadata` flag and protobuf IR rewriting,
+`isolate.IsGeneratedProtobuf`, protobuf runtime registries/layout inspection and
+the special reflection clone. The remaining metadata scopes and immutable table
+recorder serve standard Go reflection and audited standard-library tables only.
+No third-party library receives compiler metadata callback provenance.
+
+The SDK stages dependency sources outside the module cache and adapts generated
+application sources with overlays. Lazy descriptors/coder tables stay host-owned;
+new message graphs and views belong to the caller. Custom implementations and
+unsupported registry APIs remain SDK policy. Read-only mutation diagnostics
+return through the adapter to the query boundary; fatal policy failures use
+copied host-panic diagnostics. Existing transport and DataConverter execution
+remain unchanged. Older sections above describe the intermediate implementation.
+
+Generic fixes exposed by this integration preserve standard allocator provenance
+through nested generic wrappers, check metadata callbacks under effect
+instrumentation, reject read-only writes to opaque host objects without a
+library manifest, and keep private constructors out of process `sync.Pool`
+caches. Regression tests cover these mechanisms independently of protobuf.
+
+
+Validation after removal: enabled and disabled toolchain bootstraps passed. The
+complete enabled `go tool dist test` passed, including compiler scripts, race,
+cgo, alternate link modes and `../test`. The disabled short runtime/reflect/sync/
+isolate/bridge suites passed. Focused isolate/bridge tests passed three race runs
+with `staticlockranking` and `GOGC=10`; Linux/386 runtime and Plan 9/amd64 isolate
+test binaries cross-compiled. The complete SDK `tgo test ./...` passed with the
+final adapters, including native protobuf JSON/binary operations, canonical
+registry resolution, private generated defaults, workflow clock construction,
+read-only queries, custom-implementation rejection and history replay.
+
+The [runtime API reference](RUNTIME_API.md) lists the complete exported package
+surface, aliased data fields/methods, ownership/lifetime rules and build interfaces.
+Its function/method signatures were checked against `go doc -all isolate`.
+The protobuf checker also passed actual race-instrumented concurrent-cache and
+binary-value runs with the final adapters.

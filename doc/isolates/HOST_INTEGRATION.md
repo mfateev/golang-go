@@ -397,5 +397,14 @@ effect checks, both normally and with the race detector. Its negative cases
 include direct and reflected callbacks, ordinary host closures, host metadata
 field reads, expired contexts, and read-only mutation.
 
-SDK library migration and optional publication/borrow-escape diagnostics remain
-separate work. This API does not change existing Call transport or replay policy.
+Protobuf/generated-message adapters and the remaining OTel source adaptations
+now live in `sdk-go-poc`, using this API. The Go compiler, runtime, reflection
+package and build driver have no dependency module pins, protobuf layout hooks,
+or generated protobuf rewrites. Shared metadata stays behind host operations;
+caller-owned values and query scratch results use allocation scopes. Private
+constructors bypass process-wide `sync.Pool` caches as ordinary private execution
+does. Read-only writes to opaque host handles need no library-specific ranges.
+
+DataConverter execution, broader SDK migration and optional publication/borrow-
+escape diagnostics remain separate work. Existing Call transport and replay
+policy are unchanged.

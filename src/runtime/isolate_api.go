@@ -38,6 +38,15 @@ func isolateActive() bool {
 	return !isolateHostExecution(gp) && gp.isolateConstruction == nil && (gp.isolateOwner != 0 || gp.isolateGroup != nil || gp.isolateBoundary != nil || gp.isolateState != nil)
 }
 
+// Private constructors execute host code but must not borrow or populate the
+// process-wide sync.Pool caches with instance-owned allocations.
+//
+//go:linkname isolatePrivateAllocation
+//go:nosplit
+func isolatePrivateAllocation() bool {
+	return getg().isolateOwner != 0 || isolateActive()
+}
+
 func isolateRejectProcessAPI(name string) {
 	if isolateActive() {
 		isolateRejectEffect("runtime." + name)

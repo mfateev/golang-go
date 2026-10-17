@@ -85,8 +85,7 @@ func setupTextLSym(f *Func, flag int) {
 		f.LSym.Func().FuncFlag |= abi.FuncFlagIsolateEffectForbidden
 	}
 	// Record source provenance before names or linkname aliases reach the linker.
-	// Standard callbacks are trusted only when compiled from GOROOT. Module
-	// callbacks require the source-pinned metadata build selected by cmd/go.
+	// Standard callbacks are trusted only when compiled from GOROOT.
 	pkg, name := f.Sym().Pkg.Path, f.Sym().Name
 	trusted := f.Pragma&IsolateMetadataTrusted != 0 || IsolateMetadataSourceTrusted(pkg, name)
 	// Pure equality/hash algorithms are compiler generated, including those
@@ -111,7 +110,7 @@ func IsolateMetadataSourceTrusted(pkg, name string) bool {
 	if base.Flag.Std && (isolatepolicy.MetadataCallbackPackage(pkg) || isolatepolicy.MetadataLifecycleCallback(pkg, name)) {
 		return true
 	}
-	return base.Debug.IsolateMetadata != 0 && (strings.HasPrefix(pkg, isolatepolicy.ProtobufModule+"/") || strings.HasPrefix(pkg, isolatepolicy.TemporalAPIModule+"/"))
+	return false
 }
 
 // IsolateEscapeHelper identifies the standard compiler escape-analysis stub.

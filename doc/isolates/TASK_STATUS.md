@@ -1,5 +1,7 @@
 # Task Status: Modify Go runtime to support isolates
 
+Implemented API: [complete runtime reference](RUNTIME_API.md).
+
 Current migration: [minimal core status and evidence](MINIMAL_GO_CORE_STATUS.md).
 The SDK owns `tgo` and workflow discovery. Go builds conventional `bin/go` and
 accepts explicit manifests with `GOEXPERIMENT=isolates` (default off). Generic
@@ -9,13 +11,16 @@ and phase-specific production hooks are retired.
 
 [Typed host integration](HOST_INTEGRATION.md) now provides host-controlled
 construction, registered Go functions, synchronous callback reentry, and explicit
-one-shot waiters. Existing copied-byte SDK transport remains in place; library
-adapters and optional publication diagnostics are separate follow-up work.
+one-shot waiters. Protobuf/generated-message and OTel adaptations now live in
+SDK-owned source adapters; dependency pins and library-specific compiler/runtime
+hooks have been removed from Go. Existing copied-byte SDK transport remains in
+place. DataConverter execution migration and optional publication diagnostics
+remain separate work.
 
 The checklist below preserves implementation history. Its old phase commands,
 internal/isolateproto APIs and directory-based entry paths are historical.
-Protobuf/OTel metadata integration remains in the core pending a safe replacement;
-the minimal-core plan is not complete.
+The migration evidence records the SDK-owned replacement of protobuf/OTel
+metadata integration. Broader productization gates remain separate.
 
 ## Task Overview
 

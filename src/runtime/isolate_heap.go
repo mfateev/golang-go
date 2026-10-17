@@ -61,15 +61,18 @@ func isolateCheckHeapAccess(p unsafe.Pointer, size uintptr, write bool) {
 				panic("isolate: read-only handler cannot mutate shared library data")
 			}
 			if write && gp.isolateReadOnlyOwner != 0 && s.isolateAllocOwner == 0 &&
-				(isolateReadOnlyProtoRange(p, size) || isolateReadOnlyTypeRange(p, size)) {
-				panic("isolate: read-only handler cannot mutate shared protobuf metadata")
+				isolateReadOnlyTypeRange(p, size) {
+				panic("isolate: read-only handler cannot mutate shared type metadata")
+			}
+			if write && gp.isolateReadOnlyOwner != 0 && s.isolateAllocOwner == 0 {
+				panic("isolate: read-only handler cannot mutate host state")
 			}
 			if gp.isolateReadOnlyOwner != 0 && s.isolateAllocOwner == gp.isolateReadOnlyOwner {
 				if write {
 					panic("isolate: read-only handler cannot mutate workflow state")
 				}
 			} else {
-				if !write && s.isolateAllocOwner == 0 && (isolateReadOnlyLibraryRange(p, size) || isolateReadOnlyProtoRange(p, size) || isolateReadOnlyTypeRange(p, size)) {
+				if !write && s.isolateAllocOwner == 0 && (isolateReadOnlyLibraryRange(p, size) || isolateReadOnlyTypeRange(p, size)) {
 					return
 				}
 				if write {
@@ -202,12 +205,6 @@ func isolateCheckHeapMap(p unsafe.Pointer, write bool) {
 			panic("isolate: read-only handler cannot mutate shared library map")
 		}
 	}
-	if !write && m.IsolateOwner() == 0 && isolateReadOnlyProtoRange(p, 1) {
-		return
-	}
-	if write && gp.isolateReadOnlyOwner != 0 && m.IsolateOwner() == 0 && isolateReadOnlyProtoRange(p, 1) {
-		panic("isolate: read-only handler cannot mutate shared protobuf metadata map")
-	}
 	if gp.isolateReadOnlyOwner != 0 && m.IsolateOwner() == gp.isolateReadOnlyOwner {
 		if write {
 			panic("isolate: read-only handler cannot mutate workflow map")
@@ -321,7 +318,7 @@ func isolateCheckHeapReferenceTo(dst, value unsafe.Pointer, stack bool) {
 		if gp.isolateReadOnlyOwner != 0 && source.isolateAllocOwner == gp.isolateReadOnlyOwner && owner == gp.isolateOwner {
 			return // Scratch values may refer to the borrowed workflow heap.
 		}
-		if source.isolateAllocOwner == 0 && (isolateReadOnlyLibraryRange(value, 1) || isolateReadOnlyProtoRange(value, 1) || isolateReadOnlyTypeRoot(value)) {
+		if source.isolateAllocOwner == 0 && (isolateReadOnlyLibraryRange(value, 1) || isolateReadOnlyTypeRoot(value)) {
 			return
 		}
 		isolateOwnershipViolation("isolate: foreign heap reference publication")
@@ -512,7 +509,6 @@ func isolateReadOnlyTypeRange(p unsafe.Pointer, size uintptr) bool {
 	}
 	reflectOffsLock()
 	extent := reflectOffs.isolateTypes[unsafe.Pointer(base)]
-	messageInfos := reflectOffs.isolateMessageInfoArrays[unsafe.Pointer(base)]
 	for _, part := range reflectOffs.isolateTypeParts[unsafe.Pointer(base)] {
 		if uintptr(p) >= uintptr(part.start) {
 			offset := uintptr(p) - uintptr(part.start)
@@ -524,13 +520,6 @@ func isolateReadOnlyTypeRange(p unsafe.Pointer, size uintptr) bool {
 	}
 	reflectOffsUnlock()
 	offset := uintptr(p) - base
-	if messageInfos.stride != 0 {
-		if offset/messageInfos.stride >= messageInfos.count {
-			return false
-		}
-		within := offset % messageInfos.stride
-		return within < messageInfos.readonly && size <= messageInfos.readonly-within
-	}
 	return offset < extent && size <= extent-offset
 }
 

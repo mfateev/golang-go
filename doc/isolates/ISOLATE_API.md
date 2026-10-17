@@ -1,6 +1,7 @@
 # The Isolate API
 
-Status: **historical API draft**. Its per-directory program entry was
+Status: **historical API draft**. For the complete implemented surface, use
+[RUNTIME_API.md](./RUNTIME_API.md). Its per-directory program entry was
 superseded by marked workflow functions; see
 [STATIC_PROGRAMS.md](./STATIC_PROGRAMS.md) for the current API. Companion to
 [ISOLATES_DESIGN.md](./ISOLATES_DESIGN.md),

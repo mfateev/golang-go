@@ -15,7 +15,7 @@ stderr 'isolate: source cannot link to privileged operation runtime.isolateEnter
 # A module cannot impersonate a GOROOT metadata callback through its name.
 # Raw hooks here model the audited service; they are deliberately unavailable
 # to the marked workflow above.
-go build -isolate-config=isolate.json -gcflags=all=-d=isolatemetadata=1 -o callback-check$GOEXE ./callbackhost
+go build -isolate-config=isolate.json -gcflags=example.org/isolateownership/callbackdispatch=-d=isolateeffects=1 -o callback-check$GOEXE ./callbackhost
 exec ./callback-check$GOEXE
 stdout '^metadata namespace denied$'
 
@@ -161,6 +161,7 @@ import (
  "strings"
  "unsafe"
  "internal/fake/callback"
+ "example.org/isolateownership/callbackdispatch"
 )
 //go:linkname newGroup runtime.isolateNewGroup
 func newGroup() unsafe.Pointer
@@ -172,12 +173,6 @@ func setOwner(uintptr) uintptr
 func enter() uintptr
 //go:linkname leave runtime.isolateLeaveMetadata
 func leave(uintptr)
-//go:noinline
-func invoke(fn func()) { fn() }
-//go:noinline
-func deferred(fn func()) { defer fn() }
-//go:noinline
-func panicDeferred(fn func()) { defer fn(); panic("force unwind") }
 func main() {
  // Host calls retain ordinary behavior outside a service scope.
  func() { defer func() { if recover() != "untrusted callback executed" { panic("host callback changed") } }(); callback.Callback() }()
@@ -197,10 +192,10 @@ func main() {
     defer func() { failure = recover() }()
     owner = enter()
     switch mode {
-    case 0: invoke(callback.Callback)
-    case 1: deferred(callback.Callback)
-    case 2: panicDeferred(callback.Callback)
-    case 3: invoke(callback.Generic[int])
+    case 0: callbackdispatch.Invoke(callback.Callback)
+    case 1: callbackdispatch.Deferred(callback.Callback)
+    case 2: callbackdispatch.PanicDeferred(callback.Callback)
+    case 3: callbackdispatch.Invoke(callback.Generic[int])
     }
    }()
    leave(owner)
@@ -314,3 +309,12 @@ func main() {
  ],
  "support_packages": null
 }
+
+-- callbackdispatch/dispatch.go --
+package callbackdispatch
+//go:noinline
+func Invoke(fn func()) { fn() }
+//go:noinline
+func Deferred(fn func()) { defer fn() }
+//go:noinline
+func PanicDeferred(fn func()) { defer fn(); panic("force unwind") }

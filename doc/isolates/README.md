@@ -9,9 +9,10 @@ toolchain distribution. The old cooperative reference model and phase probes
 have been retired; current package state lives in `internal/isolatestate`.
 
 See [migration evidence](MINIMAL_GO_CORE_STATUS.md) for completed changes,
-verification and remaining protobuf/OTel integration work. Earlier phase logs
+verification and the SDK-owned protobuf/OTel integration. Earlier phase logs
 preserve findings and rejected approaches; their retired commands are historical.
 
+- [Runtime API reference](./RUNTIME_API.md) — all implemented public APIs, ownership contracts and build interfaces
 - [Resource controls](./RESOURCE_CONTROLS_PLAN.md) — accounting, limits and worker watchdogs
 - [Minimal Go core plan](./MINIMAL_GO_CORE_PLAN.md) — move SDK policy and toolchain ownership out of Go and retire superseded experiments
 - [Reliable lifecycle](./LIFECYCLE_PLAN.md) — whole-group termination and SDK cleanup

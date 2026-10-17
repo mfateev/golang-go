@@ -28,7 +28,7 @@ func Validate() {
 func checkGlobalWrites(fn *ir.Func) {
 	// Guarded helpers remain ordinary host functions. Their body cannot run
 	// privately, including instantiated standard-library generic helpers.
-	if fn.Pragma&ir.IsolateEffectGuarded != 0 || ir.IsolateEscapeHelper(fn) {
+	if fn.Pragma&ir.IsolateEffectGuarded != 0 || ir.IsolateEscapeHelper(fn) || ir.IsolateHostBoundaryHelper(fn) {
 		return
 	}
 	check := func(lhs, stmt ir.Node) {

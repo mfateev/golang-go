@@ -49,9 +49,9 @@ entry's state graph. `readonly_packages` selects layouts to recreate under a
 read-only service's scratch owner. It must be a subset of `state_packages`.
 These selections control ownership and initialization, not privileged trust.
 Standard frozen-library sharing retains its independently audited core policy.
-During the metadata migration, the core also retains its previous dependency
-source checks: the existing library-specific compiler rewrites still require
-them. The SDK performs the same checks before requesting a build.
+External library source checks and adapters belong to the SDK. The Go core
+does not pin Temporal, protobuf or OpenTelemetry modules and grants those
+libraries no special metadata or allocation authority.
 
 For test variants, an entry may include `for_test` with the package under test's
 import path. Its source key is `package [for_test.test]`, matching `go list -test`

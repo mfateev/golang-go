@@ -70,7 +70,7 @@ func IsolateHeapMapForTest(value any, write bool) {
 // Build a recorded process graph without importing compiler-generated E4
 // descriptors. The production entry accepts only the audited GOROOT packages.
 func IsolateFrozenLibraryForTest(build func() any) (value any) {
-	state := isolateBeginInitialization(nil, true)
+	state := isolateBeginInitialization()
 	defer func() {
 		state.entry.state = state
 		isolateEndInitialization(state)
@@ -93,25 +93,6 @@ func IsolateFrozenLibraryForTest(build func() any) (value any) {
 	}
 	isolateLibraries.Store(next)
 	return value
-}
-
-// Test-only provenance fixtures exercise array bounds and excluded mutable
-// cells without importing the external protobuf module into runtime tests.
-func IsolateMessageInfoLayoutForTest(p unsafe.Pointer, stride, readonly, count uintptr, roots []bool) {
-	reflectOffsLock()
-	defer reflectOffsUnlock()
-	if reflectOffs.isolateTypes == nil {
-		reflectOffs.isolateTypes = make(map[unsafe.Pointer]uintptr)
-	}
-	if reflectOffs.isolateMessageInfoArrays == nil {
-		reflectOffs.isolateMessageInfoArrays = make(map[unsafe.Pointer]isolateMessageInfoLayout)
-	}
-	reflectOffs.isolateMessageInfoArrays[p] = isolateMessageInfoLayout{stride, readonly, count}
-	for i, allowed := range roots {
-		if allowed {
-			reflectOffs.isolateTypes[add(p, uintptr(i)*stride)] = readonly
-		}
-	}
 }
 
 func IsolateHeapMoveForTest(dst, src any) {
@@ -252,21 +233,8 @@ func IsolateItabBoundsForTest(value interface{ Marker() }) (unsafe.Pointer, uint
 
 func IsolateRunningPanicDefersForTest() uint32 { return runningPanicDefers.Load() }
 
-func IsolatePrivateProtoScopeForTest(p unsafe.Pointer, fn func()) {
-	owner := isolateEnterMessageInfoMetadata(p)
-	defer isolateLeaveMessageInfoMetadata(owner)
-	fn()
-}
-
-func IsolateProtoCacheForTest(info any, build func()) {
-	state := isolateBeginInitialization(info, false)
-	defer isolateEndInitialization(state)
-	build()
-	isolatePublishProtoCache(info)
-}
-
 func IsolateInitializationScopeForTest(fn func()) {
-	state := isolateBeginInitialization(nil, false)
+	state := isolateBeginInitialization()
 	defer isolateEndInitialization(state)
 	fn()
 }

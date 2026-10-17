@@ -55,6 +55,9 @@ import (
  "example.org/hostintegration/library"
 )
 
+// This generic wrapper is instantiated in a selected application package.
+// The standard Allocate implementation must retain its compiler provenance.
+func Construct[T any](a isolate.Allocator, build func() T)(T,error){return isolate.Allocate(a,build)}
 type Input struct { Name string; Callback func() }
 var mu sync.Mutex
 var saved isolate.HostContext
@@ -135,6 +138,10 @@ import (
  "strings"
  "example.org/hostintegration/bindings"
 )
+func GenericHostConstruction(){
+ value,err:=bindings.Construct(isolate.HostAllocator(),func()int{return 42})
+ if err!=nil||value!=42{panic("generic allocation failed")}
+}
 var Counter=7
 func Bump(){Counter++}
 func Work(mode string)(string,error){
@@ -247,6 +254,7 @@ func run(mode string){
  }
 }
 func main(){
+ jobs.GenericHostConstruction()
  for _,mode:=range []string{"normal","normal","readonly","readonly-write","readonly-callback","opaque","ordinary","panic","expired","effect","native-effect","reflected","direct","direct-static","constructor-callback","registration"}{run(mode)}
  if jobs.Counter!=7||library.Counter<110{panic("host state changed incorrectly")}
  fmt.Println("typed host integration passed")
