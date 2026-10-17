@@ -680,7 +680,7 @@ func deferreturn() {
 //
 // It crashes if called from a thread not created by the Go runtime.
 func Goexit() {
-	if getg().isolateReadOnlyOwner != 0 {
+	if getg().isolateReadOnlyOwner != 0 && getg().isolateHost == nil {
 		panic("isolate: read-only handlers cannot call Goexit")
 	}
 	// Create a panic object for Goexit, so we can recognize when it might be
@@ -943,7 +943,7 @@ func (p *_panic) start(pc uintptr, sp unsafe.Pointer) {
 // the deferred function itself was nil (e.g., "defer (func())(nil)").
 func (p *_panic) nextDefer() (func(), bool) {
 	gp := getg()
-	if gp.isolateGroup != nil && gp.isolateGroup.ownershipFault.Load() != nil && gp.isolateMetadataDepth == 0 {
+	if gp.isolateGroup != nil && gp.isolateGroup.ownershipFault.Load() != nil && gp.isolateMetadataDepth == 0 && gp.isolateHost == nil && gp.isolateConstruction == nil {
 		gp.isolateGroup.markRevoked()
 		isolateDiscardIfRevoked()
 	}
@@ -1100,6 +1100,11 @@ func (p *_panic) initOpenCodedDefers(fn funcInfo, varp unsafe.Pointer) bool {
 // The implementation of the predeclared function recover.
 func gorecover() any {
 	gp := getg()
+	// Reentry must unwind through host cleanup on revocation. An application
+	// recover cannot turn the runtime's cleanup unwind into a continuation.
+	if gp.isolateHost != nil && gp.isolateHost.application && gp.isolateGroup.admission.Load()&isolateRevokedBit != 0 {
+		return nil
+	}
 	if gp.isolateGroup != nil && gp.isolateGroup.ownershipFault.Load() != nil {
 		return nil
 	}

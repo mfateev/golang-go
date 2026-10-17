@@ -7,6 +7,11 @@ compiler checks live in `cmd/compile/internal/isolate`; package-state support
 lives in `internal/isolatestate`. The cooperative prototype, toy global lowering
 and phase-specific production hooks are retired.
 
+[Typed host integration](HOST_INTEGRATION.md) now provides host-controlled
+construction, registered Go functions, synchronous callback reentry, and explicit
+one-shot waiters. Existing copied-byte SDK transport remains in place; library
+adapters and optional publication diagnostics are separate follow-up work.
+
 The checklist below preserves implementation history. Its old phase commands,
 internal/isolateproto APIs and directory-based entry paths are historical.
 Protobuf/OTel metadata integration remains in the core pending a safe replacement;

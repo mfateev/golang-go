@@ -21,7 +21,7 @@ func TestSizeof(t *testing.T) {
 		_32bit uintptr // size on 32bit platforms
 		_64bit uintptr // size on 64bit platforms
 	}{
-		{runtime.G{}, 440 + xreg, 672 + xreg}, // g, including shared-stream Call polls and read-only state
+		{runtime.G{}, 452 + xreg, 696 + xreg}, // g, including host contexts and allocation scopes
 		{runtime.Sudog{}, 68, 112},            // sudog, but exported for testing
 	}
 

@@ -139,6 +139,7 @@ func (e *EffectError) Error() string {
 }
 
 // KillPendingError reports goroutines still attached to a revoked instance.
+// PendingHostWork counts construction leases and asynchronous host borrows.
 // Running includes goroutines in syscalls. Diagnostics are best effort: a busy
 // running stack is never suspended merely to produce a sample.
 type KillPendingError struct {
@@ -147,11 +148,12 @@ type KillPendingError struct {
 	Stack             string
 	LiveGoroutines    int32
 	RunningGoroutines int32
+	PendingHostWork   int32
 }
 
 func (e *KillPendingError) Error() string {
 	return "isolate: kill pending: " + strconv.FormatInt(int64(e.LiveGoroutines), 10) +
-		" goroutines remain (running=" + strconv.FormatInt(int64(e.RunningGoroutines), 10) +
+		" goroutines remain (host work=" + strconv.FormatInt(int64(e.PendingHostWork), 10) + ", running=" + strconv.FormatInt(int64(e.RunningGoroutines), 10) +
 		", goroutine=" + strconv.FormatUint(e.GoroutineID, 10) + ", thread=" + strconv.FormatInt(e.ThreadID, 10) + ")"
 }
 
@@ -611,7 +613,7 @@ func (i *Isolate) Kill(ctx context.Context) error {
 func (i *Isolate) pendingError() *KillPendingError {
 	id, thread, stack := i.boundary.Snapshot()
 	return &KillPendingError{GoroutineID: id, ThreadID: thread, Stack: stack,
-		LiveGoroutines: i.boundary.LiveGoroutines(), RunningGoroutines: i.boundary.RunningGoroutines()}
+		LiveGoroutines: i.boundary.LiveGoroutines(), RunningGoroutines: i.boundary.RunningGoroutines(), PendingHostWork: i.boundary.PendingHostWork()}
 }
 
 // FenceReadOnly restricts admission to read-only services at the next park,

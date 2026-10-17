@@ -9,6 +9,7 @@ import (
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
+	"cmd/internal/objabi"
 	"internal/isolatepolicy"
 	"strings"
 )
@@ -54,7 +55,7 @@ func ScopeEffectsInBody(fn, source *ir.Func) {
 			if decl.Class == ir.PFUNC && decl.Sym().Pkg != nil {
 				sym := decl.Sym()
 				alias := sym.Linkname
-				if alias != "" && alias != sym.Pkg.Path+"."+sym.Name && !isolateEntryAlias(alias) {
+				if alias != "" && alias != objabi.PathToPrefix(sym.Pkg.Path)+"."+sym.Name && !isolateEntryAlias(alias) {
 					if reason == "" {
 						reason = "go:linkname " + alias
 					}

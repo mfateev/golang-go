@@ -74,6 +74,9 @@ const (
 	// The linked symbol names an unsafe reflection accessor. Calling it still
 	// requires verified provenance on the caller, independently of this flag.
 	FuncFlagIsolateUnsafeReflection
+
+	// Compiler-created typed entry from isolate.NewHostFunc.
+	FuncFlagIsolateHostEntry
 )
 
 // A FuncID identifies particular functions that need to be treated

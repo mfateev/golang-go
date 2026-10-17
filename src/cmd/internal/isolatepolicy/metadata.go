@@ -133,6 +133,13 @@ func MetadataGlobal(symbol string) bool {
 // allocate, grow a stack, or consult application ownership while retiring the
 // process pool lists. Private Put/Get never join those lists.
 func RuntimeHook(pkg, function string) bool {
+	if pkg == "isolate" {
+		switch function {
+		case "HostContext.Allocator", "HostContext.Reenter", "HostAllocator", "(*Isolate).Allocator", "NewWaiter", "(*Waiter).Park", "(*Waiter).Wake":
+			return true
+		}
+	}
+
 	// The post-fork child cannot grow its stack, allocate, or acquire locks.
 	// Instrumenting its local pointer stores violates that runtime contract.
 	// Public process/syscall entry points reject isolate execution before this

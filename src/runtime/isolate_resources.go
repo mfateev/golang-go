@@ -22,27 +22,28 @@ const (
 // record can outlive the group without retaining its private heap. The host
 // handle, allocator cache and every owned span hold independent references.
 type isolateResourceAccount struct {
-	_              sys.NotInHeap
-	refs           atomic.Int64
-	maxMemory      uint64 // Immutable once members are attached.
-	maxGoroutines  uint32
-	memory         atomic.Uint64
-	peakMemory     atomic.Uint64
-	heap           atomic.Uint64
-	reserved       atomic.Uint64
-	stacks         atomic.Uint64
-	metadata       atomic.Uint64
-	totalAllocated atomic.Uint64
-	goroutines     atomic.Uint32
-	peakGoroutines atomic.Uint32
-	runningNS      atomic.Uint64
-	progress       atomic.Uint64
-	violation      atomic.Uint32 // 0: none, ^uint32(0): publishing, otherwise resource kind.
-	violationLimit uint64
-	violationUsage uint64
-	baseBytes      uint64
-	pcs            [32]uintptr
-	pcCount        int
+	_               sys.NotInHeap
+	hostIntegration atomic.Bool // Explicit trusted reference sharing; access checks remain active.
+	refs            atomic.Int64
+	maxMemory       uint64 // Immutable once members are attached.
+	maxGoroutines   uint32
+	memory          atomic.Uint64
+	peakMemory      atomic.Uint64
+	heap            atomic.Uint64
+	reserved        atomic.Uint64
+	stacks          atomic.Uint64
+	metadata        atomic.Uint64
+	totalAllocated  atomic.Uint64
+	goroutines      atomic.Uint32
+	peakGoroutines  atomic.Uint32
+	runningNS       atomic.Uint64
+	progress        atomic.Uint64
+	violation       atomic.Uint32 // 0: none, ^uint32(0): publishing, otherwise resource kind.
+	violationLimit  uint64
+	violationUsage  uint64
+	baseBytes       uint64
+	pcs             [32]uintptr
+	pcCount         int
 }
 
 type isolateResourceHandle struct {
@@ -160,13 +161,13 @@ func isolateReleaseSpanResources(s *mspan) {
 
 func isolateReserveHeap(size uintptr, typ *_type) {
 	gp := getg()
-	if gp.isolateOwner == 0 || gp.isolateGroup == nil {
+	if gp.isolateOwner == 0 || isolateAllocationGroup(gp) == nil {
 		return
 	}
-	if isolateResourceCanDiscard(gp) {
+	if isolateResourceCanDiscard(gp) || isolateResourceCanUnwindHost(gp) {
 		isolateDiscardIfRevoked()
 	}
-	group := gp.isolateGroup
+	group := isolateAllocationGroup(gp)
 	r := group.resources.account
 	noscan := typ == nil || !typ.Pointers()
 	bytes := roundupsize(size, noscan)
@@ -180,6 +181,10 @@ func isolateReserveHeap(size uintptr, typ *_type) {
 			isolateDiscardIfRevoked()
 			throw("isolate: resource allocation rejection returned")
 		}
+		if gp.isolateConstruction != nil && gp.isolateMetadataDepth == 0 || isolateResourceCanUnwindHost(gp) {
+			isolateNotifyResourceViolation(group)
+			panic(isolateConstructionRevoked{})
+		}
 		// Internal allocation must finish its pinned wait/service cleanup before
 		// discard. Account the temporary excess and keep the durable fence.
 		isolateChargeHeapReservation(gp, uint64(bytes), true)
@@ -192,7 +197,7 @@ func isolateReserveHeap(size uintptr, typ *_type) {
 //
 //go:nosplit
 func isolateChargeHeapReservation(gp *g, bytes uint64, excess bool) bool {
-	r := gp.isolateGroup.resources.account
+	r := isolateAllocationGroup(gp).resources.account
 	if gp.isolateHeapReservation != 0 {
 		throw("isolate: nested private heap reservation")
 	}
@@ -263,7 +268,7 @@ func isolateCheckResourceMemory(group *isolateRevocationGroup) {
 
 func isolateCheckAllocationResources() {
 	gp := getg()
-	if gp.isolateOwner != 0 && gp.isolateGroup != nil && isolateResourceCanDiscard(gp) {
+	if gp.isolateOwner != 0 && gp.isolateGroup != nil && (isolateResourceCanDiscard(gp) || isolateResourceCanUnwindHost(gp)) {
 		isolateCheckResourceMemory(gp.isolateGroup)
 		isolateNotifyResourceViolation(gp.isolateGroup)
 		isolateDiscardIfRevoked()
@@ -288,7 +293,23 @@ func isolateAdmitResourceChild(group *isolateRevocationGroup) {
 }
 
 func isolateResourceCanDiscard(gp *g) bool {
-	return gp.m.locks == 0 && gp.m.mallocing == 0 && gp.isolateMetadataDepth == 0 && gp.waiting == nil && gp.isolateParkState == 0 && gp.isolatePollDesc == nil
+	return gp.m.locks == 0 && gp.m.mallocing == 0 && gp.isolateMetadataDepth == 0 && gp.isolateHost == nil && gp.isolateConstruction == nil && gp.waiting == nil && gp.isolateParkState == 0 && gp.isolatePollDesc == nil
+}
+
+// Application reentry cannot be discarded while host frames own cleanup, but
+// an ordinary panic can unwind those frames. Never inject another unwind while
+// a panic/Goexit or runtime wait is already cleaning up.
+func isolateResourceCanUnwindHost(gp *g) bool {
+	return gp.isolateHost != nil && gp.isolateHost.application && gp._panic == nil && gp.isolateHeapReservation == 0 &&
+		gp.m.locks == 0 && gp.m.mallocing == 0 && gp.isolateMetadataDepth == 0 &&
+		gp.waiting == nil && gp.isolateParkState == 0 && gp.isolatePollDesc == nil
+}
+
+// newstack tail-enters this on the grown application stack. Host cleanup must
+// run on a normal Go stack; it cannot run or panic on g0.
+func isolateResourceUnwind() {
+	isolateNotifyResourceViolation(getg().isolateGroup)
+	panic(isolateConstructionRevoked{})
 }
 
 func isolateAttachChildResourceStack(gp *g) {
@@ -396,6 +417,7 @@ func isolateReadResources(p unsafe.Pointer) (memory, peak, heap, reserved, stack
 	r := group.resources.account
 	memory, peak, heap, reserved, stacks, metadata, allocated = r.memory.Load(), r.peakMemory.Load(), r.heap.Load(), r.reserved.Load(), r.stacks.Load(), r.metadata.Load(), r.totalAllocated.Load()
 	goroutines, peakGoroutines, running, progress = r.goroutines.Load(), r.peakGoroutines.Load(), r.runningNS.Load(), r.progress.Load()
+
 	KeepAlive(group.resources)
 	return
 }

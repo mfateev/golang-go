@@ -94,7 +94,6 @@ func TestRevokedReadyPollRead(t *testing.T) {
 	exited := make(chan struct{})
 	var release, resumed atomic.Bool
 	go func() {
-		defer close(exited)
 		b.Run(func() {
 			close(entered)
 			for !release.Load() {
@@ -106,6 +105,10 @@ func TestRevokedReadyPollRead(t *testing.T) {
 	}()
 	<-entered
 	b.Stop()
+	// The buffer may escape under -race and allocate before reaching pollReset.
+	// Revocation can therefore hard-discard this G before Goexit runs any defers.
+	// Observe the runtime drain rather than relying on a skipped application defer.
+	go func() { b.WaitDrained(); close(exited) }()
 	release.Store(true)
 	select {
 	case <-exited:

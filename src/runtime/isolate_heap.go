@@ -49,7 +49,14 @@ func isolateCheckHeapAccess(p unsafe.Pointer, size uintptr, write bool) {
 			isolateCheckNonHeapAccess(addr, end, write)
 			return
 		}
-		if s.isolateAllocOwner != owner && (borrowed == 0 || s.isolateAllocOwner != borrowed) {
+		if handled, allowed := isolateHostAccess(unsafe.Pointer(addr), min(size, end-addr+1), s.isolateAllocOwner, write); handled {
+			if !allowed {
+				if write && gp.isolateReadOnlyOwner != 0 && s.isolateAllocOwner == gp.isolateReadOnlyOwner {
+					panic("isolate: read-only handler cannot mutate workflow state")
+				}
+				isolateOwnershipViolation("isolate: host access crosses owner boundary")
+			}
+		} else if s.isolateAllocOwner != owner && (borrowed == 0 || s.isolateAllocOwner != borrowed) {
 			if write && gp.isolateReadOnlyOwner != 0 && s.isolateAllocOwner == 0 && isolateReadOnlyLibraryRange(p, size) {
 				panic("isolate: read-only handler cannot mutate shared library data")
 			}
@@ -133,7 +140,7 @@ func isolateCheckNonHeapAccess(addr, end uintptr, write bool) {
 			}
 			return
 		}
-		if getg().isolateOwner == 0 {
+		if getg().isolateOwner == 0 || isolateHostExecution(getg()) || getg().isolateConstruction != nil {
 			return // Process globals, including audited service state.
 		}
 		isolateOwnershipViolation("isolate: access to process global")
@@ -151,7 +158,7 @@ func isolateCheckNonHeapAccess(addr, end uintptr, write bool) {
 	if s := spanOf(addr); s != nil && s.state.get() == mSpanManual {
 		isolateOwnershipViolation("isolate: access to foreign stack or runtime memory")
 	}
-	if getg().isolateGroup != nil || getg().isolateOwner != 0 {
+	if (getg().isolateGroup != nil || getg().isolateOwner != 0) && !isolateHostExecution(getg()) && getg().isolateConstruction == nil {
 		isolateOwnershipViolation("isolate: access to unclassified memory")
 	}
 	// Preserve ordinary host access to non-Go memory (C, mmap, device buffers).
@@ -180,6 +187,9 @@ func isolateCheckHeapMap(p unsafe.Pointer, write bool) {
 		return
 	}
 	m := (*maps.Map)(p)
+	if isolateCheckMapHostAccess(p, m.IsolateOwner(), write) {
+		return
+	}
 	gp := getg()
 	if m.IsolateOwner() == gp.isolateOwner {
 		return
@@ -277,6 +287,9 @@ func isolateCheckHeapReferenceTo(dst, value unsafe.Pointer, stack bool) {
 		} else {
 			isolateCheckHeapAccess(dst, 1, true)
 		}
+	}
+	if isolateTrustedHostReference(value, owner) {
+		return
 	}
 	source := spanOfHeap(uintptr(value))
 	if source == nil {

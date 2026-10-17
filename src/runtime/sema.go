@@ -149,7 +149,7 @@ func semacquire1(addr *uint32, lifo bool, profile semaProfileFlags, skipframes i
 		throw("semacquire not on the G stack")
 	}
 	group := gp.isolateGroup
-	isolateWait := group != nil && gp.isolateMetadataDepth == 0 && isolateOwnedSemaWait(reason)
+	isolateWait := group != nil && gp.isolateMetadataDepth == 0 && !isolateHostExecution(gp) && isolateOwnedSemaWait(reason)
 	if isolateWait {
 		isolateDiscardIfRevoked()
 	}
@@ -162,7 +162,7 @@ func semacquire1(addr *uint32, lifo bool, profile semaProfileFlags, skipframes i
 		return
 	}
 
-	if gp.isolateReadOnlyOwner != 0 && gp.isolateMetadataDepth == 0 && isolateOwnedSemaWait(reason) {
+	if gp.isolateReadOnlyOwner != 0 && gp.isolateMetadataDepth == 0 && !isolateHostExecution(gp) && isolateOwnedSemaWait(reason) {
 		panic("isolate: read-only handlers cannot block on synchronization")
 	}
 
@@ -710,7 +710,7 @@ func notifyListAdd(l *notifyList) uint32 {
 func notifyListWait(l *notifyList, t uint32) {
 	gp := getg()
 	group := gp.isolateGroup
-	if gp.isolateMetadataDepth != 0 {
+	if gp.isolateMetadataDepth != 0 || isolateHostExecution(gp) {
 		group = nil // Process service waits must finish through ordinary notification.
 	}
 	if group != nil {

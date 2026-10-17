@@ -26,7 +26,7 @@ func time_runtimeNow() (sec int64, nsec int32, mono int64) {
 		// Simplest is to omit the monotonic time within a bubble.
 		return sec, nsec, 0
 	}
-	if group := getg().isolateGroup; group != nil && group.clockSet.Load() {
+	if group := getg().isolateGroup; group != nil && group.clockSet.Load() && !isolateHostExecution(getg()) && getg().isolateConstruction == nil {
 		now := group.clockNS.Load()
 		sec = now / 1e9
 		nsec = int32(now % 1e9)
@@ -54,7 +54,7 @@ func time_runtimeNano() int64 {
 	if gp.bubble != nil {
 		return gp.bubble.now
 	}
-	if group := gp.isolateGroup; group != nil && group.clockSet.Load() {
+	if group := gp.isolateGroup; group != nil && group.clockSet.Load() && !isolateHostExecution(getg()) && getg().isolateConstruction == nil {
 		return group.clockNS.Load()
 	}
 	if isolateDeterministic() {
@@ -500,7 +500,7 @@ func timeSleep(ns int64) {
 		resetForSleep(gp, nil)
 		gopark(nil, nil, waitReasonSleep, traceBlockSleep, 2)
 	} else {
-		if group := gp.isolateGroup; group != nil && !group.registerPark(gp, isolateSleepRegistered, nil) {
+		if group := gp.isolateGroup; group != nil && !isolateHostExecution(gp) && !group.registerPark(gp, isolateSleepRegistered, nil) {
 			isolateDiscardIfRevoked()
 			throw("isolate: rejected sleep without revocation")
 		}

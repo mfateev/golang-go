@@ -94,6 +94,9 @@ func setupTextLSym(f *Func, flag int) {
 	if pkg == "type" && (strings.HasPrefix(name, ".eq.") || strings.HasPrefix(name, ".hash.")) {
 		trusted = true
 	}
+	if IsolateHostEntry(f) {
+		f.LSym.Func().FuncFlag |= abi.FuncFlagIsolateHostEntry
+	}
 	if trusted {
 		f.LSym.Func().FuncFlag |= abi.FuncFlagIsolateMetadataTrusted
 	}
@@ -117,4 +120,23 @@ func IsolateMetadataSourceTrusted(pkg, name string) bool {
 // This permits no caller callback or process allocation service.
 func IsolateEscapeHelper(fn *Func) bool {
 	return fn.Pragma&IsolateEffectAudited != 0 && fn.Sym().Pkg.Path == "internal/abi" && strings.HasPrefix(fn.Sym().Name, "Escape[")
+}
+
+// IsolateHostEntry recognizes only the closure emitted from the verified
+// standard-library registration implementation. Imported generic bodies retain
+// their source provenance. The registration function is never inlined.
+func IsolateHostEntry(fn *Func) bool {
+	return fn.Pragma&IsolateEffectAudited != 0 && fn.Sym().Pkg.Path == "isolate" &&
+		strings.HasPrefix(fn.Sym().Name, "NewHostFunc[") && strings.HasSuffix(fn.Sym().Name, "].func1")
+}
+
+// IsolateHostBoundaryHelper performs the typed transfer itself. Probes on its
+// temporary result/argument slots would reject the borrowing contract before
+// the runtime can establish or restore the explicit boundary.
+func IsolateHostBoundaryHelper(fn *Func) bool {
+	if fn.Pragma&IsolateEffectAudited == 0 || fn.Sym().Pkg.Path != "isolate" {
+		return false
+	}
+	name := fn.Sym().Name
+	return strings.HasPrefix(name, "NewHostFunc[") || strings.HasPrefix(name, "Allocate[")
 }

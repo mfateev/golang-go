@@ -1,6 +1,6 @@
 // errorcheck -0 -m
 
-//go:build !nacl && !386 && !wasm && !arm && !gcflags_noopt
+//go:build !nacl && !386 && !wasm && !arm && !gcflags_noopt && !goexperiment.isolates
 
 // Copyright 2019 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style

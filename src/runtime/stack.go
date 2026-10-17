@@ -1210,14 +1210,14 @@ func newstack() {
 
 	// The goroutine must be executing in order to call newstack,
 	// so it must be Grunning (or Gscanrunning).
-	if group := gp.isolateGroup; group != nil && isolateResourceCanDiscard(gp) {
+	if group := gp.isolateGroup; group != nil && (isolateResourceCanDiscard(gp) || isolateResourceCanUnwindHost(gp)) {
 		r := group.resources.account
 		delta := uint64(newsize - (gp.stack.hi - gp.stack.lo))
 		usage := r.memory.Load()
 		if r.maxMemory != 0 && (usage > r.maxMemory || delta > r.maxMemory-usage) {
 			isolateResourceViolation(group, isolateResourceMemory, r.maxMemory, usage+delta)
 		}
-		if group.ownershipFault.Load() == group.resourceFault {
+		if group.ownershipFault.Load() == group.resourceFault && isolateResourceCanDiscard(gp) {
 			isolateDiscardResourceStack(gp)
 		}
 	}
@@ -1232,6 +1232,11 @@ func newstack() {
 	casgstatus(gp, _Gcopystack, _Grunning)
 	if group := gp.isolateGroup; group != nil && isolateResourceCanDiscard(gp) && group.ownershipFault.Load() == group.resourceFault {
 		isolateDiscardResourceStack(gp)
+	}
+	if group := gp.isolateGroup; group != nil && isolateResourceCanUnwindHost(gp) && group.ownershipFault.Load() == group.resourceFault {
+		// The interrupted function has not built its frame or run user code yet.
+		// Reuse that call's return frame for a normal Go panic, after stack copy.
+		gp.sched.pc = abi.FuncPCABIInternal(isolateResourceUnwind)
 	}
 	gogo(&gp.sched)
 }

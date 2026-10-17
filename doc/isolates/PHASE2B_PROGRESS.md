@@ -982,3 +982,27 @@ standard-library packages and runtime tests, but failed in
 `cmd/go`'s `TestScript/fips` during the larger command test run. That script
 passed alone before and after cleaning the build cache. The full suite is
 therefore not verified for this change.
+
+## Typed host integration
+
+Implemented `HOST_INTEGRATION.md` stages 1–3: typed registered host functions,
+scoped host/instance/scratch allocation, synchronous reentry, and one-shot
+waiters. Compiler provenance and runtime ownership checks keep ordinary host
+closures and implicit callbacks outside the boundary. Construction and borrow
+leases participate in draining, including completion after revocation. Reentry
+restores application metadata and effect restrictions; callback heap and stack
+budget failures unwind host cleanup before terminating the application.
+Existing Call transport and SDK adapters remain unchanged; library migration
+and optional publication diagnostics remain separate work.
+
+The isolate-enabled toolchain bootstrap and complete `go tool dist test` passed,
+including compiler scripts, runtime, race detector, cgo, and `../test`. Focused
+isolate and bridge tests passed three runs with the race detector,
+`staticlockranking`, and `GOGC=10`. The outside-GOROOT host integration fixture
+passed normal and race builds. A `noisolates` bootstrap and short runtime,
+reflect, isolate, and bridge suites passed, as did the relevant compiler
+diagnostic tests. Linux/386 runtime and Plan 9/amd64 isolate test binaries
+cross-compiled successfully.
+
+The unchanged `sdk-go-poc` passed its complete `tgo test ./...` suite using this
+toolchain, including example checks, worker, testsuite, and toolchain tests.

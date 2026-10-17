@@ -88,7 +88,7 @@ func isolateReportFaultRecord(reason, operation, kind, phase string, value any) 
 		go isolateReportOwnershipFault(group, fault)
 	}
 	gp.isolateOwner, gp.isolateMetadataDepth = owner, depth
-	if depth != 0 {
+	if depth != 0 || gp.isolateHost != nil || gp.isolateConstruction != nil {
 		// Recover is disabled for the failed group. Service cleanup defers run
 		// until outermost Leave, which discards the G before application defers.
 		panic(reason)

@@ -1,7 +1,8 @@
 # Host integration with ordinary Go functions
 
-Status: proposed design. The APIs below are additions to the public `isolate`
-package; they are not implemented. Existing `Call`, `ControlCall`, `ReadOnlyCall`,
+Status: implemented in the Go fork (allocation scopes, typed host functions,
+synchronous reentry, and one-shot waiters). The APIs below are additions to the
+public `isolate` package. Existing `Call`, `ControlCall`, `ReadOnlyCall`,
 and `Write` behavior and their SDK users remain unchanged. Migrating that
 transport to this interface is separate work.
 
@@ -20,9 +21,14 @@ consistent results, and preventing shared objects from retaining references into
 an isolate. This includes references hidden in slices, maps, interfaces, function
 values, and their reachable objects.
 
-The proposed integration runs without reference-publication validation of shared
-graphs; implementing it must explicitly adapt the existing cross-owner checks
-at its boundaries. Existing production enforcement remains unchanged until then. It requires neither immutable types nor freezing, copying,
+The integration runs without reference-publication validation of shared graphs.
+Exporting an instance allocator, entering a typed host operation, or creating a
+waiter enables trusted host reference sharing for that instance: it may retain opaque host references,
+and host control records may retain its allocations. Host operations and
+constructors also borrow references under this contract. Memory access checks
+still reject unrelated private domains and ordinary access to host objects.
+Instances using only the existing transport retain their publication checks.
+This requires neither immutable types nor freezing, copying,
 or a library allowlist. Existing ownership checks continue to protect unrelated
 memory; crossing the explicit host boundary grants access to the host operation,
 not ordinary isolate access to every host allocation. Optional diagnostic
@@ -42,10 +48,10 @@ Retention is therefore a programmer error with consequences beyond memory use.
 Independent isolate collection, heap freezing, or bulk reclamation must preserve
 these borrowing lifetimes before enabling those features.
 
-## Proposed API
+## API
 
-The following declarations describe the intended surface. Names may change during
-implementation review, but ownership and execution semantics must remain explicit.
+The following declarations summarize the implemented surface. Runtime control
+state remains opaque to application code.
 
 ```go
 package isolate
@@ -111,6 +117,20 @@ not by itself authorize arbitrary field access from isolate code. Direct shared
 field access would need its own explicit access contract. Registration belongs to application setup, and the SDK build
 driver supplies bindings where private package state would otherwise hide the
 host registration. No external adapter receives a raw compiler descriptor.
+
+The compiler marks the entry closure emitted by the verified standard-library
+`NewHostFunc` implementation, including its imported generic instantiations.
+Only that callable entry is shared; ordinary closure reads never acquire access
+to its captures. A compiler-typed function load may import a registered callable
+from a host binding cell. This supports SDK bindings without exposing adjacent
+host state or granting direct shared-field access. Applications cannot publish
+an arbitrary host closure through the same mechanism.
+
+Function values materialized in application execution retain their allocation
+domain even when their code has no captures; their code identity stays unchanged.
+A host operation or constructor cannot invoke a private callback directly or
+through reflection. It must use `Reenter`. Registration also rejects an
+isolate-owned closure supplied by a host controller.
 
 The initial interface requires an isolate caller. Host callers use their ordinary
 implementation directly; calling a registered wrapper without an isolate caller
@@ -317,7 +337,7 @@ has different consequences from hiding one in C memory. Pinning an allocation
 would not change its isolate owner or grant permission to retain it. Normal Go
 stack movement remains supported through rooted, compiler-visible references.
 
-The proposed trusted mode also differs from cgo's default dynamic pointer
+The trusted mode also differs from cgo's default dynamic pointer
 checks. Optional diagnostics can check publication and borrow escape, analogous
 to stronger cgo checking, while normal integration relies on the documented
 programmer obligations. Any diagnostic exemptions must describe generic runtime
@@ -341,7 +361,7 @@ Implementation should proceed in independently reviewable stages:
    deterministic admission and suspension before adapting blocking libraries.
 4. Integrate libraries in SDK-owned code. Replace current library-specific
    rewrites only after equivalent behavior and lifecycle tests pass. Retiring
-   their source guards is part of that replacement, not this design-only change.
+   their source guards is part of that replacement, not this core implementation.
 
 Required coverage includes nested structs, maps, slices, interfaces, closures,
 cycles, constructor panic, callback panic, nested boundaries, two isolates using
@@ -356,3 +376,26 @@ no migration from `Call`. Optional publication diagnostics should have negative
 fixtures for retained pointers hidden in every supported aggregate form. They
 must remain distinct from any claim that unchecked shared structures are safe
 when programmers violate their contract.
+
+## Implementation and verification
+
+`src/isolate/host_integration.go` exposes the typed API. The runtime keeps host
+execution contexts, allocation scopes, and scheduling membership separate.
+Constructors track newly allocated extents without traversing result graphs, so
+an allocator alone cannot authorize access to preexisting private objects.
+Scratch allocators carry a service lifetime and expire when that service exits.
+Allocation and outstanding asynchronous-borrow leases participate in the drain
+fence; `KillPendingError.PendingHostWork` reports work that still holds them.
+
+`src/isolate/host_integration_test.go` exercises domain selection, nested scopes,
+constructor and callback panic, context misuse, two instances sharing a host
+function, GC, budgets, scratch lifetime, one-shot synchronization, suspension,
+and completion racing kill. The generic module fixture
+`src/cmd/go/testdata/script/build_isolate_host_integration.txt` compiles ordinary
+constructors and a shared cache outside GOROOT under compulsory ownership and
+effect checks, both normally and with the race detector. Its negative cases
+include direct and reflected callbacks, ordinary host closures, host metadata
+field reads, expired contexts, and read-only mutation.
+
+SDK library migration and optional publication/borrow-escape diagnostics remain
+separate work. This API does not change existing Call transport or replay policy.

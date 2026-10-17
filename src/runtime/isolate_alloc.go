@@ -71,8 +71,17 @@ func retireIsolateAllocCache(handle *isolateAllocHandle) {
 // deterministic dispatch token alone is not an allocator synchronization rule.
 func acquireIsolateAllocCache(mp *m) *mcache {
 	gp := getg()
-	if gp.isolateOwner == 0 || gp.isolateGroup == nil {
+	if gp.isolateOwner == 0 || gp.isolateGroup == nil && gp.isolateConstruction == nil {
 		return getMCache(mp)
+	}
+	if scope := gp.isolateConstruction; scope != nil && gp.isolateOwner != 0 {
+		c := scope.allocator.alloc.cache
+		lock(&c.isolateLock)
+		if c.isolateOwner != gp.isolateOwner {
+			throw("isolate: construction allocation owner mismatch")
+		}
+		c.prepareForSweep()
+		return c
 	}
 	c := gp.isolateGroup.alloc.cache
 	if gp.isolateReadOnlyOwner != 0 {

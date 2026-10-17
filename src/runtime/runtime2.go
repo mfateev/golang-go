@@ -23,6 +23,9 @@ import (
 // semaphore waits, and permanent parks; their runtime cleanup still runs on
 // the resumed goroutine.
 type isolateRevocationGroup struct {
+	hostWork              atomic.Int32 // Construction leases and asynchronous host borrows.
+	hostCalls             atomic.Int64
+	hostWaiters           *isolateHostWaiter  // Protected by parkLock.
 	readOnlyAlloc         *isolateAllocHandle // Scratch owner for queries and update validators.
 	dispatchInbound       bool                // Only inbound delivery services may dispatch; dispatchLock.
 	dispatchPriority      bool                // Only high-priority writable goroutines may dispatch; dispatchLock.
@@ -610,9 +613,12 @@ type g struct {
 	ancestors                  *[]ancestorInfo // ancestor information goroutine(s) that created this goroutine (only used if debug.tracebackancestors)
 	startpc                    uintptr         // pc of goroutine function
 	racectx                    uintptr
-	waiting                    *sudog               // sudog structures this g is waiting on (that have a valid elem ptr); in lock order
-	cgoCtxt                    []uintptr            // cgo traceback context
-	labels                     unsafe.Pointer       // profiler labels
+	waiting                    *sudog         // sudog structures this g is waiting on (that have a valid elem ptr); in lock order
+	cgoCtxt                    []uintptr      // cgo traceback context
+	labels                     unsafe.Pointer // profiler labels
+	isolateHost                *isolateHostContext
+	isolateConstruction        *isolateConstruction
+	isolateScratchLifetime     *isolateScratchLifetime
 	isolateState               *isolatePackageState // Current package layouts; inherited by children, reset on reuse.
 	isolateResourceRunStart    int64
 	isolateHeapReservation     uint64
@@ -1360,10 +1366,12 @@ const (
 	waitReasonSynctestSelect                          // "select (durable)"
 	waitReasonSynctestWaitGroupWait                   // "sync.WaitGroup.Wait (durable)"
 	waitReasonCleanupWait                             // "cleanup wait"
+	waitReasonIsolateHost                             // Explicit external host completion.
 )
 
 var waitReasonStrings = [...]string{
 	waitReasonZero:                  "",
+	waitReasonIsolateHost:           "isolate host completion",
 	waitReasonGCAssistMarking:       "GC assist marking",
 	waitReasonIOWait:                "IO wait",
 	waitReasonChanReceiveNilChan:    "chan receive (nil chan)",
