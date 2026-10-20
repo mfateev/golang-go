@@ -1,232 +1,110 @@
-# Go Isolates — Design Definition
+# Architecture
 
-Status: **design draft with Phase 1 prototype and MVP scope revision**.
-Last updated 2026-09-30.
+An isolate is a statically linked Go execution with private package variables,
+owned allocations and an attached group of native goroutines. The Temporal SDK
+creates one deterministic isolate per cached workflow execution. A process can
+run multiple isolates and host activities concurrently. Within a deterministic
+isolate, only one application goroutine holds the execution token at a time.
 
-## What an isolate is
+## Component boundary
 
-An **isolate** is an independent Go execution context inside a single OS process:
-its own package-level state, its own goroutines, its own memory, its own
-deterministic scheduler. A very large number of small, fully isolated Go
-programs run concurrently in one runtime, with no isolate able to observe or
-reach another isolate's objects.
+| Component | Responsibility |
+| --- | --- |
+| SDK `cmd/tgo` and `internal/toolchain` | Discover marked functions, generate typed invokers, classify dependencies, apply library overlays, produce the build manifest |
+| Go command | Validate the generic manifest; compile selected state and compulsory checks; generate the process registration entry; hash effective inputs |
+| Compiler | Emit GC-described package layouts and descriptors; redirect global addresses; preserve source provenance; check effects, access and reference publication |
+| `internal/isolatestate` | Validate descriptors, order initialization, select private package tables, prepare audited frozen libraries |
+| Runtime | Own allocation caches/spans, goroutine membership and dispatch, waits, faults, read-only execution, resources, time and randomness |
+| `internal/isolatebridge` and public `isolate` | Opaque handles/programs, instance lifecycle and copied-byte transport |
+| SDK `workflow` | Native workflow API, local serialization, inbound services, handlers, futures and binary command construction |
+| SDK `temporalbridge` and `worker` | Host SDK bindings, task fencing, command execution, history replies, queries, cache cleanup and host observers |
 
-The model is V8/Cloudflare Workers, with three deliberate differences:
+```mermaid
+flowchart LR
+    Sources[Marked Go functions] --> Driver[SDK tgo driver]
+    Driver --> Manifest[Generic build manifest]
+    Manifest --> Compiler[Go command and compiler]
+    Compiler --> Binary[One host executable with registered entries]
+    Binary --> Host[Temporal host adapter]
+    Host <-->|Copied request and reply bytes| Instance[Private package state and native goroutines]
+    Instance --> Runtime[Owned spans, execution token and shared Go GC]
+```
 
-| | V8 isolates | Go isolates (here) |
-|---|---|---|
-| Code source | Each isolate loads its own script | All isolate code is compiled into the one host binary |
-| Containment | Free — JS has no raw pointers | Build-time: a language subset banning `unsafe`, cgo, `linkname` |
-| Determinism | Not a goal | A runtime guarantee — scheduling, map order, time, rand |
+## State and ownership
 
-The driving use case is **Temporal workflow isolation**: many workflow
-executions per worker process, each sandboxed and deterministically replayable.
+Code, literal strings, type information in linker read-only sections and approved
+immutable metadata can be shared. Every selected package has a typed layout
+containing its mutable globals, allocated separately for each instance. The
+current goroutine points to a table mapping immutable package keys to layouts.
+Global access selects that layout or the original host variable. This is
+package indirection, not relative pointers throughout the heap: values contain
+ordinary absolute Go pointers and are traced by the existing collector.
 
-## Decisions
+Each instance has a numeric owner and an allocation cache. Every live application
+heap span has one owner; spans are not mixed between instances. Small objects,
+large objects, map storage, channels, closures and stacks participate in ownership
+checks. Owner zero denotes host allocation, not immutability. Compiled reads,
+writes and reference publication must be valid for their execution domain.
 
-| # | Decision | Choice |
-|---|---|---|
-| 1 | Motivation | Temporal workflow isolation |
-| 2 | Trust model | Hostile code, contained by an enforced language subset |
-| 3 | Code loading | Same binary, N instances (no dynamic loading) |
-| 4 | Package globals | Per-isolate, via indirection through an isolate base |
-| 5 | Concurrency | Single-threaded isolates; many isolates run in parallel |
-| 6 | Determinism | Guaranteed by the runtime, not the SDK |
-| 7 | Memory | Isolate-owned spans drawn from the shared `mheap_` pool |
-| 8 | GC | Global initially; per-isolate later, without allocator changes |
-| 9 | Snapshotting | Not implemented, but the layout must stay relocatable |
-| 10 | Termination | MVP: whole-isolate revocation at runtime boundaries; forceful kill of uninterrupted computation is future work |
-| 11 | Scale target | 10k+ isolates, long-lived, mostly idle |
-| 12 | Distribution | Private fork of golang/go — *assumed, not confirmed* |
-| 13 | Boundary ABI | Bytes (`Call([]byte)`); typed boundary interfaces deferred |
+Read-only query and validator services use another allocation owner. They can
+read workflow values, construct scratch values and serialize results, but cannot
+mutate workflow state or publish scratch references back into it. Selected
+library caches are rebuilt under scratch ownership. Explicitly frozen Unicode,
+regexp syntax and strconv table backing data can be shared across instances;
+each instance still has private bindings to those tables.
 
-## The unifying mechanism: isolate-base-relative addressing
+Protobuf is ordinary private state: descriptors, registries, `MessageInfo` and
+coder caches initialize independently in each workflow and scratch service.
+Generated descriptor literals stay in read-only binary storage. Host registries
+and application objects are never shared through a typed host call.
 
-Four of the requirements above look independent but are satisfied by one
-mechanism. Everything an isolate owns is addressed **relative to its isolate
-base pointer** rather than by absolute address:
+## Execution and external decisions
 
-- **Decision 4** already requires it: global access becomes
-  `base + static_offset` instead of a link-time fixed address.
-- **Decision 6** benefits: relative addresses are reproducible across replay,
-  which closes the residual determinism hazards (`%p`, pointer identity,
-  iteration over pointer-keyed maps) instead of relying on having banned every
-  way to observe an address.
-- **Decision 9** requires it: a snapshot is only restorable at a different base
-  if nothing inside stored an absolute address.
-- **Suspend-time compaction** (below) requires it: an isolate can only be
-  relocated or compacted if its internal pointers survive a base change.
+A deterministic group has a token and FIFO queues, with high-priority, inbound
+and read-only admission roles. A committed user wait, explicit `runtime.Gosched`
+or exit passes the token. GC, asynchronous preemption and runtime housekeeping
+do not choose another application goroutine. Host callbacks queue inputs; the
+adapter delivers them at a suspension fence in history order.
 
-This makes base-relative addressing the load-bearing decision of the whole
-design. If it is compromised anywhere — one absolute pointer escaping into
-isolate-owned memory — determinism, snapshotting, and compaction all degrade
-together. It should be treated as an invariant to be enforced and tested, not a
-convention.
+Supported map iteration sorts keys instead of relying on Go hash order. Native
+select and top-level random APIs use a replay-seeded stream. Workflow time is
+supplied by history; durable timer waits are host commands. The runtime's own
+scheduler/GC accounting continues to use real time. See [determinism](DETERMINISM.md).
 
-## Derived architecture
+`Call`, `ControlCall` and `ReadOnlyCall` copy both directions and block for a host
+reply. `Write` copies observational output without acknowledgment. The SDK uses
+protobuf envelopes, fixed-width identifiers and opaque serialized Temporal
+payloads. There is no general host object, allocator or callback reentry API.
 
-### The host is isolate 0
+## Failure and lifetime
 
-Rather than special-casing host code against isolate code, the host runs as
-isolate 0. Every selected global access is then uniformly indirected. A
-package has one compiled code definition, with separate host and isolate
-state copies where its mutable globals are selected.
+Ownership/effect/resource faults permanently revoke the group. Application
+recovery and defers cannot resume it. Ordinary application panic/recover remains
+Go behavior; an unrecovered child panic terminates its instance. Completion,
+eviction and explicit kill wake supported waits and detach scheduler records.
+`Done`, `Wait` and successful `Kill` establish the completed cleanup fence.
+A kill deadline reports pending cleanup and cannot undo revocation.
 
-### The isolate-scoped / process-global partition
+Allocator caches and counters have independent lifetimes. Completed host handles
+may retain copied diagnostics without retaining private state. The global GC
+still scans suspended workflows; eviction releases references and ordinary GC
+reclaims unreachable objects. No private collector or bulk heap-free operation
+exists.
 
-Because all isolate code is known at link time (decision 3), the build can
-compute the transitive package graph reachable from isolate entry points.
-The target rule is to give every reachable Go package's mutable globals an
-isolate copy by default, including standard-library packages. The compiler
-and runtime then select the current instance's globals and tag allocations
-made in that context with the same owner. Host calls use the host state copy;
-code and immutable type metadata remain shared.
+## POC limits
 
-The scheduler, GC, allocator, and other runtime services need an explicit
-process-owned exception set. A process-owned service must not retain an
-isolate pointer or return mutable process state into an isolate without a
-defined boundary operation. Initialization needs separate review when it
-performs I/O, starts goroutines, or changes process state. Clocks, files,
-network calls, and randomness need effect routing in addition to memory
-ownership. The build must reject reachable code whose ownership or effects
-have not been classified; silently sharing its globals is not a valid
-default.
+- Reviewed, statically linked code with one definition per Go import path.
+- No dynamic loading, snapshots, relocation, stack serialization, general
+  copy-on-write, frozen-heap GC or mixed-owner spans.
+- No in-process hard kill of uninterrupted computation/native code, exact hardware
+  CPU quota, or complete hostile-code containment proof.
+- Supported effects and standard-library state are explicit implementation
+  policies. An import alone is not a promise that every API in that package works.
+- SDK external payload references, variadic handlers and automatic worker-stop
+  cache teardown are outside the current integration contract.
+- Private protobuf startup and span fragmentation make retained workflow memory
+  substantial; use [the measurement fixture](MEMORY_DENSITY.md) for sizing.
 
-The current static POC selects reachable application packages plus
-`encoding/base32`, `encoding/base64`, the mutable `encoding/json` v2 family,
-and `reflect`. This list probes the compiler path; it is not the intended
-default ownership rule or a complete standard-library audit. Heap allocation
-ownership and cross-owner pointer enforcement are not implemented yet.
-
-### Statically linked workflow functions
-
-The early per-directory `package main` and `isolate.json` proposal has been
-retired. The current source contract marks ordinary functions with
-`//temporal:workflow`. A normal build links every discovered function into
-one executable, and the host selects an entry with its generated handle. Each
-instance gets the selected entry's package state. See
-[STATIC_PROGRAMS.md](./STATIC_PROGRAMS.md) for the implemented subset and
-limitations. The executable contains one compatible definition per Go import
-path; arbitrary versions behind the same path remain unsupported.
-
-### Suspend → compact → drop from root set
-
-"10k+, mostly idle" (decision 11) creates a specific problem: under a global GC,
-10k idle isolates still get their stacks and per-isolate globals scanned on
-every cycle, contributing nothing but cost. Because isolates are suspended at a
-known point, suspension is a natural place to compact an isolate into a
-quiescent form and remove it from the root set entirely.
-
-This is the same machinery as snapshot-readiness. Doing decision 9's groundwork
-therefore also buys the fix for idle root-scanning cost — they should be built
-as one thing.
-
-### Termination scope
-
-The MVP revokes the **whole isolate**, never one goroutine at a time. Its
-scheduler must refuse to dispatch any queued or parked goroutine after
-revocation. Their cleanup may happen later without scheduling them. A
-goroutine already executing uninterrupted computation can continue until it
-reaches a runtime-controlled point; the MVP cannot claim forceful kill or a
-request-to-stop deadline for that case. This limits the MVP to trusted
-workflows, even after state isolation and owned memory are implemented.
-`Kill(ctx)` commits revocation and waits for the running goroutine. If the
-context expires first, it returns a pending error with a best-effort stack
-sample and sampled OS thread ID; the request stays in force. A nil return
-means isolate code cannot run again, while memory cleanup may continue.
-
-Forcefully terminating uninterrupted computation is a future improvement.
-Single-threaded isolate execution means at most one goroutine of an isolate
-is executing at a time, but all of its goroutines and wait records still
-need whole-isolate teardown. Locks wholly owned by the dying isolate can be
-discarded with it; scheduler records, GC roots, runtime locks, and shared
-metadata require a separate safety proof. Banning tenant cgo and assembly
-does not make trusted runtime assembly, such as large `memmove`, immediately
-preemptible. The Phase 0 arm64 probe failed its 100 ms acknowledgment test
-for that case, so it is not the MVP termination mechanism.
-
-User-visible synchronization objects are confined to one isolate. An isolate
-cannot share a `sync.Mutex`, `RWMutex`, `Cond`, `WaitGroup`, or the mutable state
-they protect with the host or another isolate. A `Cond` and its associated
-locker have the same owner; its embedded notification tickets and waiter
-queue belong to that owner as well. Whole-isolate teardown may discard these
-objects and goroutines holding them, without unlocking or running their
-defers. It must first remove runtime waiter records and stack references from
-process-owned scheduler structures. The runtime's semaphore hash table and
-its internal locks remain process-owned even when an entry refers to an
-isolate-owned synchronization object.
-
-`isolate.Call` is a separate boundary operation. Its host command and reply
-records are process-owned, and stopping the isolate must wake a goroutine
-waiting in `Call` independently of synchronization-object teardown. The
-current channel-based bridge provides that wake with a stop channel; native
-boundary queues will need the same property.
-
-## Consequences and tensions
-
-**The memory floor is the cost to watch.** Decision 7 keeps a per-isolate
-size-class floor: roughly one 8KB span per size class an isolate touches, so
-~40–80KB per isolate assuming 5–10 classes. At the 10k target that is roughly
-0.4–0.8GB of pure floor — tolerable, but it is precisely the cost identified as
-dominant for this profile. **Measure this before anything else.**
-
-*Mitigation — the small-isolate nursery:* give each isolate a single
-bump-allocated span covering all small objects, with no size classes at all, and
-promote to size-classed spans only once it outgrows the nursery.
-
-**Update: this is mandatory, not a proposal.** The budget was later derived
-bottom-up from what a suspended workflow actually holds (IMPLEMENTATION_PLAN.md § E2) at a
-median of ~8KB per isolate. Size-class spans cost more than the entire budget,
-so the nursery is not contingent on the floor measurement. Two further
-consequences: per-isolate globals must be lazily materialized rather than eagerly
-copied, and **stack serialization on suspend becomes the mechanism that reaches
-the density target** — `stackMin` is 2048 bytes and `shrinkstack` will not go
-below it, so ~2KB per blocked goroutine is otherwise unreclaimable. That argues
-for pulling decision 9 (snapshot) closer to the critical path than
-"design for it, implement later."
-
-**Global GC is a staging decision, not a resting place.** It is the right start
-because it keeps the allocator stable, but at 10k mostly-idle isolates the
-global root scan and global STW are the first things that will hurt. The span
-ownership model exists to make the later split cheap — that option must not be
-allowed to decay.
-
-**The no-cross-reference invariant still needs a runtime audit.** Per-isolate
-globals and the subset close most leak paths, but these hold user pointers
-outside any isolate and need isolate-scoping or banning:
-
-- `runtime.SetFinalizer` — closure holds isolate data, queued globally, and runs
-  on `runfinq`, outside the isolate
-- Timers — `timer.arg` parks a user pointer in a P's timer heap; the callback
-  fires on an arbitrary P
-- `sync.Pool` — the `Pool` struct becomes per-isolate for free, but
-  `poolCleanup` is registered through a single global runtime hook, leaving it
-  ambiguous which isolate's `allPools` it drains
-- `g` reuse from `gFree` and stack reuse from `stackpool` — `g.param`,
-  `g.labels` need explicit clearing on cross-isolate reuse
-
-**Determinism is now a runtime contract.** Decision 6 means deterministic
-goroutine scheduling, deterministic map iteration, and virtualized time and rand
-become runtime properties. The payoff is that the SDK's deterministic dispatcher
-(`workflow.Go`, `Selector`, the coroutine state machine) could largely be
-deleted, along with a class of non-determinism bugs. The cost is that the
-guarantee must hold under every runtime path, including GC and preemption.
-
-## Still open
-
-1. **The subset definition.** Now the critical undefined piece. Minimum bans:
-   `unsafe`, cgo, `//go:linkname`, `reflect` escape hatches
-   (`Value.UnsafeAddr`, `unsafe.Pointer` round-trips), `runtime.SetFinalizer`,
-   direct syscalls, and ambient `os`/`net` access. Needs to be decided as a
-   compile-time-enforceable list.
-2. **The boundary ABI.** How a workflow task enters an isolate and commands come
-   out. Must be copy-only or use an explicitly shared immutable region — any
-   pointer crossing breaks the invariant.
-3. **Confirm decision 12** — private fork vs. an upstream ambition.
-
-## Non-goals
-
-- Dynamic loading of independently compiled Go programs (decision 3)
-- Parallelism *within* one isolate (decision 5)
-- Defending against `unsafe`-bearing code at runtime; containment is build-time
-  (decision 2)
+Source pins and numeric contracts identify matching components. Equal contract
+markers alone do not prove replay compatibility. The POC maintains one current
+implementation; application history compatibility requires explicit replay checks.

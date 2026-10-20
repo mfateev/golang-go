@@ -1,193 +1,125 @@
-# Determinism — Required Runtime Changes
+# Deterministic execution
 
-Status: **historical analysis**. Verified against the worktree at `2ff5743d9f`.
-The implementation sequence and current contracts are in
-[NATIVE_DETERMINISM_PLAN.md](./NATIVE_DETERMINISM_PLAN.md). In particular,
-canonical map iteration removes the need to make map hashing deterministic.
-Companion to [ISOLATES_DESIGN.md](./ISOLATES_DESIGN.md) (decision 6) and
-[ISOLATE_SUBSET.md](./ISOLATE_SUBSET.md) (section D).
+`Config.Deterministic` enables the native scheduling/select/map/random contract
+before initialization. The Temporal adapter also supplies an initial history
+time and a timer operation. Deterministic mode without a configured clock rejects
+clock reads and sleeps rather than observing wall time.
 
-The subset doc lists time and map iteration as "virtualized by the runtime" in a
-one-line table. That named the requirement without designing it. This document
-works both through against the actual source. Neither is as simple as the table
-implied, and map iteration has one source of nondeterminism that **cannot be
-fixed by seeding at all**.
+## Native dispatch
 
----
+Each group has one execution token and FIFO readiness queues. Only the token
+holder is published into normal Go run queues. A parent continues after `go`;
+children enqueue in creation order. Committed user channel/select/sync waits,
+`runtime.Gosched` and goroutine exit transfer the token. Preemption, stack work,
+GC and runtime-internal waits retain it, so wall time and processor assignment
+do not choose a different application goroutine. Different instances and host
+work still run concurrently.
 
-## The structural problem: `rand()` is per-M
+High-priority readiness is considered before normal FIFO readiness. Priority
+survives blocking; an ordinary `go` child has normal priority. Inbound and
+read-only roles have separate admission fences. Priority does not preempt a
+running member or bypass a role fence. Pending joins count as work before token
+acquisition, preventing a false idle report from `Start` or `Suspend`.
 
-`src/runtime/rand.go:163`
+`Suspend` waits for the admitted queue/token to become idle and then closes
+admission. Service `Commands` concurrently or a blocked transport handshake can
+prevent idleness. Deliver ordered replies and events while fenced, resume the
+required role, drain its commands and suspend again. Return to normal admission
+only after inbound/priority work is quiescent. Do not infer idleness from a
+channel poll, sleep or goroutine count. Native waits still require correct Go
+synchronization; deterministic dispatch is not permission for data races.
 
-```go
-func rand() uint64 {
-	mp := getg().m
-	c := &mp.chacha8
-	...
-```
+## Select and maps
 
-The runtime's PRNG state lives on the **M**, not the g and not the isolate.
-Isolates are single-threaded (decision 5) but are *not* pinned to an M, so every
-consumer of `rand()` inherits whichever thread happened to run the isolate.
+Native and reflected select shuffle polling from the instance stream. The same
+seed, input readiness and dispatch trace reproduce the choices. Byte `Call`
+reserves its four transport poll draws before its first park so delayed host
+receipt cannot interleave those draws with application randomness. Inbound
+`ControlCall` polls use fixed ordering and consume no workflow draws.
 
-Everything below inherits this. The fix is one change — move the PRNG state into
-the isolate struct, reached from `g` exactly as globals addressing already does
-— but it has to happen before any of the individual fixes mean anything.
+Native/reflected map iteration takes an ascending snapshot of integer/string
+keys, including named types. Deleted keys are skipped, current values are read
+when visited, and new keys are excluded until the next iteration. Hashing and
+hash-flood protections keep ordinary Go implementations: sorted observation
+removes hash-table layout from replay behavior.
 
-The consumers that matter are map seeding, map iterator offsets, and `selectgo`.
+Pointer, uintptr, boolean, floating-point, complex, composite and arbitrary
+interface keys cannot be iterated, including on empty maps. Temporal typed
+search attributes use the SDK-owned `workflow.SearchAttributeEntries` binding
+and key index for canonical name/type traversal. There is no SDK key-type
+exception or package knowledge in the Go map runtime.
 
-## Map iteration — five sources, one unfixable by seeding
+`sync.Map.Range` snapshots keys of one concrete integer/string type, sorts them
+and loads current values before callbacks. Empty maps work; mixed/unsupported
+key types fail before callbacks. `iter.Pull`/`Pull2` use channel handshakes inside
+the dispatcher instead of direct runtime coroutine switching. Iterator runners
+inherit owner, limits and lifecycle membership.
 
-| # | Source | Location |
-|---|---|---|
-| 1 | Per-map hash seed at creation | `internal/runtime/maps/map.go:288`, `:352` |
-| 2 | **Seed *reset* on growth and clear** | `internal/runtime/maps/map.go:699`, `:786` |
-| 3 | Iterator start offsets | `internal/runtime/maps/table.go:757-758` |
-| 4 | Process-global hash keys | `internal/runtime/maps/runtime_alg.go:56` |
-| 5 | **Architecture-dependent hash implementation** | `memhash_{amd64,arm64,386}.s`, `memhash_nosimd_amd64.s`, `aeskeysched` |
+## Clock and timers
 
-Source 2 is the one most likely to be missed. The seed does not merely get set at
-creation — it is *re-randomized during the map's life*:
+The host installs Unix nanoseconds before init and advances nondecreasing time
+at quiescent task boundaries. `time.Now` returns UTC; its wall/monotonic behavior
+must agree with `Sub`, `Since`, `Until` and context deadlines. Runtime scheduling,
+GC, watchdogs and profiling retain real clocks.
 
-```go
-// Reset the hash seed to make it more difficult for attackers to
-// repeatedly trigger hash collisions. See https://go.dev/issue/25237.
-m.seed = uintptr(rand())
-```
+`time.Sleep`, `After`, `NewTimer`, `AfterFunc` and standard-context deadlines use
+host timer requests. The generic request is a decimal signed nanosecond duration;
+completion follows host-recorded events. Timer channel `len`/`cap` appear zero,
+including reflection. Nonpositive timers are ready immediately. Timer generation
+checks prevent stale delivery after Stop/Reset. Stop/Reset suppress local delivery
+but do not cancel an already emitted durable host timer. Tickers are unsupported.
+Initializers cannot issue durable waits before the host dispatcher starts.
 
-So a fixed initial seed is not sufficient; the reseeding events must themselves
-be deterministic.
+Default Local is UTC and does not read `TZ` or the machine timezone database.
+`LoadLocation("UTC")` and `LoadLocation("Local")` work; machine database lookups
+are denied. `FixedZone` and explicitly supplied TZif data remain value operations.
 
-Source 3 is explicit about its purpose:
+## Randomness and numerical behavior
 
-```go
-it.entryOffset = rand()
-it.dirOffset   = rand()
-```
+Top-level `math/rand`, `math/rand/v2`, default `crypto/rand.Reader`, `Read`, `Int`,
+`Text` and select share a ChaCha8 stream installed before init. Zero seed is a
+fixed default. The Temporal adapter hashes original history run identity into
+the seed; replay of that run sees the same bytes. Precisely, hash the bytes
+`isolate/crypto-rand/v1`, then the uint64 little-endian length of OriginalRunID
+(falling back to execution RunID), then that UTF-8 run ID with SHA-256. A shared
+stream read buffers leftover bytes and integer draws consume the next eight bytes
+little-endian, including partial-read leftovers. Read-only stream seeding XORs
+seed byte zero with 0x80; it never changes the workflow stream. Suspension preserves stream
+position. Explicit local generators retain their own seeds; top-level legacy
+`Seed` is a no-op independent of host GODEBUG. Query/validator scratch streams do
+not advance the workflow stream.
 
-Sources 1–4 all fall out of the per-isolate PRNG fix.
+SDK `workflow.GetRandomStream` supplies independent named streams with its
+specified ChaCha8/distribution behavior. Reset identity is delivered at a task fence;
+streams created afterward and generated child IDs use the new identity. See the
+SDK reference for namespaces and call semantics.
 
-### Source 5 is the real problem
+Replay seeds are public/predictable. Crypto-named APIs provide no secret entropy
+inside workflows; generate secrets and perform encryption in host activities or
+codecs. `crypto/rand.Prime`, direct OS/DRBG entropy and key generation are outside
+the supported private contract.
 
-Source 5 is not about *which seed* — it is about *which algorithm runs*. The
-tree ships separate hash implementations for amd64, arm64, and 386, plus
-separate SIMD and non-SIMD amd64 paths, with an AES-based schedule
-(`aeskeysched`) where hardware AES is available. Two machines compute **different
-hash values for the same key with the same seed**, which produces a different
-table layout, which produces a different iteration order.
+`math.Log`/`Exp` and normal/exponential random-distribution paths pin explicit
+IEEE fused rounding needed by the retained replay corpus. Host math keeps its
+architecture implementations. This is not portability for every math function
+or arbitrary floating-point expression.
 
-No amount of seeding fixes this. It forces a decision:
+## Observable limits and validation
 
-- **If replay must work across architectures** — isolate maps have to use the
-  portable `memhash` path and never `aeshash`. This is a real hot-path cost and
-  needs measuring before it is committed to.
-- **If replay can be pinned to a CPU class** — the hash stays fast, but replay
-  acquires a placement constraint. Note this is finer-grained than
-  "amd64 vs arm64": the SIMD and non-SIMD amd64 paths differ too, so the
-  constraint is a microarchitecture class, not an architecture.
+`sync.Pool` never exposes GC/P-dependent cached values inside an instance.
+Finalizers, weak/unique observations, runtime machine metrics and unsupported
+ambient effects are rejected. Pointer address observations are not stable replay
+identities. Protobuf ordering/default overlays must not consume application random
+bytes during descriptor construction.
 
-For Temporal this looks forced. A workflow evicted from one worker may be
-replayed on another, and heterogeneous fleets (amd64 + arm64) are normal. **I'd
-treat cross-architecture replay as required and plan to pay the portable-hash
-cost**, but it should be measured, not assumed.
+The SDK determinism checker records the actual trace in an activity result and
+completion, compares freshly computed replay observations, and rejects corrupted
+outcomes. Run it at `GOMAXPROCS=1,2,8`, with optional CPU features disabled and
+different host time zones. A successful Temporal replayer alone is insufficient
+when it does not compare activity input payloads. Numeric contract versions do
+not prove all future versions replay identically.
 
-### Two smaller points
-
-**Pointer-keyed maps hash the address.** For iteration to be reproducible, the
-hash must be computed over the isolate-base-relative offset, not the absolute
-address. This is the base-relative principle from the design doc reaching
-further than it first appears.
-
-**Much of the observable surface is already deterministic.** `fmt` sorts map
-keys when printing, and `encoding/json` sorts them when marshaling. The real
-exposure is direct `range` over a map where behavior depends on order — narrower
-than it sounds, but exactly the case that produces silent replay divergence.
-
-## Time — Go already ships a virtual clock
-
-Better news here. The playground's faketime mode is a working per-process
-virtual clock: `src/runtime/time_fake.go` makes `nanotime()` return a `faketime`
-global, and `proc.go:6484` advances it to the next timer's deadline when nothing
-is runnable — a discrete-event clock.
-
-That is a precedent, not a solution: it is a whole-process build tag. Five things
-are needed beyond it.
-
-1. **Per-isolate, not global.** The clock moves into the isolate struct, reached
-   from `g`.
-2. **`nanotime` must split in two.** Runtime internals — the scheduler, the GC
-   pacer, mutex contention profiling — need *real* time. Isolate code needs
-   virtual time. Today they call the same function. This needs two distinct
-   entry points rather than a mode flag, or the runtime starts making scheduling
-   decisions on simulated time.
-3. **Wall and monotonic must stay consistent.** `time.Now()` embeds a monotonic
-   reading, and `Sub`/`Since`/`Until` use it in preference to the wall reading.
-   Both have to come from the isolate clock or the two disagree.
-4. **Policy: injected, not simulated.** For Temporal, workflow time comes from
-   history timestamps recorded by the server — it is an *input*, not something
-   the isolate computes. The runtime should expose a settable per-isolate clock
-   and let the host drive it. faketime's auto-advance is the right mechanism but
-   the wrong policy (it is right for a standalone isolate with no host).
-5. **Timers must be host-driven.** `time.Sleep` in a workflow is a durable timer
-   command, not a runtime timer — the goroutine parks until the host resumes it.
-   `context.WithTimeout` and `time.AfterFunc` route the same way.
-
-### Two things fall out of this
-
-**Per-isolate deadlock detection and clock advance are the same work.** faketime
-advances inside the runtime's check for "nothing can run" (`proc.go:6484`, by
-the deadlock path). The design doc already requires per-isolate deadlock
-detection so that "all goroutines asleep" terminates one isolate instead of the
-process. That is the identical hook — build them together.
-
-**A cross-isolate leak path closes.** The design doc flagged `timer.arg` parking
-user pointers in a P's timer heap, with callbacks firing on an arbitrary P. If
-isolate timers are host-driven and never enter the runtime timer heap, that path
-disappears rather than needing to be isolate-tagged.
-
-**Suspension gets easier too.** An isolate suspended for an hour must not observe
-a monotonic jump on resume. Injected time gives this for free; measured time
-would need explicit correction.
-
-## `select`
-
-`src/runtime/select.go:191` shuffles the poll order:
-
-```go
-j := cheaprandn(uint32(norder + 1))
-```
-
-Same per-isolate PRNG fix, no separate design needed.
-
-## Still to work through
-
-- **Goroutine scheduling order** — the core of decision 6 and the largest piece;
-  not analyzed here
-- Goroutine IDs appearing in stack traces and panic output
-- GC timing — invisible if isolate time is injected rather than measured, which
-  is a further argument for injection
-- `sync.Map` iteration — inherits whatever the underlying map does
-- Finalizer timing — moot, banned by the subset
-
-## Cost
-
-| Change | Cost |
-|---|---|
-| Portable hash instead of `aeshash` for isolate maps | Real, hot-path — **measure this** |
-| PRNG state from isolate instead of M | Negligible; same pointer chase as globals |
-| Split `nanotime` into real and virtual entry points | Negligible |
-| Per-isolate clock and host-driven timers | Negligible |
-
-## Open decisions
-
-1. **Is cross-architecture replay required?** Blocks the hash decision, and the
-   hash decision has the only non-negligible cost on this page.
-2. **Injected or simulated clock?** Recommend injected for Temporal; a standalone
-   isolate might still want faketime's auto-advance, so this may need to be a
-   per-isolate mode.
-3. **What happens to reseed-on-growth?** It exists to resist hash-flooding
-   (go.dev/issue/25237). Removing it for isolate maps would weaken that. But it
-   does not have to be removed — reseeding from the *isolate's* deterministic
-   PRNG keeps the anti-flooding property while staying reproducible, since an
-   attacker still cannot predict the sequence without the isolate's seed.
-   Recommend deterministic reseed over removal.
+Primary implementation: `runtime/isolate_dispatch*.go`, `isolate_priority.go`,
+`isolate_inbound.go`, `isolate_readonly.go`, `isolate_determinism.go`,
+`isolate_crypto_rand.go`, `internal/runtime/maps`, `sync/map.go`, `iter`, `time`,
+`math`, `math/rand` and `math/rand/v2` under `src/`.

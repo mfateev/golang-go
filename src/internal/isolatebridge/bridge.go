@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package isolatebridge is the trusted, provisional host transport for the
-// source-level isolate API. It does not provide isolation or deterministic
-// scheduling; those remain native runtime work.
+// Package isolatebridge implements copied-byte host transport and runtime
+// attachment for the isolate API. The native runtime enforces ownership,
+// dispatch, resources and lifecycle.
 package isolatebridge
 
 import (
@@ -16,8 +16,8 @@ import (
 	"unsafe"
 )
 
-// Boundary is one host command transport. Its channel is
-// infrastructure for the Phase 2B API probe, not a contained isolate heap.
+// Boundary owns the host command, observation and stop channels for one
+// instance. Application requests and replies cross through owned byte copies.
 type Boundary struct {
 	owner            uintptr
 	group            unsafe.Pointer

@@ -46,7 +46,9 @@ BSD-style license found in the LICENSE file.
 The [SDK-owned tgo driver and distributions](https://github.com/mfateev/sdk-go-poc/tree/task/modify-go-runtime-for-isolates/toolchain)
 provide workflow discovery, build policy and installation. This fork builds a
 conventional `bin/go`. Isolate builds require `GOEXPERIMENT=isolates`; the default
-is disabled. See the [generic build contract](doc/isolates/BUILD_CONTRACT.md).
+is disabled. See the [current POC documentation](doc/isolates/README.md),
+[implementation guide](doc/isolates/IMPLEMENTATION.md) and
+[generic build contract](doc/isolates/BUILD_CONTRACT.md).
 
 #### Binary Distributions
 

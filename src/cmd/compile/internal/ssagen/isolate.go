@@ -20,7 +20,8 @@ import (
 
 // isolateLayoutOffsets is immutable while the SSA backend compiles functions.
 // The generated type gives the current GC a precise pointer map for the
-// package's isolate-owned globals. Package selection is opt-in for this probe.
+// package's isolate-owned globals. Package selection comes from the explicit
+// isolate build manifest.
 var isolateLayoutOffsets map[*types.Sym]int64
 
 func InitIsolateLayout() {
@@ -77,7 +78,7 @@ func InitIsolateLayout() {
 	objw.SymPtr(lsym, 0, reflectdata.TypeLinksym(layout), 0)
 	objw.Global(lsym, int32(types.PtrSize), obj.RODATA|obj.NOPTR)
 
-	// Use a package-specific symbol as the tagged runtime probe's key.
+	// Use a package-specific symbol as the runtime state-table key.
 	// Equal layout types may be deduplicated by the linker, so the type
 	// pointer itself cannot identify the owning package.
 	keySym := typecheck.Lookup("isolateLayoutKey")

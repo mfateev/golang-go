@@ -14,7 +14,6 @@
 // stays in ssagen; initializer and descriptor emission stays with its owner.
 // Frontend guard tables stop changing before parallel backend compilation.
 //
-// The transitional library metadata adapter still runs in typecheck before
-// ScopeEffects. It is separate from generic isolation and grants no privilege
-// through this package's public functions.
+// External library selection and source adaptation belong to the SDK build
+// driver. This package applies generic provenance, effect and global checks.
 package isolate

@@ -1,240 +1,59 @@
-# Cached isolate memory and future allocator work
+# Retained memory and startup cost
 
-## Measurements before read-only library sharing
+The current allocator gives each live span one owner. Small-object spans use
+Go size classes and scanned/noscan divisions; unused slots cannot be filled by
+other isolates. A mostly idle workflow can therefore reserve much more span
+capacity than its live objects occupy. Package layouts and initializer-created
+graphs are eager. Each blocked goroutine also retains its stack and group state.
 
-Measured on 2026-10-14 with Go revision `2a584b2896` and SDK revision
-`c0a2438916`, on Linux ARM64 with `GOMAXPROCS=8` and a 16 GiB container limit.
-These results describe the selected protobuf program, not a fixed cost for every
-isolate or the complete Temporal worker sticky cache.
+Frozen Unicode, regexp syntax and strconv backing tables reduce duplicated
+library data, while bindings stay private. Protobuf registries, descriptor trees
+and coder caches are private and lazily completed within each instance. Host-only
+service descriptor graphs are excluded from private initialization. These choices
+trade substantial retained memory/startup work for independent library execution.
 
-The fixture used the production SDK dispatcher and binary converter, decoded a
-small generated protobuf record, and suspended each workflow on a host `Call`.
-Each started workflow retained its entry and cancellation-watcher goroutines.
-It did not allocate a large signal-channel buffer or retain workflow histories.
+## Reproduce the current fixture
 
-| State, measured over 1,000 retained instances | RSS increase per instance | Live heap increase per instance |
-|---|---:|---:|
-| Minimal runtime test with 4 KiB private state | 23 KiB | 7 KiB |
-| Protobuf program initialized, entry not started | 644 KiB | 185 KiB |
-| Workflow started and suspended | 708 KiB | 201 KiB |
-
-The minimal fixture has no compiler-generated dependency state. RSS includes
-allocator fragmentation, stacks and runtime metadata; it is not live heap size.
-Heap profiling is sampled, so individual attribution is approximate.
-
-The initializer-only profile attributed approximately 102 KiB per instance to
-Unicode data, 50 KiB to package-global layouts and lookup structures, and 14 KiB
-to regexp Unicode alias maps. Other tables and initializers accounted for the
-remaining roughly 20 KiB. No workflow arguments, execution context, or business
-code had run at this point.
-
-A run targeting 100,000 simultaneously cached workflows stopped at 18,000
-because container memory exceeded its 14 GiB safety threshold. Population took
-41 seconds. Process RSS was 12.15 GiB, live heap increased by 3.45 GiB, and
-36,000 isolate goroutines remained. A forced GC took 816 ms elapsed time; that
-is not a stop-the-world pause measurement. The process exited and released its
-memory. Extrapolating this workload gave roughly 67 GiB RSS for 100,000 cached
-instances, before environment headroom. The 100,000-instance result was not
-actually measured.
-
-A separate startup profile covered 3,000 creations: ten saved histories, three
-`GOMAXPROCS` settings (1, 2 and 8), and 100 repetitions. Average `NewContext`
-elapsed time was 0.83 ms, median 0.69 ms, p95 1.41 ms and p99 1.72 ms. Average
-sampled startup CPU was approximately 0.79 ms. These measurements exclude input
-conversion and workflow execution and mostly describe an already running host.
-
-## Implemented read-only optimization
-
-The generated process entry prepares independent, frozen snapshots of the
-audited GOROOT packages `unicode`, `regexp/syntax`, and `strconv`. It replays only
-those table initializers, records the exact allocated extents, and publishes
-their reachable graphs atomically. This is not an approval of arbitrary
-process-owned data. Reads after publication require no initialization lock.
-
-Allocation recorders live in a temporary runtime side table keyed by goroutine,
-not in the goroutine record itself. Entries exist only during shared-cache
-initialization, are not inherited by child goroutines, and are removed when the
-initializer returns or unwinds. Allocator lookups neither lock nor allocate;
-when no initializer is active they read only the empty-table pointer.
-
-Each isolate copies its package-global layout from the snapshot rather than
-rebuilding its maps and table backing arrays. Bindings remain private: an
-isolate can replace `unicode.L` or `unicode.Categories` with private values.
-Mutating the shared default map, range structure or backing slice is rejected.
-Ordinary host globals remain separate and retain normal Go behavior. Host
-mutation cannot change the frozen snapshot used by future isolates.
-
-Read-only query/validator scratch layouts use the same immutable backing data.
-Attempted mutation of that data panics in the handler without revoking the
-workflow. Regexp execution buffers, pools, compiled application expressions,
-other library caches, and workflow values remain private.
-Wildcard rune tables are copied when exposed through writable `syntax.Prog`
-instructions; ordinary host compilation retains its existing allocation path.
-
-Package layouts themselves are still copied. Their immutable fields and literal
-storage could be split out in a later compiler optimization; sharing whole
-mutable package layouts would violate the ownership contract.
-
-Repeating the same 1,000-instance retained-memory measurements after this change
-gave:
-
-| State | RSS increase per instance | Live heap increase per instance |
-|---|---:|---:|
-| Program initialized, entry not started | 381 KiB | 65 KiB |
-| Workflow started and suspended | 446 KiB | 81 KiB |
-
-Started-workflow RSS decreased approximately 37%, and live heap decreased
-approximately 60%. The process still reserved about 552 KiB of heap spans per
-started isolate, so the remaining fragmentation is substantial. The shared
-snapshot cost is paid once and included in the warmed process baseline. Startup
-timings during this measurement overlapped compilation/testing and are not an
-uncontended CPU comparison. These results do not establish 100,000-isolate
-capacity in the 16 GiB environment.
-
-The final implementation also retained 10,000 workflows simultaneously: RSS
-increased by 4.26 GiB (447 KiB per instance), live heap by 791 MiB (81 KiB per
-instance), and 20,000 isolate goroutines remained. Population took 15.9 seconds;
-mean `NewContext` elapsed time was 0.83 ms. Three forced collections took
-approximately 282–303 ms elapsed each. After GC, 100 sampled workflows resumed
-and preserved their protobuf state. Eviction completed in 64 ms, the goroutine
-count returned to one, and subsequent collections reduced live heap to about
-16 MiB. RSS remained high during those immediate collections because Go retains
-pages for reuse; process exit released them. This measures retained isolate
-state and the POC dispatcher, not complete worker-cache history overhead.
-
-## Per-isolate protobuf cost
-
-The independence refactor was measured on 2026-10-20 on Linux ARM64 at
-`GOMAXPROCS=8`. Each cell below is the median of three sequential processes,
-with 1,000 retained instances per process, five constructor warmups and a forced
-GC before each retained-memory sample. Compilation, tests and the temporary
-Temporal server were stopped during measurement. The paired baseline used Go
-`594d4c2881` and SDK `ecce344772`; it was rebuilt from those exact sources.
-These paired measurements supersede earlier numbers for evaluating this refactor;
-the older tables above describe their own historical source/fixture combinations.
-
-The fixture is `sdk-go-poc/internal/cmd/isolatebench`. Both revisions use the
-production workflow dispatcher, the same generated `Record{Sequence: 42}` input
-and a blocking copied-byte call. The old fixture uses the old JSON transport
-body; the new one uses the generated binary envelope. Started measurements
-retain the cancellation watcher as well as the workflow goroutine. Each process
-resumed 100 sampled workflows after GC, checked their returned protobuf values
-and killed all instances. Initialized-only measurements do not start the entry.
-
-| State | Revision | RSS / instance | Live heap / instance | Mean NewContext | p50 | p95 | p99 |
-|---|---|---:|---:|---:|---:|---:|---:|
-| Initialized | Before | 321.6 KiB | 51.3 KiB | 0.414 ms | 0.331 ms | 0.759 ms | 2.409 ms |
-| Initialized | After | 808.5 KiB | 349.9 KiB | 1.535 ms | 1.459 ms | 1.992 ms | 3.079 ms |
-| Started and suspended | Before | 393.3 KiB | 66.8 KiB | 0.408 ms | 0.367 ms | 0.651 ms | 1.706 ms |
-| Started and suspended | After | 1152.0 KiB | 590.4 KiB | 1.650 ms | 1.584 ms | 1.921 ms | 2.757 ms |
-
-[Raw samples and baseline revisions](measurements/independence-2026-10-20.json)
-retain each run's results. Constructor percentiles measure `NewContext` only;
-they exclude starting the workflow and transporting/decoding its input. The
-started population nevertheless puts more live state and GC pressure around
-subsequent constructor samples.
-
-Private protobuf has a material fixed cost: approximately 299 KiB more live
-heap and 487 KiB more RSS for each initialized instance, rising to 524 KiB and
-759 KiB more for each started instance in this fixture. Mean initialization is
-about 1.1–1.2 ms slower. The p50 shifts along with the mean, so this is ordinary
-initialization work rather than merely a tail outlier. Startup CPU itself was
-not profiled in this run.
-
-The final graph excludes generated descriptors used solely by the host SDK,
-including host-only protobuf-module generated packages. An early unpruned
-prototype retained about 1.18 MiB live per initialized instance. The final
-measurement includes the shared transport schema's 46 message definitions and
-the workflow's own selected descriptors/coder state. Descriptors remain lazy;
-no forced walk of unused field/accessor caches was added.
-
-This implementation retains the measured cost in exchange for independent
-protobuf execution and removal of typed host sharing. Sticky-cache sizing must
-account for that cost. These numbers describe isolate/dispatcher state; they do
-not include complete retained Temporal histories or establish a higher-density
-worker capacity. Further allocation/descriptor work can use this fixture as its
-baseline.
-
-Reproduce the current side from the SDK checkout with a matching built toolchain:
+From `sdk-go-poc`, using its matching toolchain, on Linux:
 
 ```sh
-../golang-go/bin/tgo build -o /tmp/isolatebench ./internal/cmd/isolatebench
+tgo build -o /tmp/isolatebench ./internal/cmd/isolatebench
 /tmp/isolatebench -instances=1000
 /tmp/isolatebench -instances=1000 -started
 ```
 
-## Future work: denser allocation
+Run built binaries serially outside compilation/server activity. The fixture sets
+`GOMAXPROCS=8`, warms five constructors, collects before/after population and
+reports RSS, live heap, constructor percentiles and post-GC resumption checks.
+RSS sampling reads Linux `/proc/self/statm`. Each started workflow receives a
+`Record{Sequence:42}`, suspends on a copied-byte Call and retains its cancellation
+watcher. Sampled workflows resume after GC and must return the original value.
+Initialized-only instances never start the entry. All instances are killed after
+measurement. Repeat fresh processes to distinguish steady cost from noise.
 
-Go spans have different sizes, each a multiple of the 8 KiB Go heap page. Small
-object spans hold one size class, separately for pointer-scanned and pointer-free
-objects. For example, an 8 KiB span holds 256 allocation slots of 32 bytes.
-Currently, a live span has exactly one owner. An isolate using only a few slots
-still prevents peers from filling the remaining slots. A suspended isolate's
-partially occupied spans cannot be reclaimed merely by flushing its cache.
+For a representative 1,000-instance run of this graph, budget roughly 0.8 MiB
+RSS / 0.34 MiB live heap per initialized instance and 1.1 MiB RSS / 0.58 MiB live
+heap per started/suspended instance, with constructor mean around 1.5–1.7 ms.
+These are sizing examples, not contractual limits; rerun the fixture for the
+actual toolchain, dependency graph and machine. Constructor timing excludes
+input conversion and workflow startup. Full cached Temporal histories, host SDK
+cache entries and business state add further cost.
 
-Possible designs to prototype, not implemented by this change:
+## Interpret the measurements
 
-1. **Free-span lists indexed by owner.** Reduce searching and reuse compatible
-   partial spans more efficiently. This retains fragmentation across owners.
-2. **Mixed-owner spans with ownership per allocation slot.** Preserve Go's size
-   classes and object-scanning machinery while packing objects from different
-   isolates together. Allocation, access checks, tiny packing, sweeping and
-   per-isolate resource refunds need slot ownership. Partially live spans cannot
-   be freed in bulk when one isolate is evicted.
-3. **Isolate pages holding objects of different sizes.** Preserve isolate-local
-   pages while reducing size-class fragmentation. This requires more substantial
-   changes to object lookup, pointer layouts, marking, allocation and sweeping.
+- `HeapAlloc` after GC measures live Go objects, not RSS or owned span capacity.
+- Runtime `Resources()` measures charged owned slots/stacks/metadata; reserved
+  span capacity is reported separately and is not an RSS quota.
+- RSS includes committed allocator pages, stacks, runtime/process state and
+  fragmentation. Go may retain freed pages for reuse after eviction.
+- A forced collection's elapsed time is not its stop-the-world pause duration.
+- Whole-program graph selection and lazy protobuf access change costs. Avoid
+  forcing unused descriptor caches merely to inspect them during initialization.
+- Sticky-cache size bounds retained instances, while cache misses pay constructor
+  CPU repeatedly on the Workflow Task critical path.
 
-There is no universal unused object header. Headerless and pointer-free objects
-have no spare field. Some larger pointer-containing objects have an eight-byte
-type header needed by GC. Pointer tagging is architecture-dependent and does not
-cover headerless objects. Size-class padding is not guaranteed and can be
-application-accessible. Mark, allocation and pinning bits already have essential
-uses.
-
-A side table can retain unchanged object sizes and addresses. A 32-bit global
-owner ID covers 100,000 isolates but costs four bytes per allocation slot,
-including free slots. A smaller span-local owner index plus a dictionary, or an
-adaptive single-owner representation that adds a table only when mixed, may
-reduce that cost. Reusing existing span ownership fields to find the side table
-avoids another object header, but the table still consumes memory. Measure both
-the ownership-lookup CPU cost and actual density before choosing a design.
-
-## Future work: GC and accounting from isolate roots
-
-The global Go collector traces roots and marks individual objects. Sharing a
-physical span creates no pointer edge: independent isolate graphs can share
-spans while using the existing collector. Host cache handles must keep cached
-state reachable. Shared immutable graphs are intentionally reachable from many
-isolates and need separate accounting.
-
-Allocation counters can charge the running isolate without an owner ID inside
-each object. During GC, carrying an isolate identity through root traversal
-could calculate its reachable live bytes without permanent owner IDs. This
-still visits/marks objects; looking only at root pointers cannot reveal their
-retained sizes. Concurrent allocations, finalizers, runtime references and host
-cache handles need an explicit attribution and publication protocol.
-
-Root attribution does not independently detect cross-isolate pointers. Current
-checks guard against missed global routing, shared mutable caches, uncopied host
-arguments, captured host closures and unsupported unsafe escapes. Mixed-owner
-spans would need object ownership to retain those checks, unless isolation is
-instead proven by the compiler and boundary implementation. Removing checks is
-a separate design decision, not part of the read-only optimization.
-
-Skipping roots of cached isolates would collect their live data. Frozen-cache GC
-needs an explicit retention/marking protocol; neither span sharing nor root
-attribution provides that automatically.
-
-## Future work: copy-on-write
-
-Software copy-on-write could share an initialized graph until an isolate first
-mutates it. Replacing the package-global pointer alone cannot preserve existing
-aliases into maps, structs and slice backing arrays. Correct transparent copying
-needs isolate-specific address resolution through compiler accesses, map
-operations and reflection while preserving alias identity. The current ownership
-checks validate addresses and cannot redirect them.
-
-OS page-level copy-on-write does not give different views to isolates sharing
-one virtual address space. Audited immutable data can be shared directly;
-general copy-on-write remains a larger future compiler/runtime project.
+The POC does not implement mixed-owner spans, a compact nursery, object-slot
+ownership, general copy-on-write, heap snapshots, stack serialization or skipping
+cached roots during GC. Suspended workflow roots must remain traced or their live
+objects would be collected. There is no 100,000-workflow capacity guarantee.
+Use the fixture plus realistic worker-cache/history load before setting capacity.

@@ -1,315 +1,116 @@
-# Phase 2B package-state partition
+# Package state and initialization
 
-Current implementation: compiler-created descriptors feed
-`internal/isolatestate.New`; a typed runtime package-state table is inherited by
-children and reset on goroutine reuse. Generic local/imported address lowering
-uses one package-key lookup. There is no toy global/epoch path or single-base
-fallback. See [BUILD_CONTRACT.md](BUILD_CONTRACT.md).
+## Compiler layout and addressing
 
-The original partition and E4/phase commands below are historical findings.
-Their retired packages, flags and runtime hooks must not be restored as current
-requirements. Native compiler scripts now cover imported/inlined/generic globals
-and independent initialization of pointers, maps and closures.
+For each selected package, collect local external variables, sort them by symbol
+name and build a synthetic struct with their exact Go types/alignment. Emit its
+runtime type and GC pointer map, a unique package key, read-only per-variable
+offsets, a dependency record, a replayable init record and a versioned descriptor.
+A type pointer cannot be the package key because the linker can deduplicate
+equal layout types.
 
+The descriptor's current logical layout is:
 
-This is the first explicit partition for the opt-in compiler probe. It is not
-yet a linked-program reachability manifest or a complete audit of the standard
-library.
+```go
+struct {
+    MetadataVersion uint64
+    Path string
+    Key, TypeSlot, DependencyTask, InitTask unsafe.Pointer
+}
+```
 
-| State | Current owner | Reason |
-|---|---|---|
-| Scheduler, goroutine records, allocator, process init-task state | Process | Runtime infrastructure must coordinate all instances. The process init task runs once. |
-| `internal/isolateproto` name and handle registry | Process | A stable entry name and handle are registered once in the host. Its current function value is a Phase 1 limitation: an adapter that captures isolate state needs a per-instance callable table. |
-| Generated `isolateLayoutType` and `isolateLayoutKey` symbols | Process | They are immutable package metadata used to allocate and select instance state. |
-| Globals in a package compiled with `-d=isolateglobals=1` | Isolate | Every local external variable is placed in that package's generated, GC-described layout. Initializers are rerun with that layout selected. |
-| `encoding/base64` globals in a static isolate build | Isolate | The builder selects this audited standard package when an isolate program reaches it. Each instance initializes its four encoding pointers separately. The process retains its own initialized copy. |
-| `encoding/base32` globals in a static isolate build | Isolate | Its two encoding pointers are initialized by `NewEncoding` in each instance, independent of the process copy. Its imported standard packages remain process-owned in this probe. |
-| `encoding/json`, its mutable v2 dependency family, and `reflect` globals in a static isolate build | Isolate | The builder selects these packages together. Their callback globals, options, and caches use per-instance layouts; the host retains process copies. Heap and effect ownership are still unproved. |
-| Other package globals, including standard-library packages not opted in | Process in this probe | No isolation claim follows from using them. Each package must be classified before an ordinary-Go conformance claim. |
+`TypeSlot` addresses a cell containing the layout's runtime type pointer.
+`DependencyTask` begins with a uint32 count, padded to eight bytes, followed by
+`{Path string; Key unsafe.Pointer}` records. `InitTask` has an eight-byte prefix
+containing a uint32 function count, followed by initializer function PCs. Its
+record is immutable; it does not reuse the process init-task completion flag.
+The metadata version is checked before interpreting the remaining fields.
 
-The POC build selects ownership by package path, outside the package's
-source. The compiler implements that selection for global reads, writes, and
-initializer replay. The intended build rule is broader: select all mutable
-Go package state reachable by an isolate unless it belongs to an explicit
-process service. This removes routine per-package memory routing decisions.
-A package still needs changes within its implementation when copying globals
-is insufficient: `sync.Pool` bypasses shared storage during isolate
-execution, and clock, file, network, and other effects need their own
-boundary rules. The current standard-library selection is deliberately
-small while the general rule and its exception checks are implemented.
+Lower a selected global address as:
 
-The current selection boundary is a **whole package**. A package that contains
-both a process registry and mutable workflow state cannot safely opt in as it
-stands; move the registry into a host package or implement an explicit,
-verified split. The earlier `e4compiletoy` special-cased two variables and is
-not evidence that the generated layout mode supports such a split.
+```text
+base = currentG.packageState.lookup(packageKey)
+address = base != nil ? base + variableOffset : originalHostAddress
+```
 
-The trusted instance now binds one monotonically assigned numeric owner ID
-before replaying package initializers and again through its state runner and
-`main`. Native child goroutines inherit the ID; the host goroutine restores
-its prior value after initialization. The numeric form can later be stored in
-off-heap allocator metadata without retaining a Go pointer there. It is an
-identity for future owned allocation and pointer checks, not an isolate heap.
-The package-state table and `Call` transport remain
-separate: an initializer has an owner ID but cannot call the host boundary
-before `Start`.
+Select the base before adding an offset so GC never sees an invalid interim
+pointer. Local, imported, inlined and instantiated generic accesses use the same
+rule. Imported offsets and keys are linker symbols. Generic dictionaries and
+immutable compiler data are not mutable global slots. Missing keys in an active
+instance fail instead of falling back to host state.
 
-Large-object spans now record the numeric ID active at allocation and clear it
-when reused. This is allocation-origin metadata only. Small-object spans still
-mix allocations from different contexts through the shared per-P cache, and no
-span is reclaimed by isolate. The trusted `Call` bridge switches to process
-context while creating a command and copying its request, then copies the
-reply under the isolate ID. A large-payload race test checks all three origins.
-The former `Inbox` path delivered a host-allocated byte slice. Incoming
-requests now arrive as `Call` replies, which are copied under the receiver's
-isolate owner. The native allocator and cross-owner verifier remain pending.
+## Building an instance
 
-Go map headers now record the numeric owner active at creation. The runtime
-constructors tag heap maps; the compiler also tags its optimized small maps
-whose headers live on the stack. Generic and fast-key assignments, reflected
-assignments, `delete`, and `clear` reject a mutation from another owner. Reads
-of process-owned maps remain possible, so an isolate can use large read-only
-standard tables without duplicating them. A source-level race test checks a
-local alias to `unicode.Categories`, several key layouts, reflection, and a
-map made by another isolate. The map header grows by one pointer-sized field.
-`maps.Clone` reads a process map and tags the new header with the caller's
-owner, so the isolate can modify its clone. It rejects cloning a map owned by
-another isolate.
-Map lookups and iteration now reject a map owned by another isolate, while
-process-owned maps remain readable. An iterator checks again as it advances
-or exposes a key or element, so passing an initialized iterator across owners
-does not bypass the lookup guard. Reflection's map length uses the guarded
-`Map.Used` path. In builds with `-d=isolatepackages`, the compiler routes
-`len(map)` through the same owner check, including nil maps. Ordinary builds
-retain the direct header load. A tagged 100-run race test exercises the
-isolate-build path; the static multi-program build also passes. Map aliases
-must still stay behind the host boundary because values can hold mutable
-foreign pointers.
-These guards are not general pointer ownership: a map value can
-contain a mutable pointer, slice, or interface that still needs a cross-owner
-write check. It also does not make a map's iteration order deterministic.
+The generated process entry registers typed function handles and state factories
+using compiler-owned descriptor references. `internal/isolatestate.New`:
 
-## Two-package dependency probe
+1. Checks metadata versions and complete descriptor fields.
+2. Sorts paths; rejects duplicate paths/keys, absent dependencies, key mismatches
+   and dependency cycles.
+3. Allocates all typed layouts under the instance owner before replaying init.
+4. Attaches the package table to the initializer goroutine and walks dependencies
+   in deterministic order, running each selected initializer once.
+5. Restores the caller's prior table on return. Native children inherit the
+   selected table, owner and group; reused goroutine records clear them.
 
-`e4deptoy` and `e4importtoy` are both opted in. The runtime's tagged probe
-allocates one typed layout per package and maps each package's unique key to
-its layout. The selected table is inherited by a native child goroutine. A
-missing key in a selected table panics instead of silently reading process
-state. With no table selected, ordinary process initialization uses the
-process globals, and the older single-package probe can still use its base.
+Selected embedded strings replay their literal bindings before ordinary source
+initializers. Embedded byte slices get private mutable backing arrays. Function
+closures, maps, pointers and objects allocated by init belong to the instance.
+Clock, random seed, resource limits and initializer logging are installed first.
+General host requests require `Start`; initialization cannot wait on that path.
 
-The tagged host helper `NewPackageInstance` accepts an explicit list of
-compiler-owned package descriptors. Each descriptor contains the package path,
-identity key, layout type slot, selected dependency record, and immutable
-initializer record. The helper validates missing selected dependencies and
-cycles, allocates each selected layout, and runs initializers in dependency
-order. The test deliberately lists the importer before its dependency. The
-importer reads an initialized dependency global, then both packages mutate
-their own graphs. Two instances and an inherited child passed 100 native
-arm64 race-detector runs.
+The host keeps its normal globals. Host-reachable packages initialize once for
+the process as well as separately in instances. Selected nonstandard packages
+unreachable from the host can omit process startup init. Dependency selection
+and support-factory graph composition belong to the SDK; the Go core receives
+an explicit manifest. Shared dependencies in a composed program initialize once.
 
-This establishes descriptor-driven ordering for the selected package graph.
-Package discovery, automatic dependency selection, and a single contiguous
-base with linker-assigned package offsets remain to be implemented. The tagged
-table and host helper are probes for the access rule, not the final API or
-layout architecture.
+## Selection and enforcement
 
-## Standard-library initialized-state probe
+Selection is a whole-package decision. Direct writes from selected code into
+unselected imported globals are rejected. Runtime ownership probes cover aliases,
+heap pointers and dynamic calls. Compiling unselected packages with the same
+checks prevents private execution from silently accessing their mutable process
+state. An unselected stateless helper may still be usable.
 
-`encoding/base64` is a useful initialized-state case: its exported
-`StdEncoding` and `URLEncoding` pointers are built by `NewEncoding`, and the
-raw variants derive from them. With `encoding/base64` compiled in the opt-in
-layout mode, a tagged test reruns its generated variable initializer for two
-instances. The four encoding pointers differ between instances and from the
-process values. An importing package compiled with
-`-d=isolateimports=encoding/base64` can read and reassign `StdEncoding` through
-the selected layout; changing one instance leaves the other and the process
-unchanged. The tagged host helper now replays the compiler's initializer
-record for this package; the test passed 100 native arm64 race-detector runs.
+The SDK's `internal/toolchain/selection.go` defines the selected standard-library
+set. It includes JSON/reflection, time/context, formatting/logging, random APIs,
+Unicode/regexp, strings/bytes and common encoding packages. Its graph planner
+also selects ordinary workflow dependencies, private protobuf and SDK workflow
+support while keeping host-only worker services initialized on the host.
+Generated service descriptors reachable solely through host SDK internals are
+excluded from private startup. Use `-isolate-report` to inspect the actual graph.
 
-This imported-global flag is a manual probe setting, not package discovery.
-Every compiler invocation that directly accesses an opted-in package's
-exported globals must select it. Passing
-`-gcflags=all=-d=isolateimports=encoding/base64` to `tgo test` covers every
-importing compiler invocation in the build. A tagged test checks direct
-accesses from its test package, `e4base64toy`, and `e4base64caller` against the
-same selected instance; 100 native arm64 race runs passed. With only
-`e4base64toy` flagged, the separate caller reads and writes the process global
-and the test fails. The package's generated offset and identity symbols are
-linkable so the importing compiler can find its layout. The compiler's
-initializer and selected dependency records are linkable for host replay. Its
-imports and any calls into process-owned runtime
-services still need review before `encoding/base64` can be placed in a
-supported isolate package set. `encoding/json` has shared caches and pools,
-so using it as the first proof would mix initialization with a broader
-process-state audit.
+## Frozen tables and read-only services
 
-The static build now selects `encoding/json`, `encoding/json/v2`,
-`encoding/json/internal`, `encoding/json/internal/jsonopts`,
-`encoding/json/jsontext`, and `reflect` together. The v1 encoder's `sync.Map`
-caches and the selected reflection caches use per-instance globals;
-`sync.Pool` bypass prevents process pools from retaining isolate objects.
-The script round-trips JSON in two instances and confirms that both instances
-and the host see distinct `jsonopts.DefaultOptionsV2` objects through the
-public v2 API. This establishes one selected-global path, not general JSON
-heap or effect safety. Under the default v2 path, `encoding/json` has an
-`init` function that assigns callback globals in `encoding/json/internal`.
-An [eager-state floor experiment](./experiments/layout_floor/README.md) found
-about 9.40 KB retained per prepared JSON instance versus 0.54 KB for an
-empty program at 10,000 instances. The six selected JSON/reflection layouts
-contain 3,528 fixed bytes; initializer-created graphs and package-table
-overhead account for the rest. Lazy or shared immutable state remains needed
-for the intended density.
-Selecting `encoding/json` alone would replay those writes into the process
-copy of its dependency. Selecting that dependency requires checking every
-reader, including `encoding/json/v2`, for the same per-instance routing.
-The compiler now rejects direct assignments from selected package code to
-globals of unselected imported packages, including writes through an index or
-field in initializers, ordinary functions, and closures.
-The same gate catches direct `copy`, `clear`, `delete`, and `append` mutation
-of an imported global, plus send and close on an imported global channel.
-Selecting `encoding/json` alone produces diagnostics for its five callback
-assignments. This check covers syntax rooted in an imported global; writes
-through aliases, ordinary calls, and unsafe pointers still need separate
-effect checks. A selected `encoding/json/v2` build also needs selected
-`encoding/json/internal/jsonopts` for its initializer writes. Selecting
-`reflect` currently covers its type and layout caches and an inlined
-`reflect.escapes` write to a dummy global in an unreachable branch.
+Before instance creation the generated process entry prepares independent
+snapshots of audited `unicode`, `regexp/syntax` and `strconv` state. Initialization
+records exact allocation extents, then atomically publishes the reachable
+immutable backing graphs. Each new layout copies private bindings to those
+backings. Host globals are separate, so changing a host binding cannot affect
+future instances. Writes to a frozen graph fail; replacing a private binding
+with new private data is allowed.
 
-## Build-wide selected-package probe
+A read-only service copies the workflow package table, retaining application
+layout references for reads, and replaces configured library layouts with new
+scratch-owned ones. It replays their init tasks in dependency order, except
+frozen-library layouts copy their bindings directly. Protobuf runtime and
+workflow-generated message layouts are included in scratch rebuilding.
+Captured protobuf values are snapshotted into scratch representations before
+cloning/conversion, avoiding reuse of workflow-owned mutable reflection caches.
 
-The opt-in `-d=isolatepackages=path1:path2` compiler flag now carries one
-selected-package set to every compiler invocation in a build. A compiler
-automatically enables layout generation and replayable initialization when its
-own package path is selected. It redirects direct accesses to globals of
-selected imported packages through their layout, and records selected direct
-imports for initializer ordering. This removes the need to pair per-package
-layout flags with a separate imported-global flag for each caller.
+See [read-only handlers](READ_ONLY_HANDLERS.md) for admission and write rules.
 
-The tagged `e4importtoy` test selects both toy packages through one build-wide
-flag. Its external test package is not itself selected, yet direct reads and
-writes of an exported dependency global follow the selected instance. Two
-instances retain independent values and the process value is unchanged. The
-package's complete tagged suite passed 100 native arm64 race-detector runs.
-The existing `encoding/base64` tagged suite also passed 100 native arm64 race
-runs using only `-d=isolatepackages=encoding/base64` for selection.
+## Implementation locations
 
-In the direct tagged probe, the selected set is an explicit build input, not
-an audited whole-program package partition. The compiler does not yet prove
-that every package reachable from an isolate entry has been classified. The
-current per-package table and descriptor list remain probe machinery.
-
-The descriptor keeps each package's key, type slot, and initializer records
-together in compiler output. The host supplies descriptor pointers rather
-than pairing those fields manually. The static build now discovers application
-dependencies; a linked-program classification proof remains open.
-
-The compiler's selected-dependency record now includes each imported package's
-generated identity key as a relocation. A linked importer whose dependency
-record is retained requires that key symbol from the selected dependency.
-The host checks the recorded key against its manifest before replaying any
-initializers. This closes a silent manifest mismatch in the probe; it does not
-discover packages that the build did not select.
-
-The tagged `e4linktoy` fixture retains its generated dependency record at
-link time without directly reading the dependency's globals. It supports a
-negative link check: compile only the importer in isolate mode and select its
-dependency as an import, leaving the dependency unselected. The linker must
-reject the missing layout key. A build-wide selection of both packages must
-link and run. Both outcomes were observed: the negative build failed with an
-undefined `e4deptoy.isolateLayoutKey` relocation from only
-`e4linktoy.isolateDependencyTask`, while the positive build passed. The
-fixture uses a non-inlined dependency call so the initializer does not
-independently reference the dependency's layout symbols.
-
-## Static build integration
-
-The `//temporal:workflow` build walks each entry package's dependency graph
-and selects its non-standard packages with one build-wide
-`-d=isolatepackages` value. The generated top-level main retains descriptors
-for the selected packages and passes each entry's reachable subset to
-`NewPackageInstance` when the host creates an instance. This reuses the
-descriptor validation and dependency-ordered initializer replay above.
-
-The build script starts `orders` twice and `billing` once. Both programs
-import one initialized application package. `orders` also initializes one of
-its own globals from that package. Each instance observes the dependency's
-fresh initial value and the correct initialization order. This establishes a
-working build-to-runtime path for application package state.
-
-The static build selects `encoding/base64` for per-instance state when an
-isolate program reaches it. A build script checks that two instances each
-start with the default `StdEncoding`, can reassign their own copy, and leave
-the host's process copy unchanged. Other standard-library packages remain
-process-owned pending their ownership and effect audit. The build does not yet
-support a deliberate process-owned application package in an isolate program's
-import graph. A generated-entry compiler mode
-omits startup init tasks only for selected packages unreachable from the host,
-while retaining their code. Selected application packages reached by the host
-also initialize process globals at startup; the same compiled initializer
-replays into each instance's globals. A build test counts both paths and checks
-that host mutations do not affect an instance. The entry imports reachable
-standard packages so their process initializers run once. Initializers should
-still be pure: the probe does not enforce
-determinism, and the host boundary is unavailable until `Start`. The
-per-package table remains a tagged probe rather than the final contiguous
-isolate layout.
-
-## Process-wide pool boundary
-
-The trusted source-level boundary now treats `sync.Pool` as empty while an
-isolate goroutine executes or its selected package initializers replay.
-`Get` uses `New` if provided, and `Put` drops the value. This prevents a
-process-wide per-P pool from handing an object to another instance or
-retaining an isolate-owned object. A source-level test covers the entry
-goroutine and an inherited child; the static build script also exercises a
-pool inside a selected package initializer.
-
-This handles `sync.Pool` only. Selected JSON and reflection globals now use
-per-instance layouts, but their allocation paths and calls into unselected
-packages still need an ownership and determinism audit. Other standard
-packages may retain process-wide caches.
-
-`fmt` is a process-owned-package case. Its two printer caches are `sync.Pool`
-globals, so the isolate pool bypass gives an isolate call a fresh printer and
-discards it afterward. Its remaining package globals are a scan table and
-error values. The implicit standard-stream functions (`Print`, `Printf`,
-`Println`, `Scan`, `Scanf`, and `Scanln`) now fail before touching process
-`os.Stdout` or `os.Stdin` in an isolate. `Sprintf`, `Sscan`, and calls with an
-explicit writer or reader still work. An explicit writer or reader can itself
-reference a process resource, and formatting can invoke user `Stringer` or
-`Formatter` methods. The build report therefore still marks `fmt`
-unclassified until effects and indirect retention are checked.
-
-`regexp` also uses `sync.Pool` for reusable match machines, which the isolate
-pool bypass discards. Most other package globals in `regexp` and
-`regexp/syntax` are tables initialized once and then read. The exception is
-`regexp/syntax.aliases`, a `sync.Once` cache of Unicode names that would be
-allocated by whichever isolate first parsed a Unicode class. In the static
-probe's `phase0_e4` build, `regexp/syntax` now constructs that immutable cache
-during process initialization. The multi-program script compiles and matches
-a Unicode class from an isolate. This is a package-specific process-init
-measure, not a general immutable-sharing rule; reader-backed regexp methods
-can still invoke process I/O through an explicit reader, so the build report
-continues to mark `regexp` unclassified.
-
-## Indirect runtime ownership example: `unique`
-
-`unique.Make[T]` stores type-specific maps in the process-wide `uniqueMaps`
-global. A comparable `T` can contain a pointer, so the map can retain an
-isolate-owned object. Its canonical map also registers a closure with
-`runtime.AddCleanup`; that callback runs on runtime cleanup machinery outside
-the isolate's scheduler. Merely selecting the `unique` global for an instance
-would separate its map but would not make cleanup execution safe. `net/netip`
-calls `unique.Make` for IPv6 zone values, so this issue is reachable through
-a standard package that otherwise looks like pure value manipulation.
-
-The general rule therefore needs two enforcement points: tag allocated
-objects and reject or mediate cross-owner pointer storage, and dispatch
-callbacks with their owning isolate's lifecycle and scheduler. Until those
-exist, `unique` and its transitive callers cannot be counted as generally
-isolate-safe. The runtime now rejects `SetFinalizer` and `AddCleanup` in an
-active isolate, and `unique.Make` rejects before touching its process-wide
-map. `net/netip.WithZone` therefore fails early inside an isolate. These are
-temporary restrictions, not owner-aware cleanup support. Other process-wide
-stores still need the planned ownership barrier.
+| Location under `src/` | Role |
+| --- | --- |
+| `cmd/compile/internal/ssagen/isolate.go` | Layout type, offsets and keys |
+| `cmd/compile/internal/ssagen/ssa.go` | Current-package and imported global addresses |
+| `cmd/compile/internal/pkginit/init.go` | Replayable initializer construction and embedded bindings |
+| `cmd/compile/internal/isolate/globals.go` | Direct imported-global validation |
+| `cmd/go/internal/work/isolate.go` | Generated registration, graph retention and startup selection |
+| `internal/isolatestate/state.go` | Descriptor validation, ordering and state runner |
+| `internal/isolatestate/frozen.go` | Frozen library preparation |
+| `runtime/isolate_state.go`, `runtime/isolate_library*.go` | Typed table, scratch layouts and frozen backings |
+| `runtime/proc.go`, `runtime/runtime2.go` | Child inheritance, roots and goroutine reuse |

@@ -3,8 +3,8 @@
 This document specifies the APIs added by this Go fork for native isolates. It
 covers the entire exported `isolate` package, including methods inherited through
 public type aliases, and the Go command's isolate build interface. It describes
-the current implementation, rather than the historical API proposals elsewhere
-in this directory. Checked against the source on 2026-10-17.
+the current implementation. The implementation guide explains the internal data
+structures and algorithms behind these contracts.
 
 These are experimental POC APIs requiring `GOEXPERIMENT=isolates`. There is one
 current implementation; the version markers do not promise compatibility with

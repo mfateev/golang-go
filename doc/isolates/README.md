@@ -1,39 +1,38 @@
-# Go isolates design work
+# Native Go isolate POC
 
-This directory contains the design and feasibility record for the experimental
-isolates branch. The Go fork accepts an [explicit build manifest](BUILD_CONTRACT.md)
-and supplies private package state, ownership checks, deterministic scheduling,
-generic time/timers, copied-byte transport and lifecycle enforcement.
-The SDK owns workflow discovery, typed entry generation, package selection and
-toolchain distribution. The old cooperative reference model and phase probes
-have been retired; current package state lives in `internal/isolatestate`.
+This directory specifies the current compiler/runtime POC and its integration
+with the native Temporal SDK. Start with [the architecture](ISOLATES_DESIGN.md),
+then [the implementation guide](IMPLEMENTATION.md) to reproduce the design from
+an ordinary Go source tree. [Development](DEVELOPMENT.md) describes building the
+existing sources from clean checkouts. All commands name their working directory.
 
-See [migration evidence](MINIMAL_GO_CORE_STATUS.md) for completed changes,
-verification and the SDK-owned protobuf/OTel integration. Earlier phase logs
-preserve findings and rejected approaches; their retired commands are historical.
+The POC runs statically linked Go functions with private package state, checked
+memory ownership, deterministic native concurrency, host-driven time, copied-byte
+communication and whole-instance lifecycle control. It uses the shared Go GC and
+ordinary Go pointers. It is intended for reviewed workflow code; it does not
+provide a process security sandbox or a hard deadline for stopping arbitrary code.
 
-- [Runtime API reference](./RUNTIME_API.md) — all implemented public APIs, ownership contracts and build interfaces
-- [Resource controls](./RESOURCE_CONTROLS_PLAN.md) — accounting, limits and worker watchdogs
-- [Minimal Go core plan](./MINIMAL_GO_CORE_PLAN.md) — move SDK policy and toolchain ownership out of Go and retire superseded experiments
-- [Reliable lifecycle](./LIFECYCLE_PLAN.md) — whole-group termination and SDK cleanup
-- [Task status](./TASK_STATUS.md) — current progress and open work
-- [Implementation plan](./IMPLEMENTATION_PLAN.md) — phase gates and acceptance
-- [Design definition](./ISOLATES_DESIGN.md) — goals and decisions
-- [Static programs](./STATIC_PROGRAMS.md) — generic entries and one-binary linking
-- [Dynamic loading](./DYNAMIC_LOADING.md) — deferred plugin-based enhancement
-- [Isolate API](./ISOLATE_API.md) — proposed host and isolate surfaces
-- [Host integration](./HOST_INTEGRATION.md) — copied-byte communication after removal of typed host functions and their supporting machinery
-- [Language and library subset](./ISOLATE_SUBSET.md) — proposed restrictions
-- [Determinism](./DETERMINISM.md) — time, maps, scheduling, and replay
-- [Alternatives](./ALTERNATIVES.md) — fork and external instrumentation analysis
-- [Phase 0 results](./PHASE0_RESULTS.md) — experiments and measurements
-- [Phase 2B progress](./PHASE2B_PROGRESS.md) — compiler/runtime slices and remaining invariants
-- [Development and recovery](./DEVELOPMENT.md) — checkout, build, and damaged-container recovery
-- [Temporal POC](./TEMPORAL_POC.md) — trusted SDK integration and steel-thread gates
+| Document | Contract |
+| --- | --- |
+| [Architecture](ISOLATES_DESIGN.md) | Components, ownership domains, data flow and implementation limits |
+| [Implementation guide](IMPLEMENTATION.md) | Data structures, algorithms, compiler/runtime integration and construction order |
+| [Build contract](BUILD_CONTRACT.md) | Generic Go manifest, typed invokers, package selection, tests and cache identity |
+| [Package state](PACKAGE_STATE.md) | Global addressing, descriptors, initialization, shared tables and scratch state |
+| [Memory ownership](MEMORY_OWNERSHIP.md) | Allocator, access/publication checks, metadata and GC lifetimes |
+| [Determinism](DETERMINISM.md) | Dispatch, select, maps, clocks, timers, randomness and replay |
+| [Language and effects](ISOLATE_SUBSET.md) | Supported Go operations and restrictions |
+| [Host integration](HOST_INTEGRATION.md) | Copied-byte operations and the binary SDK protocol |
+| [Lifecycle](LIFECYCLE.md) | Initialization, completion, revocation, pending cleanup and diagnostics |
+| [Read-only handlers](READ_ONLY_HANDLERS.md) | Query/validator admission, scratch allocation and captured values |
+| [Resource controls](RESOURCE_CONTROLS.md) | Charged memory, goroutines, task/progress watchdogs and observers |
+| [Runtime API](RUNTIME_API.md) | Complete exported `isolate` surface and build-report fields |
+| [Temporal integration](TEMPORAL_INTEGRATION.md) | SDK registration, task phases, serialization, handlers and host bindings |
+| [Memory density](MEMORY_DENSITY.md) | Current cost model, measurement fixture and capacity limits |
+| [Development](DEVELOPMENT.md) | Repositories, source pins, bootstrap and local configuration |
+| [Validation](VALIDATION.md) | Reproducible compiler, runtime, race, SDK, sample and replay checks |
 
-Run shell commands in these documents from the repository root unless a
-different working directory is stated.
-## Cached isolate memory
-
-See [memory density](MEMORY_DENSITY.md) for measured startup and retained-memory
-costs, read-only library sharing, and future span/ownership/GC designs.
+The SDK's [README](https://github.com/mfateev/sdk-go-poc/blob/task/modify-go-runtime-for-isolates/README.md),
+[reference](https://github.com/mfateev/sdk-go-poc/blob/task/modify-go-runtime-for-isolates/SDK_REFERENCE.md)
+and [implementation guide](https://github.com/mfateev/sdk-go-poc/blob/task/modify-go-runtime-for-isolates/IMPLEMENTATION.md)
+complete the application and Temporal wire contracts. The SDK owns dependency
+selection and distribution; the Go core contains no Temporal or protobuf policy.
