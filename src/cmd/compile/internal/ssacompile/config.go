@@ -52,6 +52,7 @@ func newConfig(arch string, types ssa.Types, ctxt *obj.Link, optimize, softfloat
 		c.GpRegMask = gpRegMaskAMD64
 		c.FpRegMask = fpRegMaskAMD64
 		c.SimdRegMask = simdRegMaskAMD64
+		c.SimdMaskReg = simdMaskRegAMD64
 		c.SpecialRegMask = specialRegMaskAMD64
 		c.IntParamRegs = paramIntRegAMD64
 		c.FloatParamRegs = paramFloatRegAMD64
@@ -100,7 +101,7 @@ func newConfig(arch string, types ssa.Types, ctxt *obj.Link, optimize, softfloat
 		c.GpRegMask = gpRegMaskARM64
 		c.FpRegMask = fpRegMaskARM64
 		c.SimdRegMask = simdRegMaskARM64
-		c.SpecialRegMask = specialRegMaskARM64
+		c.SimdMaskReg = simdMaskRegARM64
 		c.IntParamRegs = paramIntRegARM64
 		c.FloatParamRegs = paramFloatRegARM64
 		c.FPReg = framepointerRegARM64
@@ -125,6 +126,7 @@ func newConfig(arch string, types ssa.Types, ctxt *obj.Link, optimize, softfloat
 		c.GpRegMask = gpRegMaskPPC64
 		c.FpRegMask = fpRegMaskPPC64
 		c.SpecialRegMask = specialRegMaskPPC64
+		c.SimdRegMask = simdRegMaskPPC64
 		c.IntParamRegs = paramIntRegPPC64
 		c.FloatParamRegs = paramFloatRegPPC64
 		c.FPReg = framepointerRegPPC64

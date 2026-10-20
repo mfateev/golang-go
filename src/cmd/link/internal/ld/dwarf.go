@@ -1069,18 +1069,13 @@ func (d *dwctxt) synthesizeTrampolineDIEs() {
 			continue
 		}
 
-		name := d.ldr.SymName(trampoline.sym)
 		size := int64(len(d.ldr.Data(trampoline.sym)))
 		if size == 0 {
 			continue
 		}
-		// Include the loader symbol index in the DIE symbol name. Linker symbols
-		// with different versions can have the same display name, but each DIE
-		// still needs distinct storage in .debug_info.
-		die := d.newdie(unit.DWInfo, dwarf.DW_ABRV_LINKER_TRAMPOLINE, fmt.Sprintf("%s.%d", name, trampoline.sym))
-		nameAttr := getattr(die, dwarf.DW_AT_name)
-		nameAttr.Value = int64(len(name))
-		nameAttr.Data = name
+		// Include the loader symbol index in the internal DIE symbol name.
+		// Each DIE needs distinct storage in .debug_info.
+		die := d.newdie(unit.DWInfo, dwarf.DW_ABRV_LINKER_TRAMPOLINE, fmt.Sprintf("trampoline.%d", trampoline.sym))
 		newattr(die, dwarf.DW_AT_low_pc, dwarf.DW_CLS_ADDRESS, 0, dwSym(trampoline.sym))
 		newattr(die, dwarf.DW_AT_high_pc, dwarf.DW_CLS_CONSTANT, size, nil)
 		// Preserve the exact branch destination. For targets such as the Duff
@@ -1792,6 +1787,52 @@ func (d *dwctxt) writegdbscript() dwarfSecInfo {
 	return dwarfSecInfo{syms: []loader.Sym{gs.Sym()}}
 }
 
+// writearanges emits the .debug_aranges section.
+//
+// When resolving an address to a compilation unit, LLDB first consults
+// .debug_aranges, and usually falls back to scanning .debug_info compilation
+// units. On Mach-O, for split DWARF (MH_DSYM files), LLDB relies solely on
+// .debug_aranges, though (as dsymutil emits .debug_aranges). See:
+// https://github.com/swiftlang/llvm-project/blob/332fb9240ce149f53de72910ef5da0e89f34e932/lldb/source/Plugins/ObjectFile/Mach-O/ObjectFileMachO.cpp#L5830-L5834
+// https://github.com/swiftlang/llvm-project/blob/332fb9240ce149f53de72910ef5da0e89f34e932/lldb/source/Plugins/SymbolFile/DWARF/DWARFDebugInfo.cpp#L56-L72
+func (d *dwctxt) writearanges() dwarfSecInfo {
+	s := d.ldr.CreateSymForUpdate(".debug_aranges", 0)
+	s.SetType(sym.SDWARFSECT)
+	// The first tuple is aligned to a multiple of the size of a single tuple
+	// (twice the size of an address).
+	headersize := int(Rnd(4+2+4+1+1, int64(d.arch.PtrSize*2))) // don't count unit_length field itself
+
+	for _, u := range d.linkctxt.compUnits {
+		if len(u.PCs) == 0 {
+			continue
+		}
+		base := u.Textp[0]
+
+		// Write .debug_aranges Header + entry (sec 6.1.2)
+		unitlength := uint32(headersize) + uint32(len(u.PCs)+1)*2*uint32(d.arch.PtrSize) - 4
+		s.AddUint32(d.arch, unitlength) // unit_length (*)
+		s.AddUint16(d.arch, 2)          // dwarf version (appendix F)
+
+		d.addDwarfAddrRef(s, d.dtolsym(u.DWInfo.Sym))
+
+		s.AddUint8(uint8(d.arch.PtrSize)) // address_size
+		s.AddUint8(0)                     // segment_size
+		padding := headersize - (4 + 2 + 4 + 1 + 1)
+		s.AddBytes(zeros[:padding])
+
+		for _, r := range u.PCs {
+			s.AddAddrPlus(d.arch, base, r.Start)
+			s.AddUintXX(d.arch, uint64(r.End-r.Start), d.arch.PtrSize)
+		}
+		s.AddUintXX(d.arch, 0, d.arch.PtrSize)
+		s.AddUintXX(d.arch, 0, d.arch.PtrSize)
+	}
+	if s.Size() == 0 {
+		return dwarfSecInfo{}
+	}
+	return dwarfSecInfo{syms: []loader.Sym{s.Sym()}}
+}
+
 // FIXME: might be worth looking replacing this map with a function
 // that switches based on symbol instead.
 
@@ -2439,6 +2480,12 @@ func (d *dwctxt) dwarfGenerateDebugSyms() {
 	dwarfp = append(dwarfp, rangesSec)
 	if buildcfg.Experiment.Dwarf5 {
 		dwarfp = append(dwarfp, addrSec)
+	}
+	if *FlagSplitDWARF && d.linkctxt.IsInternal() {
+		arangesSec := d.writearanges()
+		if arangesSec.secSym() != 0 {
+			dwarfp = append(dwarfp, arangesSec)
+		}
 	}
 
 	// Check to make sure we haven't listed any symbols more than once

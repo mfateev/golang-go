@@ -270,6 +270,7 @@ func init() {
 		kstore = regInfo{inputs: []regMask{gpspsb, mask, regMask{}}}
 		gpk    = regInfo{inputs: gponly, outputs: maskonly}
 		kgp    = regInfo{inputs: maskonly, outputs: gponly}
+		kk     = regInfo{inputs: maskonly, outputs: maskonly}
 		k2k    = regInfo{inputs: []regMask{mask, mask}, outputs: maskonly}
 
 		x15only = regInfo{inputs: nil, outputs: []regMask{x15}}
@@ -1540,6 +1541,11 @@ func init() {
 		{name: "KANDD", argLength: 2, reg: k2k, asm: "KANDD", typ: "Mask"},
 		{name: "KANDQ", argLength: 2, reg: k2k, asm: "KANDQ", typ: "Mask"},
 
+		{name: "KANDNB", argLength: 2, reg: k2k, asm: "KANDNB", typ: "Mask"},
+		{name: "KANDNW", argLength: 2, reg: k2k, asm: "KANDNW", typ: "Mask"},
+		{name: "KANDND", argLength: 2, reg: k2k, asm: "KANDND", typ: "Mask"},
+		{name: "KANDNQ", argLength: 2, reg: k2k, asm: "KANDNQ", typ: "Mask"},
+
 		{name: "KORB", argLength: 2, reg: k2k, asm: "KORB", typ: "Mask"},
 		{name: "KORW", argLength: 2, reg: k2k, asm: "KORW", typ: "Mask"},
 		{name: "KORD", argLength: 2, reg: k2k, asm: "KORD", typ: "Mask"},
@@ -1555,6 +1561,11 @@ func init() {
 		{name: "KXNORW", argLength: 2, reg: k2k, asm: "KXNORW", typ: "Mask"},
 		{name: "KXNORD", argLength: 2, reg: k2k, asm: "KXNORD", typ: "Mask"},
 		{name: "KXNORQ", argLength: 2, reg: k2k, asm: "KXNORQ", typ: "Mask"},
+
+		{name: "KNOTB", argLength: 1, reg: kk, asm: "KNOTB", typ: "Mask"},
+		{name: "KNOTW", argLength: 1, reg: kk, asm: "KNOTW", typ: "Mask"},
+		{name: "KNOTD", argLength: 1, reg: kk, asm: "KNOTD", typ: "Mask"},
+		{name: "KNOTQ", argLength: 1, reg: kk, asm: "KNOTQ", typ: "Mask"},
 
 		// VPTEST
 		{name: "VPTEST", asm: "VPTEST", argLength: 2, reg: v2flags, clobberFlags: true, typ: "Flags"},
@@ -1599,8 +1610,9 @@ func init() {
 		ParamFloatRegNames: "X0 X1 X2 X3 X4 X5 X6 X7 X8 X9 X10 X11 X12 X13 X14",
 		gpregmask:          gp,
 		fpregmask:          fp,
-		specialregmask:     mask.union(w.minus(v)),
+		specialregmask:     w.minus(v),
 		simdregmask:        v,
+		simdmaskreg:        mask,
 		framepointerreg:    int8(num["BP"]),
 		linkreg:            -1, // not used
 	})

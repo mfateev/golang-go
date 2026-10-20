@@ -87,13 +87,21 @@ func (x simdType) Size() int {
 	return int(x.Shape.Width.(specexpr.Int))
 }
 
-// VectorCounterpart returns the counterpart vector type name for a mask type.
-func (x simdType) VectorCounterpart() string {
+func (x simdType) String() string {
+	return x.Name()
+}
+
+// VectorCounterpart returns the counterpart vector type for a mask type.
+func (x simdType) VectorCounterpart() simdType {
 	v := specexpr.Vector{
 		Elem:  specexpr.Basic{Base: "int", Bits: x.Shape.Elem.Bits},
 		Width: x.Shape.Width,
 	}
-	return v.String()
+	return simdType{
+		Shape:  v,
+		Fields: structFields(v),
+		HasNot: x.HasNot,
+	}
 }
 
 // ReshapedVectorWithAndOr returns the 32-bit-element vector type name with matching width.
@@ -103,13 +111,6 @@ func (x simdType) ReshapedVectorWithAndOr() string {
 		Width: x.Shape.Width,
 	}
 	return v.String()
-}
-
-// PredUint16s is the number of uint16s that hold a whole SVE predicate: one bit
-// per vector byte, at the maximum vector length. It bounds the scratch buffer a
-// mask's String needs to read its own bits.
-func (x simdType) PredUint16s() int {
-	return (types.MaxVectorBits/8 + 15) / 16
 }
 
 // IsScalable reports whether this vector type's length is only known at run time.
@@ -207,7 +208,7 @@ func (x simdType) ToBitsDoc() string {
 		panic("ToBitsDoc is not supported for scalable types")
 	}
 	if x.Size() == 512 || x.ElemBits() == 16 {
-		return fmt.Sprintf("// Asm: KMOV%s, CPU Features: AVX512", x.IntelSizeSuffix())
+		return fmt.Sprintf("// Asm: KMOV%s, CPU Feature: AVX512", x.IntelSizeSuffix())
 	}
 	// 128/256 bit vectors with 8, 32, 64 bit elements
 	var asm string
@@ -229,7 +230,7 @@ func (x simdType) ToBitsDoc() string {
 	default:
 		panic("unexpected ElemBits")
 	}
-	return fmt.Sprintf("// Asm: %s, CPU Features: %s", asm, feat)
+	return fmt.Sprintf("// Asm: %s, CPU Feature: %s", asm, feat)
 }
 
 func compareWidths(a, b specexpr.Num) int {
@@ -294,6 +295,33 @@ package archsimd
 `
 }
 
+func (x simdType) CPUFeature() string {
+	switch {
+	case CurrentArch().isSVE():
+		return "SVE"
+	case CurrentArch().Arch == "amd64":
+		switch x.Size() {
+		case 128:
+			return "AVX"
+		case 256:
+			switch x.Shape.Elem.Base {
+			case "float", "mask":
+				return "AVX"
+			case "int", "uint":
+				return "AVX2"
+			default:
+				panic(fmt.Errorf("unexpected element base %q", x.Shape.Elem.Base))
+			}
+		case 512:
+			return "AVX512"
+		default:
+			panic(fmt.Errorf("unexpected amd64 vector size %d", x.Size()))
+		}
+	default:
+		return ""
+	}
+}
+
 const simdTypesTemplates = `
 {{define "sizeTmpl"}}
 // v{{.}} is a tag type that tells the compiler that this is really {{.}}-bit SIMD
@@ -308,6 +336,10 @@ type v{{.}} struct {
 {{- else}}
 // {{.Name}} is a {{.Size}}-bit SIMD vector of {{.Lanes}} {{.Base}}s.
 {{- end}}
+{{- if .CPUFeature}}
+//
+// CPU Feature: {{.CPUFeature}}
+{{- end}}
 type {{.Name}} struct {
 {{.Fields}}
 }
@@ -321,8 +353,16 @@ type {{.Name}} struct {
 // An SVE predicate holds one bit per byte of the vector it governs, so a
 // {{.Name}} carries one bit for each byte of the runtime vector length, and
 // lane i is governed by bit {{if gt .ElemBytes 1}}{{.ElemBytes}}*i. The bits in between are ignored{{else}}i{{end}}.
+//
+// In memory a {{.Name}} is a uint64 holding those bits, bit 0 first; the bits
+// beyond the runtime vector length are zero. So the bits of m can be read with
+// *(*uint64)(unsafe.Pointer(&m)).
 {{- else}}
 // {{.Name}} is a scalable SIMD vector of {{.Base}}s.
+{{- end}}
+{{- if .CPUFeature}}
+//
+// CPU Feature: {{.CPUFeature}}
 {{- end}}
 type {{.Name}} struct {
 {{.Fields}}
@@ -330,43 +370,54 @@ type {{.Name}} struct {
 
 {{end}}
 
-{{define "sveMaskLoadStore"}}
-// Load{{.Name}} loads a {{.Name}} from the predicate bits packed into bits.
-// The bits are concatenated in little-endian order: bit i of bits[j] governs
-// vector byte 16*j+i, and so lane k is governed by bit {{if gt .ElemBytes 1}}{{.ElemBytes}}*k{{else}}k{{end}}.
+{{define "sveMaskTmpl"}}
+// {{.Name}}AllTrue returns a mask with every lane true.
 //
-// One uint16 covers 16 bytes of vector, the length of the smallest vector SVE
-// defines, so bits must hold one uint16 per 16 bytes of the runtime vector
-// length. Load{{.Name}} panics if bits is shorter than that.
+// Asm: PWHILELT, CPU Feature: SVE
+func {{.Name}}AllTrue() {{.Name}}
+
+// {{.Name}}FromCount returns a mask whose first count lanes are true and the
+// rest false. A count of 0 or less gives no true lanes, and a count of the
+// vector length or more gives all true lanes.
 //
-// Asm: Emulated (a length check that can panic, then PLDR (predicate)).
-func Load{{.Name}}(bits []uint16) {{.Name}} {
-	if len(bits) < (vl()+15)/16 {
-		panic("simd: Load{{.Name}}: bits is too short to hold the predicate")
-	}
-	return load{{.Name}}(bits)
+// Asm: PWHILELT, CPU Feature: SVE
+func {{.Name}}FromCount(count int) {{.Name}}
+
+// First returns a mask with only the first active lane of x active, or no
+// lanes active if x has none.
+//
+// Asm: PNEXT, CPU Feature: SVE
+func (x {{.Name}}) First() {{.Name}}
+
+// Next returns a mask with only the lane after the last active lane of x
+// active. If x has no active lanes, lane 0 is active; if its last active lane
+// is the last lane, no lanes are active.
+//
+// Asm: PNEXT, CPU Feature: SVE
+func (x {{.Name}}) Next() {{.Name}}
+
+// All reports whether every lane of x is active.
+//
+// Asm: BICS (predicate), CPU Feature: SVE
+func (x {{.Name}}) All() bool
+
+// None reports whether no lane of x is active.
+//
+// Asm: PTEST, CPU Feature: SVE
+func (x {{.Name}}) None() bool
+
+// Any reports whether some lane of x is active.
+//
+// Asm: PTEST, CPU Feature: SVE
+func (x {{.Name}}) Any() bool
+
+// To{{.VectorCounterpart}} converts the mask to a vector, where element i is set to ^0 (all bits
+// set, e.g., -1) if mask element i is "true", and 0 otherwise.
+//
+// Asm: ZCPY, CPU Feature: SVE
+func (x {{.Name}}) To{{.VectorCounterpart}}() {{.VectorCounterpart}} {
+	return Broadcast{{.VectorCounterpart}}(-1).Masked(x)
 }
-
-//go:noescape
-func load{{.Name}}(bits []uint16) {{.Name}}
-
-// Store stores m's predicate bits into bits, concatenated in little-endian
-// order: bit i of bits[j] governs vector byte 16*j+i, and so lane k is
-// governed by bit {{if gt .ElemBytes 1}}{{.ElemBytes}}*k{{else}}k{{end}}.
-//
-// bits must hold one uint16 per 16 bytes of the runtime vector length; Store
-// panics if it is shorter.
-//
-// Asm: Emulated (a length check that can panic, then PSTR (predicate)).
-func (m {{.Name}}) Store(bits []uint16) {
-	if len(bits) < (vl()+15)/16 {
-		panic("simd: {{.Name}}.Store: bits is too short to hold the predicate")
-	}
-	m.store(bits)
-}
-
-//go:noescape
-func (m {{.Name}}) store(bits []uint16)
 {{end}}
 
 {{define "sveIfElseTmpl"}}
@@ -386,18 +437,36 @@ func (x {{.Name}}) Masked(mask Mask{{.ElemBits}}s) {{.Name}} {
 }
 {{end}}
 
+{{define "sveBroadcastTmpl"}}
+// Broadcast{{.Name}} returns a vector with the input x assigned to all
+// elements of the output.
+//
+// Asm: ZDUP, CPU Feature: SVE
+func Broadcast{{.Name}}(x {{.Base}}) {{.Name}}
+{{end}}
+
+{{define "sveToMaskTmpl"}}
+// ToMask returns a mask indicating which elements of x are non-zero.
+//
+//	z[i] = x[i] != 0
+//
+// Asm: ZCMPNE, CPU Feature: SVE
+func (x {{.Name}}) ToMask() Mask{{.ElemBits}}s {
+	return x.NotEqual({{.Name}}{})
+}
+{{end}}
+
 {{define "sveStringTmpl"}}
 {{- if eq .Type "mask"}}
-// String returns a string representation of SIMD mask m: 1 for an active lane,
+// String returns a string representation of SIMD mask x: 1 for an active lane,
 // 0 for an inactive one. Only the {{.LenExpr}} lanes that exist at the runtime
 // vector length are shown.
-func (m {{.Name}}) String() string {
-	var bits [{{.PredUint16s}}]uint16
-	m.Store(bits[:])
+func (x {{.Name}}) String() string {
+	bits := *(*uint64)(unsafe.Pointer(&x))
 	var s [{{.MaxLanes}}]{{.Base}}
 	n := {{.LenExpr}}
 	for i := range n {
-		if b := i{{if gt .ElemBytes 1}} * {{.ElemBytes}}{{end}}; bits[b/16]>>(b%16)&1 != 0 {
+		if bits>>{{if gt .ElemBytes 1}}(i*{{.ElemBytes}}){{else}}i{{end}}&1 != 0 {
 			s[i] = 1
 		}
 	}
@@ -459,7 +528,7 @@ func (x {{.Name}}) Len() int { return {{.LenExpr}} }
 // Load{{.Name}}Array loads {{.Article}} {{.Name}} from an array.
 //
 //go:noescape
-func Load{{.Name}}Array(y *[{{.Lanes}}]{{.Base}}) {{.Name}}
+func Load{{.Name}}Array(x *[{{.Lanes}}]{{.Base}}) {{.Name}}
 
 // StoreArray stores {{.Article}} {{.Name}} to an array.
 //
@@ -482,8 +551,8 @@ func (x {{.Name}}) Len() int { return {{.LenExpr}} }
 //
 // Asm: Emulated (a length check that can panic, then ZLDR).
 func Load{{.Name}}(s []{{.Base}}) {{.Name}} {
-	var z {{.Name}}
-	if len(s) < z.Len() {
+	var v {{.Name}}
+	if len(s) < v.Len() {
 		panic("simd: Load{{.Name}}: slice shorter than the vector")
 	}
 	return load{{.Name}}(s)
@@ -540,11 +609,11 @@ func (x {{.Name}}) storePart(s []{{.Base}})
 const simdMaskFromValTemplate = `
 // {{.Name}}FromBits constructs a {{.Name}} from a bitmap value, where 1 means set for the indexed element, 0 means unset.
 {{- if ne .Lanes .LanesContainer}}
-// Only the lower {{.Lanes}} bits of y are used.
+// Only the lower {{.Lanes}} bits of x are used.
 {{- end}}
 //
 // Asm: KMOV{{.IntelSizeSuffix}}, CPU Feature: AVX512
-func {{.Name}}FromBits(y uint{{.LanesContainer}}) {{.Name}}
+func {{.Name}}FromBits(x uint{{.LanesContainer}}) {{.Name}}
 
 // ToBits constructs a bitmap from a {{.Name}}, where 1 means set for the indexed element, 0 means unset.
 {{- if ne .Lanes .LanesContainer}}
@@ -600,106 +669,107 @@ func init() {
 
 	st.Add("op1", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op0NameAndType "x"}}) {{.Go}}() {{.GoType}}`)
 
 	st.Add("op2", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op0NameAndType "x"}}) {{.Go}}({{.Op1NameAndType "y"}}) {{.GoType}}`)
 
 	st.Add("op2_21", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op1NameAndType "x"}}) {{.Go}}({{.Op0NameAndType "y"}}) {{.GoType}}`)
 
 	st.Add("op2_21Type1", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op1NameAndType "x"}}) {{.Go}}({{.Op0NameAndType "y"}}) {{.GoType}}`)
 
 	st.Add("op3", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op0NameAndType "x"}}) {{.Go}}({{.Op1NameAndType "y"}}, {{.Op2NameAndType "z"}}) {{.GoType}}`)
 
 	st.Add("op3_31Zero3", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op2NameAndType "x"}}) {{.Go}}({{.Op1NameAndType "y"}}) {{.GoType}}`)
 
 	st.Add("op3_21", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op1NameAndType "x"}}) {{.Go}}({{.Op0NameAndType "y"}}, {{.Op2NameAndType "z"}}) {{.GoType}}`)
 
 	st.Add("op3_21Type1", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op1NameAndType "x"}}) {{.Go}}({{.Op0NameAndType "y"}}, {{.Op2NameAndType "z"}}) {{.GoType}}`)
 
 	st.Add("op3_231Type1", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op1NameAndType "x"}}) {{.Go}}({{.Op2NameAndType "y"}}, {{.Op0NameAndType "z"}}) {{.GoType}}`)
 
 	st.Add("op2VecAsScalar", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op0NameAndType "x"}}) {{.Go}}({{.Op1Name "y"}} uint{{(index .In 1).TreatLikeAScalarOfSize}}) {{(index .Out 0).Go}}`)
 
 	st.Add("op2ImmVecAsScalar", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// {{.ImmName}} results in better performance when it's a constant, a non-constant value will be translated into a jump table.
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
-func ({{.Op2NameAndType "x"}}) {{.Go}}({{.ImmName}} {{.ImmType}}, v float{{(index .In 3).ElemBits}}) {{(index .Out 0).Go}}`)
+// Performance: {{.ImmName}} results in better performance when it's a constant, a non-constant value will be translated into a jump table.
+//
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
+func ({{.Op2NameAndType "x"}}) {{.Go}}({{.ImmName}} {{.ImmType}}, {{.Op3Name "y"}} float{{(index .In 3).ElemBits}}) {{(index .Out 0).Go}}`)
 
 	st.Add("op3VecAsScalar", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op0NameAndType "x"}}) {{.Go}}({{.Op1Name "y"}} uint{{(index .In 1).TreatLikeAScalarOfSize}}, {{.Op2NameAndType "z"}}) {{(index .Out 0).Go}}`)
 
 	st.Add("op4", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op0NameAndType "x"}}) {{.Go}}({{.Op1NameAndType "y"}}, {{.Op2NameAndType "z"}}, {{.Op3NameAndType "u"}}) {{.GoType}}`)
 
 	st.Add("op4_231Type1", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op1NameAndType "x"}}) {{.Go}}({{.Op2NameAndType "y"}}, {{.Op0NameAndType "z"}}, {{.Op3NameAndType "u"}}) {{.GoType}}`)
 
 	st.Add("op4_31", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op2NameAndType "x"}}) {{.Go}}({{.Op1NameAndType "y"}}, {{.Op0NameAndType "z"}}, {{.Op3NameAndType "u"}}) {{.GoType}}`)
 
 	st.Add("op1Imm", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
+// Performance: A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
 //
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op1NameAndType "x"}}) {{.Go}}({{.ImmName}} {{.ImmType}}) {{.GoType}}`)
 
 	st.Add("op1Imm8", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
+// Performance: A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
 //
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op1NameAndType "x"}}) {{.Go}}({{.ImmName}} {{.ImmType}}) {{.GoType}}`)
 
 	st.Add("op2Imm", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
+// Performance: A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
 //
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op1NameAndType "x"}}) {{.Go}}({{.ImmName}} {{.ImmType}}, {{.Op2NameAndType "y"}}) {{.GoType}}`)
 
 	st.Add("op2Imm8", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
+// Performance: A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
 //
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op1NameAndType "x"}}) {{.Go}}({{.ImmName}} {{.ImmType}}, {{.Op2NameAndType "y"}}) {{.GoType}}`)
 
 	// Special case for the instruction (in some versions at least) takes an immediate but treat it as a regular operand
@@ -710,67 +780,85 @@ func ({{.Op1NameAndType "x"}}) {{.Go}}(dist uint64) {{.GoType}}`)
 
 	st.Add("op2Imm8_2I", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
+// Performance: A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
 //
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op1NameAndType "x"}}) {{.Go}}({{.Op2NameAndType "y"}}, {{.ImmName}} {{.ImmType}}) {{.GoType}}`)
 
 	st.Add("op2Imm_2I", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
+// Performance: A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
 //
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op1NameAndType "x"}}) {{.Go}}({{.Op2NameAndType "y"}}, {{.ImmName}} {{.ImmType}}) {{.GoType}}`)
 
 	st.Add("op2Imm8_II", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
 // {{.ImmName}} should be between 0 and 3, inclusive; other values may result in a runtime panic.
 //
-// A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
+// Performance: A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
 //
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op1NameAndType "x"}}) {{.Go}}({{.ImmName}} {{.ImmType}}, {{.Op2NameAndType "y"}}) {{.GoType}}`)
 
 	st.Add("op2Imm8_SHA1RNDS4", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
+// Performance: A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
 //
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op1NameAndType "x"}}) {{.Go}}({{.ImmName}} {{.ImmType}}, {{.Op2NameAndType "y"}}) {{.GoType}}`)
 
 	st.Add("op3Imm8", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
+// Performance: A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
 //
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op1NameAndType "x"}}) {{.Go}}({{.ImmName}} {{.ImmType}}, {{.Op2NameAndType "y"}}, {{.Op3NameAndType "z"}}) {{.GoType}}`)
 
 	st.Add("op3Imm8_2I", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
+// Performance: A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
 //
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op1NameAndType "x"}}) {{.Go}}({{.Op2NameAndType "y"}}, {{.ImmName}} {{.ImmType}}, {{.Op3NameAndType "z"}}) {{.GoType}}`)
 
 	st.Add("op4Imm8", `{{if .Documentation}}{{.Documentation}}
 //{{end}}
-// A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
+// Performance: A non-constant value of {{.ImmName}} may result in significantly worse performance for this operation.
 //
-// Asm: {{.Asm}}, CPU Feature: {{.CPUFeature}}
+// Asm: {{.Asm}}{{if .CPUFeature}}, CPU Feature: {{.CPUFeature}}{{end}}
 func ({{.Op1NameAndType "x"}}) {{.Go}}({{.ImmName}} {{.ImmType}}, {{.Op2NameAndType "y"}}, {{.Op3NameAndType "z"}}, {{.Op4NameAndType "u"}}) {{.GoType}}`)
 
 	st.Add("mask", `// To{{.VectorCounterpart}} converts from {{.Name}} to {{.VectorCounterpart}}.
 // If element i in the mask is "true", all bits in element i of the resulting
 // vector will be set.
-func (from {{.Name}}) To{{.VectorCounterpart}}() (to {{.VectorCounterpart}})
+func (x {{.Name}}) To{{.VectorCounterpart}}() (z {{.VectorCounterpart}})
 
 // asMask converts from {{.VectorCounterpart}} to {{.Name}}.
 func (from {{.VectorCounterpart}}) asMask() (to {{.Name}})
 
+{{if .VectorCounterpart.CPUFeature}}// CPU Feature: {{.VectorCounterpart.CPUFeature}}
+{{end -}}
 func (x {{.Name}}) And(y {{.Name}}) {{.Name}}
 
+{{if .VectorCounterpart.CPUFeature}}// CPU Feature: {{.VectorCounterpart.CPUFeature}}
+{{end -}}
+func (x {{.Name}}) AndNot(y {{.Name}}) {{.Name}}
+
+{{if .VectorCounterpart.CPUFeature}}// CPU Feature: {{.VectorCounterpart.CPUFeature}}
+{{end -}}
+func (x {{.Name}}) Equal(y {{.Name}}) {{.Name}}
+
+{{if .VectorCounterpart.CPUFeature}}// CPU Feature: {{.VectorCounterpart.CPUFeature}}
+{{end -}}
 func (x {{.Name}}) Or(y {{.Name}}) {{.Name}}
+
+{{if .VectorCounterpart.CPUFeature}}// CPU Feature: {{.VectorCounterpart.CPUFeature}}
+{{end -}}
+func (x {{.Name}}) Xor(y {{.Name}}) {{.Name}}
 {{if .HasNot}}
+{{if .VectorCounterpart.CPUFeature}}// CPU Feature: {{.VectorCounterpart.CPUFeature}}
+{{end -}}
 func (x {{.Name}}) Not() {{.Name}}
 {{end}}`)
 
@@ -778,7 +866,7 @@ func (x {{.Name}}) Not() {{.Name}}
 
 func structFields(shape specexpr.Vector) string {
 	if shape.Elem.Base == "mask" && CurrentArch().isSVE() {
-		return fmt.Sprintf("\t%s psve\n\tvals uint%d", strings.ToLower(shape.String()), types.MaxVectorBits/8)
+		return fmt.Sprintf("\t%s psve\n\tvals uint64", strings.ToLower(shape.String()))
 	}
 	elemBits := int(shape.Elem.Bits)
 	base := strings.ToLower(shape.Elem.Base)
@@ -804,8 +892,8 @@ func parseSIMDTypes(ops []Operation) simdTypeMap {
 	ret := map[specexpr.Num][]simdType{}
 	seen := map[string]struct{}{}
 	processArg := func(arg types.Operand) {
-		if arg.Class == "immediate" || arg.Class == "greg" {
-			// Immediates and general-purpose registers are not encoded as vector types.
+		if arg.Class == "immediate" || arg.Class == "greg" || arg.Class == "fpreg" {
+			// Immediates and scalar registers are not encoded as vector types.
 			return
 		}
 		if arg.Lanes != nil && *arg.Lanes <= 1 {
@@ -914,6 +1002,8 @@ func writeSIMDTypes(buffer *bytes.Buffer, typeMap simdTypeMap) {
 		// SVE predicates are represented as-is (a P register), not as data vectors,
 		// so their Go types are tagged with psve rather than a v<N> vector tag.
 		buffer.WriteString(`
+import "unsafe"
+
 // psve is a tag type that tells the compiler that this is an SVE predicate.
 type psve struct {
 	_sve [0]func() // uncomparable
@@ -958,10 +1048,8 @@ type psve struct {
 					}
 				}
 			} else if CurrentArch().isSVE() {
-				// SVE predicates expose raw-bit memory APIs: exported wrappers that
-				// bounds-check (and may panic) around unexported PLDR/PSTR intrinsics.
-				if err := t.ExecuteTemplate(buffer, "sveMaskLoadStore", typeDef); err != nil {
-					panic(fmt.Errorf("failed to execute sveMaskLoadStore template for type %s: %w", typeDef.Name(), err))
+				if err := t.ExecuteTemplate(buffer, "sveMaskTmpl", typeDef); err != nil {
+					panic(fmt.Errorf("failed to execute sveMaskTmpl template for type %s: %w", typeDef.Name(), err))
 				}
 			} else {
 				// ARM64 NEON comparisons produce all-0/all-1 per lane, so
@@ -977,6 +1065,14 @@ type psve struct {
 			if typeDef.IsScalable() && typeDef.Type() != "mask" {
 				if err := t.ExecuteTemplate(buffer, "sveIfElseTmpl", typeDef); err != nil {
 					panic(fmt.Errorf("failed to execute sveIfElseTmpl template for type %s: %w", typeDef.Name(), err))
+				}
+				if err := t.ExecuteTemplate(buffer, "sveBroadcastTmpl", typeDef); err != nil {
+					panic(fmt.Errorf("failed to execute sveBroadcastTmpl template for type %s: %w", typeDef.Name(), err))
+				}
+				if typeDef.Shape.Elem.Base == "int" {
+					if err := t.ExecuteTemplate(buffer, "sveToMaskTmpl", typeDef); err != nil {
+						panic(fmt.Errorf("failed to execute sveToMaskTmpl template for type %s: %w", typeDef.Name(), err))
+					}
 				}
 			}
 			if typeDef.IsScalable() {

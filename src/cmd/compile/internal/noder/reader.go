@@ -1409,7 +1409,7 @@ func (r *reader) funcBody(fn *ir.Func) {
 		r.dictParam = r.closureVars[len(r.closureVars)-1] // dictParam is last; see reader.funcLit
 	}
 
-	ir.WithFunc(fn, func() {
+	ir.WithPos(fn, func() {
 		r.declareParams()
 
 		if r.syntheticBody(fn.Pos()) {
@@ -1422,7 +1422,7 @@ func (r *reader) funcBody(fn *ir.Func) {
 
 		body := r.stmts()
 		if body == nil {
-			body = []ir.Node{typecheck.Stmt(ir.NewBlockStmt(src.NoXPos, nil))}
+			body = []ir.Node{typecheck.Stmt(r.curfn, ir.NewBlockStmt(src.NoXPos, nil))}
 		}
 		fn.Body = body
 		fn.Endlineno = r.pos()
@@ -1483,7 +1483,7 @@ func (r *reader) callShaped(pos src.XPos) {
 		args.Append(params[0])
 		params = params[1:]
 	}
-	args.Append(typecheck.Expr(ir.NewAddrExpr(pos, r.p.dictNameOf(r.dict))))
+	args.Append(typecheck.Expr(r.curfn, ir.NewAddrExpr(pos, r.p.dictNameOf(r.dict))))
 	args.Append(params...)
 
 	r.syntheticTailCall(pos, shapedFn, args)
@@ -1503,11 +1503,11 @@ func (r *reader) syntheticTailCall(pos src.XPos, fn ir.Node, args ir.Nodes) {
 	// traces.
 	r.curfn.SetWrapper(true)
 
-	call := typecheck.Call(pos, fn, args, fn.Type().IsVariadic()).(*ir.CallExpr)
+	call := typecheck.Call(r.curfn, pos, fn, args, fn.Type().IsVariadic()).(*ir.CallExpr)
 
 	var stmt ir.Node
 	if fn.Type().NumResults() != 0 {
-		stmt = typecheck.Stmt(ir.NewReturnStmt(pos, []ir.Node{call}))
+		stmt = typecheck.Stmt(r.curfn, ir.NewReturnStmt(pos, []ir.Node{call}))
 	} else {
 		stmt = call
 	}
@@ -1756,7 +1756,7 @@ func block(stmts []ir.Node) ir.Node {
 }
 
 func (r *reader) stmts() ir.Nodes {
-	assert(ir.CurFunc == r.curfn)
+	assert(r.curfn == r.curfn)
 	var res ir.Nodes
 
 	r.Sync(pkgbits.SyncStmts)
@@ -1768,7 +1768,7 @@ func (r *reader) stmts() ir.Nodes {
 		}
 
 		if n := r.stmt1(tag, &res); n != nil {
-			res.Append(typecheck.Stmt(n))
+			res.Append(typecheck.Stmt(r.curfn, n))
 		}
 	}
 }
@@ -1794,7 +1794,7 @@ func (r *reader) stmt1(tag codeStmt, out *ir.Nodes) ir.Node {
 			for _, name := range names {
 				as := ir.NewAssignStmt(pos, name, nil)
 				as.PtrInit().Append(ir.NewDecl(pos, ir.ODCL, name))
-				out.Append(typecheck.Stmt(as))
+				out.Append(typecheck.Stmt(r.curfn, as))
 			}
 			return nil
 		}
@@ -1903,7 +1903,7 @@ func (r *reader) assign() (ir.Node, bool) {
 		panic("unhandled assignee expression")
 
 	case assignBlank:
-		return typecheck.AssignExpr(ir.BlankNode), false
+		return typecheck.AssignExpr(r.curfn, ir.BlankNode), false
 
 	case assignDef:
 		pos := r.pos()
@@ -2003,7 +2003,7 @@ func (r *reader) ifStmt() ir.Node {
 		// the if statement into a block.
 
 		if cond.Op() != ir.OLITERAL {
-			init.Append(typecheck.Stmt(ir.NewAssignStmt(pos, ir.BlankNode, cond))) // for side effects
+			init.Append(typecheck.Stmt(r.curfn, ir.NewAssignStmt(pos, ir.BlankNode, cond))) // for side effects
 		}
 		init.Append(then...)
 		init.Append(els...)
@@ -2116,7 +2116,7 @@ func (r *reader) switchStmt(label *types.Sym) ir.Node {
 			}
 			for i := range cases {
 				if r.Bool() { // case nil
-					cases[i] = typecheck.Expr(types.BuiltinPkg.Lookup("nil").Def.(*ir.NilExpr))
+					cases[i] = typecheck.Expr(r.curfn, types.BuiltinPkg.Lookup("nil").Def.(*ir.NilExpr))
 				} else {
 					cases[i] = r.exprType()
 				}
@@ -2137,7 +2137,7 @@ func (r *reader) switchStmt(label *types.Sym) ir.Node {
 						for len(rtypes) < i {
 							rtypes = append(rtypes, nil)
 						}
-						rtypes = append(rtypes, reflectdata.TypePtrAt(cas.Pos(), types.Types[types.TBOOL]))
+						rtypes = append(rtypes, reflectdata.TypePtrAt(r.curfn, cas.Pos(), types.Types[types.TBOOL]))
 					}
 				}
 			}
@@ -2218,12 +2218,12 @@ func (r *reader) expr() (res ir.Node) {
 		panic("unhandled expression")
 
 	case exprLocal:
-		return typecheck.Expr(r.useLocal())
+		return typecheck.Expr(r.curfn, r.useLocal())
 
 	case exprGlobal:
 		// Callee instead of Expr allows builtins
 		// TODO(mdempsky): Handle builtins directly in exprCall, like method calls?
-		return typecheck.Callee(r.obj())
+		return typecheck.Callee(r.curfn, r.obj())
 
 	case exprFuncInst:
 		origPos, pos := r.origPos()
@@ -2255,7 +2255,7 @@ func (r *reader) expr() (res ir.Node) {
 		pos := r.pos()
 		sym := r.selector()
 
-		return typecheck.XDotField(pos, x, sym)
+		return typecheck.XDotField(r.curfn, pos, x, sym)
 
 	case exprMethodVal:
 		recv := r.expr()
@@ -2287,10 +2287,10 @@ func (r *reader) expr() (res ir.Node) {
 				if !types.Identical(typ, recv.Type()) {
 					base.FatalfAt(wrapperFn.Pos(), "receiver %L does not match %L", recv, wrapperFn)
 				}
-				recv = typecheck.Expr(ir.NewConvExpr(recv.Pos(), ir.OCONVNOP, typ, recv))
+				recv = typecheck.Expr(r.curfn, ir.NewConvExpr(recv.Pos(), ir.OCONVNOP, typ, recv))
 			}
 
-			n := typecheck.XDotMethod(pos, recv, wrapperFn.Sel, false)
+			n := typecheck.XDotMethod(r.curfn, pos, recv, wrapperFn.Sel, false)
 
 			// As a consistency check here, we make sure "n" selected the
 			// same method (represented by a types.Field) that wrapperFn
@@ -2364,7 +2364,7 @@ func (r *reader) expr() (res ir.Node) {
 		x := r.expr()
 		pos := r.pos()
 		index := r.expr()
-		n := typecheck.Expr(ir.NewIndexExpr(pos, x, index))
+		n := typecheck.Expr(r.curfn, ir.NewIndexExpr(pos, x, index))
 		switch n.Op() {
 		case ir.OINDEXMAP:
 			n := n.(*ir.IndexExpr)
@@ -2383,7 +2383,7 @@ func (r *reader) expr() (res ir.Node) {
 		if index[2] != nil {
 			op = ir.OSLICE3
 		}
-		return typecheck.Expr(ir.NewSliceExpr(pos, op, x, index[0], index[1], index[2]))
+		return typecheck.Expr(r.curfn, ir.NewSliceExpr(pos, op, x, index[0], index[1], index[2]))
 
 	case exprAssert:
 		x := r.expr()
@@ -2398,7 +2398,7 @@ func (r *reader) expr() (res ir.Node) {
 			assert.ITab = typ.ITab
 			return typed(typ.Type(), assert)
 		}
-		return typecheck.Expr(ir.NewTypeAssertExpr(pos, x, typ.Type()))
+		return typecheck.Expr(r.curfn, ir.NewTypeAssertExpr(pos, x, typ.Type()))
 
 	case exprUnaryOp:
 		op := r.op()
@@ -2407,11 +2407,11 @@ func (r *reader) expr() (res ir.Node) {
 
 		switch op {
 		case ir.OADDR:
-			return typecheck.Expr(typecheck.NodAddrAt(pos, x))
+			return typecheck.Expr(r.curfn, typecheck.NodAddrAt(r.curfn, pos, x))
 		case ir.ODEREF:
-			return typecheck.Expr(ir.NewStarExpr(pos, x))
+			return typecheck.Expr(r.curfn, ir.NewStarExpr(pos, x))
 		}
-		return typecheck.Expr(ir.NewUnaryExpr(pos, op, x))
+		return typecheck.Expr(r.curfn, ir.NewUnaryExpr(pos, op, x))
 
 	case exprBinaryOp:
 		op := r.op()
@@ -2421,7 +2421,7 @@ func (r *reader) expr() (res ir.Node) {
 
 		switch op {
 		case ir.OANDAND, ir.OOROR:
-			return typecheck.Expr(ir.NewLogicalExpr(pos, op, x, y))
+			return typecheck.Expr(r.curfn, ir.NewLogicalExpr(pos, op, x, y))
 		case ir.OLSH, ir.ORSH:
 			// Untyped rhs of non-constant shift, e.g. x << 1.0.
 			// If we have a constant value, it must be an int >= 0.
@@ -2430,7 +2430,7 @@ func (r *reader) expr() (res ir.Node) {
 				assert(val.Kind() == constant.Int && constant.Sign(val) >= 0)
 			}
 		}
-		return typecheck.Expr(ir.NewBinaryExpr(pos, op, x, y))
+		return typecheck.Expr(r.curfn, ir.NewBinaryExpr(pos, op, x, y))
 
 	case exprRecv:
 		x := r.expr()
@@ -2441,7 +2441,7 @@ func (r *reader) expr() (res ir.Node) {
 		if r.Bool() { // needs deref
 			x = Implicit(Deref(pos, x.Type().Elem(), x))
 		} else if r.Bool() { // needs addr
-			x = Implicit(Addr(pos, x))
+			x = Implicit(Addr(r.curfn, pos, x))
 		}
 		return x
 
@@ -2463,7 +2463,7 @@ func (r *reader) expr() (res ir.Node) {
 				// There are also corner cases where semantically it's perhaps
 				// significant; e.g., fixedbugs/issue15975.go, #38634, #52025.
 
-				fun = typecheck.XDotMethod(method.Pos(), recv, method.Sel, true)
+				fun = typecheck.XDotMethod(r.curfn, method.Pos(), recv, method.Sel, true)
 			} else {
 				if recv.Type().IsInterface() {
 					// N.B., this happens currently for typeparam/issue51521.go
@@ -2490,7 +2490,7 @@ func (r *reader) expr() (res ir.Node) {
 		pos := r.pos()
 		args.Append(r.multiExpr()...)
 		dots := r.Bool()
-		n := typecheck.Call(pos, fun, args, dots)
+		n := typecheck.Call(r.curfn, pos, fun, args, dots)
 		switch n.Op() {
 		case ir.OAPPEND:
 			n := n.(*ir.CallExpr)
@@ -2518,7 +2518,7 @@ func (r *reader) expr() (res ir.Node) {
 		pos := r.pos()
 		typ := r.exprType()
 		extra := r.exprs()
-		n := typecheck.Expr(ir.NewCallExpr(pos, ir.OMAKE, nil, append([]ir.Node{typ}, extra...))).(*ir.MakeExpr)
+		n := typecheck.Expr(r.curfn, ir.NewCallExpr(pos, ir.OMAKE, nil, append([]ir.Node{typ}, extra...))).(*ir.MakeExpr)
 		n.RType = r.rtype(pos)
 		return n
 
@@ -2531,10 +2531,10 @@ func (r *reader) expr() (res ir.Node) {
 			var init ir.Nodes
 			addr := ir.NewAddrExpr(pos, r.tempCopy(pos, x, &init))
 			addr.SetInit(init)
-			return typecheck.Expr(addr)
+			return typecheck.Expr(r.curfn, addr)
 		}
 		// new(T)
-		return typecheck.Expr(ir.NewUnaryExpr(pos, ir.ONEW, r.exprType()))
+		return typecheck.Expr(r.curfn, ir.NewUnaryExpr(pos, ir.ONEW, r.exprType()))
 
 	case exprSizeof:
 		return ir.NewUintptr(r.pos(), r.typ().Size())
@@ -2629,7 +2629,7 @@ func (r *reader) expr() (res ir.Node) {
 		if implicit {
 			ce.SetImplicit(true)
 		}
-		n := typecheck.Expr(ce)
+		n := typecheck.Expr(r.curfn, ce)
 
 		// Conversions between non-identical, non-empty interfaces always
 		// requires a runtime call, even if they have identical underlying
@@ -2700,7 +2700,7 @@ func (r *reader) funcInst(pos src.XPos) (wrapperFn, baseFn, dictPtr ir.Node) {
 		// TODO(mdempsky): Is there a more robust way to get the
 		// dictionary pointer type here?
 		dictPtrType := baseFn.Type().Param(0).Type
-		dictPtr = typecheck.Expr(ir.NewConvExpr(pos, ir.OCONVNOP, dictPtrType, r.dictWord(pos, r.dict.subdictsOffset()+idx)))
+		dictPtr = typecheck.Expr(r.curfn, ir.NewConvExpr(pos, ir.OCONVNOP, dictPtrType, r.dictWord(pos, r.dict.subdictsOffset()+idx)))
 
 		return
 	}
@@ -2712,7 +2712,7 @@ func (r *reader) funcInst(pos src.XPos) (wrapperFn, baseFn, dictPtr ir.Node) {
 	baseFn = r.p.objIdx(info.idx, implicits, explicits, true).(*ir.Name)
 
 	dictName := r.p.objDictName(info.idx, implicits, explicits)
-	dictPtr = typecheck.Expr(ir.NewAddrExpr(pos, dictName))
+	dictPtr = typecheck.Expr(r.curfn, ir.NewAddrExpr(pos, dictName))
 
 	return
 }
@@ -2804,7 +2804,7 @@ func (r *reader) methodExprWrap(origPos src.XPos, recv *types.Type, implicits []
 			if deref {
 				arg = Implicit(Deref(pos, arg.Type().Elem(), arg))
 			} else if addr {
-				arg = Implicit(Addr(pos, arg))
+				arg = Implicit(Addr(r.curfn, pos, arg))
 			}
 			args[0] = arg
 		}
@@ -2874,7 +2874,7 @@ func (r *reader) syntheticClosure(origPos src.XPos, typ *types.Type, ifaceHack b
 		// value evaluation, ugh.
 		if ifaceHack && i == 1 && n.Type().IsInterface() {
 			check := ir.NewUnaryExpr(inlPos, ir.OCHECKNIL, ir.NewUnaryExpr(inlPos, ir.OITAB, tmp))
-			init.Append(typecheck.Stmt(check))
+			init.Append(typecheck.Stmt(r.curfn, check))
 		}
 	}
 
@@ -2978,7 +2978,7 @@ func (r *reader) methodExpr() (wrapperFn, baseFn, dictPtr ir.Node) {
 		// closure (i.e., pointer to a structure with the PC as the first
 		// field). Because method expressions don't have any closure
 		// variables, we pun the dictionary entry as the closure struct.
-		fn := typecheck.Expr(ir.NewConvExpr(pos, ir.OCONVNOP, sig, ir.NewAddrExpr(pos, word)))
+		fn := typecheck.Expr(r.curfn, ir.NewConvExpr(pos, ir.OCONVNOP, sig, ir.NewAddrExpr(pos, word)))
 		return fn, fn, nil
 	}
 
@@ -2993,7 +2993,7 @@ func (r *reader) methodExpr() (wrapperFn, baseFn, dictPtr ir.Node) {
 		// TODO(mdempsky): Is there a more robust way to get the
 		// dictionary pointer type here?
 		dictPtrType := shapedFn.Type().Param(1).Type
-		dictPtr := typecheck.Expr(ir.NewConvExpr(pos, ir.OCONVNOP, dictPtrType, r.dictWord(pos, r.dict.subdictsOffset()+idx)))
+		dictPtr := typecheck.Expr(r.curfn, ir.NewConvExpr(pos, ir.OCONVNOP, dictPtrType, r.dictWord(pos, r.dict.subdictsOffset()+idx)))
 
 		return nil, shapedFn, dictPtr
 	}
@@ -3006,7 +3006,7 @@ func (r *reader) methodExpr() (wrapperFn, baseFn, dictPtr ir.Node) {
 		shapedFn := shapedMethodExpr(pos, shapedObj, sym)
 
 		dict := r.p.objDictName(info.idx, nil, explicits)
-		dictPtr := typecheck.Expr(ir.NewAddrExpr(pos, dict))
+		dictPtr := typecheck.Expr(r.curfn, ir.NewAddrExpr(pos, dict))
 
 		// Check that dictPtr matches shapedFn's dictionary parameter.
 		if !types.Identical(dictPtr.Type(), shapedFn.Type().Param(1).Type) {
@@ -3142,13 +3142,13 @@ func (r *reader) multiExpr() []ir.Node {
 				n := ir.NewConvExpr(pos, ir.OCONV, r.typ(), res)
 				n.TypeWord, n.SrcRType = r.convRTTI(pos)
 				n.SetImplicit(true)
-				res = typecheck.Expr(n)
+				res = typecheck.Expr(r.curfn, n)
 			}
 			results[i] = res
 		}
 
 		// TODO(mdempsky): Could use ir.InlinedCallExpr instead?
-		results[0] = ir.InitExpr([]ir.Node{typecheck.Stmt(as)}, results[0])
+		results[0] = ir.InitExpr([]ir.Node{typecheck.Stmt(r.curfn, as)}, results[0])
 		return results
 	}
 
@@ -3173,11 +3173,11 @@ func (r *reader) temp(pos src.XPos, typ *types.Type) *ir.Name {
 func (r *reader) tempCopy(pos src.XPos, expr ir.Node, init *ir.Nodes) *ir.Name {
 	tmp := r.temp(pos, expr.Type())
 
-	init.Append(typecheck.Stmt(ir.NewDecl(pos, ir.ODCL, tmp)))
+	init.Append(typecheck.Stmt(r.curfn, ir.NewDecl(pos, ir.ODCL, tmp)))
 
 	assign := ir.NewAssignStmt(pos, tmp, expr)
 	assign.Def = true
-	init.Append(typecheck.Stmt(assign))
+	init.Append(typecheck.Stmt(r.curfn, assign))
 
 	tmp.Defn = assign
 
@@ -3233,13 +3233,13 @@ func (r *reader) compLit() ir.Node {
 		}
 	}
 
-	lit := typecheck.Expr(ir.NewCompLitExpr(pos, ir.OCOMPLIT, typ, elems))
+	lit := typecheck.Expr(r.curfn, ir.NewCompLitExpr(pos, ir.OCOMPLIT, typ, elems))
 	if rtype != nil {
 		lit := lit.(*ir.CompLitExpr)
 		lit.RType = rtype
 	}
 	if typ0.IsPtr() {
-		lit = typecheck.Expr(typecheck.NodAddrAt(pos, lit))
+		lit = typecheck.Expr(r.curfn, typecheck.NodAddrAt(r.curfn, pos, lit))
 		lit.SetType(typ0)
 	}
 	return lit
@@ -3392,13 +3392,13 @@ func (r *reader) exprs() []ir.Node {
 // uintptr-typed word from the dictionary parameter.
 func (r *reader) dictWord(pos src.XPos, idx int) ir.Node {
 	base.AssertfAt(r.dictParam != nil, pos, "expected dictParam in %v", r.curfn)
-	return typecheck.Expr(ir.NewIndexExpr(pos, r.dictParam, ir.NewInt(pos, int64(idx))))
+	return typecheck.Expr(r.curfn, ir.NewIndexExpr(pos, r.dictParam, ir.NewInt(pos, int64(idx))))
 }
 
 // rttiWord is like dictWord, but converts it to *byte (the type used
 // internally to represent *runtime._type and *runtime.itab).
 func (r *reader) rttiWord(pos src.XPos, idx int) ir.Node {
-	return typecheck.Expr(ir.NewConvExpr(pos, ir.OCONVNOP, types.NewPtr(types.Types[types.TUINT8]), r.dictWord(pos, idx)))
+	return typecheck.Expr(r.curfn, ir.NewConvExpr(pos, ir.OCONVNOP, types.NewPtr(types.Types[types.TUINT8]), r.dictWord(pos, idx)))
 }
 
 // rtype reads a type reference from the element bitstream, and
@@ -3420,7 +3420,7 @@ func (r *reader) rtype0(pos src.XPos) (typ *types.Type, rtype ir.Node) {
 	}
 
 	typ = r.typ()
-	rtype = reflectdata.TypePtrAt(pos, typ)
+	rtype = reflectdata.TypePtrAt(r.curfn, pos, typ)
 	return
 }
 
@@ -3460,7 +3460,7 @@ func (r *reader) itab(pos src.XPos) (typ *types.Type, typRType ir.Node, iface *t
 			base.AssertfAt(!iface.HasShape(), pos, "%v is a shape type", iface)
 
 			lsym := reflectdata.ITabLsym(typ, iface)
-			itab = typecheck.LinksymAddr(pos, lsym, types.Types[types.TUINT8])
+			itab = typecheck.LinksymAddr(r.curfn, pos, lsym, types.Types[types.TUINT8])
 		}
 	}
 
@@ -3573,14 +3573,13 @@ func (r *reader) pkgInitOrder(target *ir.Package) {
 		varInitFns = r.splitLargeInitOrder(initOrder)
 		calls := make([]ir.Node, len(varInitFns))
 		for i, varInitFn := range varInitFns {
-			ir.WithFunc(fn, func() {
-				calls[i] = typecheck.Call(varInitFn.Pos(), varInitFn.Nname, nil, false)
+			ir.WithPos(fn, func() {
+				calls[i] = typecheck.Call(r.curfn, varInitFn.Pos(), varInitFn.Nname, nil, false)
 			})
 		}
 		fn.Body = calls
 	}
 
-	typecheck.FinishFuncBody()
 	r.curfn = nil
 	r.locals = nil
 
@@ -3604,8 +3603,6 @@ func (r *reader) generateVarInitFunc(body []ir.Node) *ir.Func {
 	fn.Body = r.doPkgInitOrder(body)
 	r.curfn = old
 
-	typecheck.FinishFuncBody()
-
 	return fn
 }
 
@@ -3620,9 +3617,9 @@ func (r *reader) doPkgInitOrder(initOrder []ir.Node) []ir.Node {
 
 		var as ir.Node
 		if len(lhs) == 1 {
-			as = typecheck.Stmt(ir.NewAssignStmt(pos, lhs[0], rhs))
+			as = typecheck.Stmt(r.curfn, ir.NewAssignStmt(pos, lhs[0], rhs))
 		} else {
-			as = typecheck.Stmt(ir.NewAssignListStmt(pos, ir.OAS2, lhs, []ir.Node{rhs}))
+			as = typecheck.Stmt(r.curfn, ir.NewAssignListStmt(pos, ir.OAS2, lhs, []ir.Node{rhs}))
 		}
 
 		for _, v := range lhs {
@@ -3796,7 +3793,7 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 
 	r.delayResults = fn.Inl.CanDelayResults
 
-	r.retlabel = typecheck.AutoLabel(".i")
+	r.retlabel = typecheck.AutoLabel(callerfn, ".i")
 	inlgen++
 
 	init := ir.TakeInit(call)
@@ -3827,7 +3824,7 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 		name.Defn = as2
 	}
 	as2.SetInit(as2init)
-	init.Append(typecheck.Stmt(as2))
+	init.Append(typecheck.Stmt(callerfn, as2))
 
 	if !r.delayResults {
 		// If not delaying retvars, declare and zero initialize the
@@ -3836,7 +3833,7 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 			// TODO(mdempsky): Use inlined position of name.Pos() instead?
 			init.Append(ir.NewDecl(call.Pos(), ir.ODCL, name))
 			ras := ir.NewAssignStmt(call.Pos(), name, nil)
-			init.Append(typecheck.Stmt(ras))
+			init.Append(typecheck.Stmt(callerfn, ras))
 		}
 	}
 
@@ -3847,7 +3844,7 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 	// Note issue 28603.
 	init.Append(ir.NewInlineMarkStmt(call.Pos().WithIsStmt(), int64(r.inlTreeIndex)))
 
-	ir.WithFunc(r.curfn, func() {
+	ir.WithPos(r.curfn, func() {
 		if !r.syntheticBody(call.Pos()) {
 			assert(r.Bool()) // have body
 
@@ -3868,7 +3865,7 @@ func unifiedInlineCall(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlInd
 		var edit func(ir.Node) ir.Node
 		edit = func(n ir.Node) ir.Node {
 			if ret, ok := n.(*ir.ReturnStmt); ok {
-				n = typecheck.Stmt(r.inlReturn(ret, retvars))
+				n = typecheck.Stmt(callerfn, r.inlReturn(ret, retvars))
 			}
 			ir.EditChildren(n, edit)
 			return n
@@ -4241,8 +4238,8 @@ func newWrapperFunc(pos src.XPos, sym *types.Sym, wrapper *types.Type, method *t
 }
 
 func finishWrapperFunc(fn *ir.Func, target *ir.Package) {
-	ir.WithFunc(fn, func() {
-		typecheck.Stmts(fn.Body)
+	ir.WithPos(fn, func() {
+		typecheck.Stmts(fn, fn.Body)
 	})
 
 	// We generate wrappers after the global inlining pass,
@@ -4300,8 +4297,8 @@ func addTailCall(pos src.XPos, fn *ir.Func, recv ir.Node, method *types.Field) {
 		args[i] = param.Nname.(*ir.Name)
 	}
 
-	dot := typecheck.XDotMethod(pos, recv, method.Sym, true)
-	call := typecheck.Call(pos, dot, args, method.Type.IsVariadic()).(*ir.CallExpr)
+	dot := typecheck.XDotMethod(fn, pos, recv, method.Sym, true)
+	call := typecheck.Call(fn, pos, dot, args, method.Type.IsVariadic()).(*ir.CallExpr)
 
 	if recv.Type() != nil && recv.Type().IsPtr() && method.Type.Recv().Type.IsPtr() &&
 		method.Embedded != 0 &&

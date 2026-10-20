@@ -12,6 +12,9 @@ import (
 )
 
 // Assert that the size of important structures do not change unexpectedly.
+// When a size changes, also report whether the structure moves to a
+// different size class, because that changes how much memory each object
+// takes.
 
 func TestSizeof(t *testing.T) {
 	const _64bit = unsafe.Sizeof(uintptr(0)) == 8
@@ -21,7 +24,7 @@ func TestSizeof(t *testing.T) {
 		_32bit uintptr // size on 32bit platforms
 		_64bit uintptr // size on 64bit platforms
 	}{
-		{runtime.G{}, 440 + xreg, 672 + xreg}, // g, including isolate state and scheduling
+		{runtime.G{}, 436 + xreg, 672 + xreg}, // g, including isolate state and scheduling
 		{runtime.Sudog{}, 68, 112},            // sudog, but exported for testing
 	}
 
@@ -37,6 +40,10 @@ func TestSizeof(t *testing.T) {
 		got := reflect.TypeOf(tt.val).Size()
 		if want != got {
 			t.Errorf("unsafe.Sizeof(%T) = %d, want %d", tt.val, got, want)
+			gotClass, wantClass := runtime.AllocSize(got), runtime.AllocSize(want)
+			if gotClass != wantClass {
+				t.Errorf("%T moves from the %d-byte to the %d-byte size class, %+d bytes per object", tt.val, wantClass, gotClass, int(gotClass)-int(wantClass))
+			}
 		}
 	}
 }

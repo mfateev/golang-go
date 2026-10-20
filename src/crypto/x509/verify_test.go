@@ -471,9 +471,6 @@ func testVerify(t *testing.T, test verifyTest, useSystemRoots bool) {
 	chains, err := leaf.Verify(opts)
 
 	if test.errorCallback == nil && err != nil {
-		if runtime.GOOS == "windows" && strings.HasSuffix(testenv.Builder(), "-2008") && err.Error() == "x509: certificate signed by unknown authority" {
-			testenv.SkipFlaky(t, 19564)
-		}
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if test.errorCallback != nil {
@@ -3217,5 +3214,20 @@ func TestVerifyHostnameIPAddresses(t *testing.T) {
 				t.Errorf("VerifyHostname(%q) = nil, want error", tc.host)
 			}
 		})
+	}
+}
+
+func TestSystemVerifyInvalidUTF8DNSName(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "ios" {
+		t.Skip("only relevant to the macOS platform verifier")
+	}
+	c, err := certificateFromPEM(selfSigned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Leaving Roots nil selects the platform verifier.
+	_, err = c.Verify(VerifyOptions{DNSName: "\xff.example.com"})
+	if _, ok := errors.AsType[HostnameError](err); !ok {
+		t.Errorf("Verify with invalid UTF-8 DNSName: got error %v, want HostnameError", err)
 	}
 }

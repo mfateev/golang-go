@@ -43,6 +43,15 @@ func Work(mode string) (string, error) {
         go func() { defer close(finished); runtime.Goexit() }()
         <-finished
         func() { defer func() { if recover() != "ordinary" { panic("lost recovery") } }(); panic("ordinary") }()
+    case "range recover":
+        func() {
+            defer func() {
+                for range func(yield func(int) bool) { yield(0) } {
+                    if recover() != "ordinary range" { panic("lost range recovery") }
+                }
+            }()
+            panic("ordinary range")
+        }()
     case "children":
         entered := make(chan struct{})
         for range 32 { go func() { entered <- struct{}{}; select {} }() }
@@ -104,7 +113,7 @@ func run(mode string, deterministic bool) {
 }
 func main() {
     for _, deterministic := range []bool{false,true} {
-        for _, mode := range []string{"panic", "child", "goexit", "exit", "recover", "children"} { run(mode, deterministic) }
+        for _, mode := range []string{"panic", "child", "goexit", "exit", "recover", "range recover", "children"} { run(mode, deterministic) }
     }
     fmt.Println("compiled lifecycle passed")
 }

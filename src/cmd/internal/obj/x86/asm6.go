@@ -2150,6 +2150,7 @@ func span6(ctxt *obj.Link, s *obj.LSym, newprog obj.ProgAlloc) {
 					binary.LittleEndian.PutUint32(s.P[q.Pc+int64(q.Isize)-4:], uint32(v))
 				}
 			}
+			p.Rel = nil
 
 			if p.As == obj.APCALIGN || p.As == obj.APCALIGNMAX {
 				v := obj.AlignmentPadding(c, p, ctxt, s)
@@ -2162,8 +2163,6 @@ func span6(ctxt *obj.Link, s *obj.LSym, newprog obj.ProgAlloc) {
 				pPrev = p
 				continue
 			}
-
-			p.Rel = nil
 
 			p.Pc = int64(c)
 			ab.asmins(ctxt, s, p)
@@ -5139,9 +5138,9 @@ func (ab *AsmBuf) doasm(ctxt *obj.Link, cursym *obj.LSym, p *obj.Prog) {
 					default:
 						log.Fatalf("unknown TLS base location for %v", ctxt.Headtype)
 
-					case objabi.Hlinux, objabi.Hfreebsd:
+					case objabi.Hlinux, objabi.Hfreebsd, objabi.Hopenbsd:
 						if !ctxt.Flag_shared {
-							log.Fatalf("unknown TLS base location for linux/freebsd without -shared")
+							log.Fatalf("unknown TLS base location for %v without -shared", ctxt.Headtype)
 						}
 						// Note that this is not generating the same insn as the other cases.
 						//     MOV TLS, R_to

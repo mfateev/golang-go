@@ -11,8 +11,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"simd/archsimd/_gen/gentools"
 	"simd/archsimd/_gen/sgutil"
+	"simd/archsimd/_gen/specdoc"
+	"simd/archsimd/_gen/specgen"
 	"strings"
 	"text/template"
 )
@@ -196,12 +199,26 @@ var arm64ReduceIntegerShapes = &shapes{
 	uints: []int{8, 16, 32},
 }
 
-// arm64ReduceAllShapes includes float32 in addition to integer reduce shapes.
-var arm64ReduceAllShapes = &shapes{
+// arm64ReduceMinMaxShapes covers types with VSMAXV/VUMAXV/VFMAXV reduce (no 64-bit types).
+var arm64ReduceMinMaxShapes = &shapes{
 	vecs:   []int{128},
 	ints:   []int{8, 16, 32},
 	uints:  []int{8, 16, 32},
 	floats: []int{32},
+}
+
+// arm64ReduceSum64Shapes supports 64-bit ReduceSum via ConcatAddPairs.
+var arm64ReduceSum64Shapes = &shapes{
+	vecs:   []int{128},
+	ints:   []int{64},
+	uints:  []int{64},
+	floats: []int{64},
+}
+
+// arm64ReduceMinMax64Shapes supports 64-bit ReduceMax/Min (only FMAXP/FMINP support 2D).
+var arm64ReduceMinMax64Shapes = &shapes{
+	vecs:   []int{128},
+	floats: []int{64},
 }
 
 // arm64UintToIntShapes maps unsigned shapes to signed output type for mixed-type shift helpers.
@@ -242,19 +259,9 @@ var avx2UnsignedComparisons = &shapes{
 }
 
 // The shift-all shapes are for rotate emulation
-var amdIntShiftAllShapes = &shapes{
-	vecs: []int{128, 256, 512},
-	ints: []int{16, 32, 64}, // has 32 and 64 rotate on AVX512 that is too hard to use, and no 8-bit shiftall
-}
-
 var amdUintShiftAllShapes = &shapes{
 	vecs:  []int{128, 256, 512},
 	uints: []int{16, 32, 64}, // has 32 and 64 rotate on AVX512 that is too hard to use, and no 8-bit shiftall
-}
-
-var neonIntShiftAllShapes = &shapes{
-	vecs: []int{128},
-	ints: []int{8, 16, 32, 64},
 }
 
 var neonUintShiftAllShapes = &shapes{
@@ -699,7 +706,15 @@ func test{{.VType}}Reduce(t *testing.T, f func(_ archsimd.{{.VType}}) {{.Etype}}
 }
 `
 
-var reduceTestTemplateArm64 = shapedTemplateOf(arm64ReduceAllShapes, "reduce_arm64_helpers", reduceTestTemplateText)
+// arm64ReduceTestShapes covers all types with Reduce test helpers.
+var arm64ReduceTestShapes = &shapes{
+	vecs:   []int{128},
+	ints:   []int{8, 16, 32, 64},
+	uints:  []int{8, 16, 32, 64},
+	floats: []int{32, 64},
+}
+
+var reduceTestTemplateArm64 = shapedTemplateOf(arm64ReduceTestShapes, "reduce_arm64_helpers", reduceTestTemplateText)
 
 func reduceTestPrologue(s, ba string, out io.Writer) {
 	fmt.Fprintf(out,
@@ -918,47 +933,27 @@ func (x {{.VType}}) LessEqual(y {{.VType}}) Mask{{.WxC}} {
 //
 // Emulated, CPU Feature: {{.CPUfeature}}
 func (x {{.VType}}) NotEqual(y {{.VType}}) Mask{{.WxC}} {
-	return x.Equal(y).ToInt{{.WxC}}().Not().asMask()	
+	return x.Equal(y).ToInt{{.WxC}}().Not().asMask()
 }
 `)
 
-var intRotateAllTemplate = sgutil.TemplateNamed("intRotateAll", `
+var uintRotateAllTemplate = sgutil.TemplateNamed("uintRotateAll", `
 // RotateAllLeft rotates all elements left by the specified amount
 //
 // Emulated
-func (x {{.VType}}) RotateAllLeft(dist uint64) {{.VType}} {
-	dist = dist & ({{.EWidth}}-1)
-	ndist := {{.EWidth}} - dist
-	return x.ToBits().ShiftAllLeft(dist).Or(x.ToBits().ShiftAllRight(ndist)).BitsToInt{{.EWidth}}()
+func (x {{.VType}}) RotateAllLeft(shift uint64) {{.VType}} {
+	shift = shift & ({{.EWidth}}-1)
+	nshift := {{.EWidth}} - shift
+	return x.ShiftAllLeft(shift).Or(x.ShiftAllRight(nshift))
 }
 
 // RotateAllRight rotates all elements right by the specified amount
 //
 // Emulated
-func (x {{.VType}}) RotateAllRight(dist uint64) {{.VType}} {
-	dist = dist & ({{.EWidth}}-1)
-	ndist := {{.EWidth}} - dist
-	return x.ToBits().ShiftAllLeft(ndist).Or(x.ToBits().ShiftAllRight(dist)).BitsToInt{{.EWidth}}()
-}
-`)
-
-var uintRotateAllTemplate = sgutil.TemplateNamed("intRotateAll", `
-// RotateAllLeft rotates all elements left by the specified amount
-//
-// Emulated
-func (x {{.VType}}) RotateAllLeft(dist uint64) {{.VType}} {
-	dist = dist & ({{.EWidth}}-1)
-	ndist := {{.EWidth}} - dist
-	return x.ShiftAllLeft(dist).Or(x.ShiftAllRight(ndist))
-}
-
-// RotateAllRight rotates all elements right by the specified amount
-//
-// Emulated
-func (x {{.VType}}) RotateAllRight(dist uint64) {{.VType}} {
-	dist = dist & ({{.EWidth}}-1)
-	ndist := {{.EWidth}} - dist
-	return x.ShiftAllLeft(ndist).Or(x.ShiftAllRight(dist))
+func (x {{.VType}}) RotateAllRight(shift uint64) {{.VType}} {
+	shift = shift & ({{.EWidth}}-1)
+	nshift := {{.EWidth}} - shift
+	return x.ShiftAllLeft(nshift).Or(x.ShiftAllRight(shift))
 }
 `)
 
@@ -976,6 +971,13 @@ func (x {{.VType}}) Not() {{.VType}} {
 func (x {{.VType}}) Neg() {{.VType}} {
 	var zero {{.VType}}
 	return zero.Sub(x)
+}
+
+// Not returns the bitwise complement of x.
+//
+// Emulated, CPU Feature: {{.CPUfeature}}
+func (x Mask{{.WxC}}) Not() Mask{{.WxC}} {
+	return x.ToInt{{.WxC}}().Xor(x.Equal(x).ToInt{{.WxC}}()).asMask()
 }
 
 `)
@@ -1168,10 +1170,7 @@ func (t templateData) CPUfeatureBC() string {
 	case 256:
 		return "AVX2"
 	case 512:
-		if t.EWidth <= 16 {
-			return "AVX512BW"
-		}
-		return "AVX512F"
+		return "AVX512"
 	}
 	panic(fmt.Errorf("unexpected vector width %d", t.Vwidth))
 }
@@ -1182,8 +1181,8 @@ var broadcastTemplate = templateOf("Broadcast functions", `
 //
 // Emulated, CPU Feature: {{.CPUfeatureBC}}
 func Broadcast{{.VType}}(x {{.Etype}}) {{.VType}} {
-	var z {{.As128BitVec }}
-	return z.SetElem(0, x).broadcast1To{{.Count}}()
+	var v {{.As128BitVec }}
+	return v.SetElem(0, x).broadcast1To{{.Count}}()
 }
 `)
 
@@ -1191,8 +1190,8 @@ var broadcastTemplateArm64 = shapedTemplateOf(arm64Shapes, "arm64_broadcast", `
 // Broadcast{{.VType}} returns a vector with the input
 // x assigned to all elements of the output.
 func Broadcast{{.VType}}(x {{.Etype}}) {{.VType}} {
-	var z {{.VType}}
-	return z.SetElem(0, x).broadcast1To{{.Count}}()
+	var v {{.VType}}
+	return v.SetElem(0, x).broadcast1To{{.Count}}()
 }
 `)
 
@@ -1209,20 +1208,20 @@ var getHiTemplateArm64 = shapedTemplateOf(arm64Shapes, "arm64_HiToLo methods", `
 // HiToLo returns a vector with the upper 64 bits zeroed and the lower
 // 64 bits replaced with the upper 64 bits of x.
 func (x {{.VType}}) HiToLo() {{.VType}} {
-	var z {{.VType}}
+	var v {{.VType}}
 {{- if and (eq .Base "Float") (eq .EWidth 64)}}
-	return z.SetElem(0, x.GetElem(1))
+	return v.SetElem(0, x.GetElem(1))
 {{- else if (eq .EWidth 64)}}
 {{-  if (eq .Base "Uint")}}
-	return z.BitsToFloat64().SetElem(0, x.BitsToFloat64().GetElem(1)).ToBits()
+	return v.BitsToFloat64().SetElem(0, x.BitsToFloat64().GetElem(1)).ToBits()
 {{-  else}}
-	return z.ToBits().BitsToFloat64().SetElem(0, x.ToBits().BitsToFloat64().GetElem(1)).ToBits().BitsTo{{.Base}}{{.EWidth}}()
+	return v.ToBits().BitsToFloat64().SetElem(0, x.ToBits().BitsToFloat64().GetElem(1)).ToBits().BitsTo{{.Base}}{{.EWidth}}()
 {{-  end}}
 {{- else}}
 {{-  if (eq .Base "Uint")}}
-	return z.ReshapeToUint64s().BitsToFloat64().SetElem(0, x.ReshapeToUint64s().BitsToFloat64().GetElem(1)).ToBits().ReshapeToUint{{.EWidth}}s()
+	return v.ReshapeToUint64s().BitsToFloat64().SetElem(0, x.ReshapeToUint64s().BitsToFloat64().GetElem(1)).ToBits().ReshapeToUint{{.EWidth}}s()
 {{-  else}}
-	return z.ToBits().ReshapeToUint64s().BitsToFloat64().SetElem(0, x.ToBits().ReshapeToUint64s().BitsToFloat64().GetElem(1)).ToBits().ReshapeToUint{{.EWidth}}s().BitsTo{{.Base}}{{.EWidth}}()
+	return v.ToBits().ReshapeToUint64s().BitsToFloat64().SetElem(0, x.ToBits().ReshapeToUint64s().BitsToFloat64().GetElem(1)).ToBits().ReshapeToUint{{.EWidth}}s().BitsTo{{.Base}}{{.EWidth}}()
 {{-  end}}
 {{- end}}
 }
@@ -1231,39 +1230,64 @@ func (x {{.VType}}) HiToLo() {{.VType}} {
 var reduceSumTemplateArm64 = shapedTemplateOf(arm64ReduceIntegerShapes, "arm64_ReduceSum methods", `
 // ReduceSum reduces x by summing all elements.
 //
-// Emulated, CPU Feature: NEON
+// Emulated
 func (x {{.VType}}) ReduceSum() {{.Etype}} {
 	return x.reduceSum().GetElem(0)
 }
 `)
 
-var reduceMinMaxTemplateArm64 = shapedTemplateOf(arm64ReduceAllShapes, "arm64_ReduceMax/Min methods", `
+var reduceMinMaxTemplateArm64 = shapedTemplateOf(arm64ReduceMinMaxShapes, "arm64_ReduceMax/Min methods", `
 // ReduceMax reduces x by taking the maximum of all elements.
 //
-// Emulated, CPU Feature: NEON
+// Emulated
 func (x {{.VType}}) ReduceMax() {{.Etype}} {
 	return x.reduceMax().GetElem(0)
 }
 
 // ReduceMin reduces x by taking the minimum of all elements.
 //
-// Emulated, CPU Feature: NEON
+// Emulated
 func (x {{.VType}}) ReduceMin() {{.Etype}} {
 	return x.reduceMin().GetElem(0)
 }
 `)
 
+var reduceSum64TemplateArm64 = shapedTemplateOf(arm64ReduceSum64Shapes, "arm64_64bit_ReduceSum methods", `
+// ReduceSum reduces x by summing all elements.
+//
+// Emulated
+func (x {{.VType}}) ReduceSum() {{.Etype}} {
+	return x.ConcatAddPairs(x).GetElem(0)
+}
+`)
+
+var reduceMinMax64TemplateArm64 = shapedTemplateOf(arm64ReduceMinMax64Shapes, "arm64_64bit_ReduceMax/Min methods", `
+// ReduceMax reduces x by taking the maximum of all elements.
+//
+// Emulated
+func (x {{.VType}}) ReduceMax() {{.Etype}} {
+	return x.ConcatMaxPairs(x).GetElem(0)
+}
+
+// ReduceMin reduces x by taking the minimum of all elements.
+//
+// Emulated
+func (x {{.VType}}) ReduceMin() {{.Etype}} {
+	return x.ConcatMinPairs(x).GetElem(0)
+}
+`)
+
 var maskCvtTemplate = shapedTemplateOf(intShapes, "Mask conversions", `
 // ToMask returns a mask whose i'th element is set if x[i] is non-zero.
-func (from {{.Base}}{{.WxC}}) ToMask() (to Mask{{.WxC}}) {
-	return from.NotEqual({{.Base}}{{.WxC}}{})
+func (x {{.Base}}{{.WxC}}) ToMask() (z Mask{{.WxC}}) {
+	return x.NotEqual({{.Base}}{{.WxC}}{})
 }
 `)
 
 var arm64MaskCvtTemplate = shapedTemplateOf(arm64IntShapes, "Mask conversions", `
 // ToMask returns a mask whose i'th element is set if x[i] is non-zero.
-func (from {{.Base}}{{.WxC}}) ToMask() (to Mask{{.WxC}}) {
-	return from.NotEqual({{.Base}}{{.WxC}}{})
+func (x {{.Base}}{{.WxC}}) ToMask() (z Mask{{.WxC}}) {
+	return x.NotEqual({{.Base}}{{.WxC}}{})
 }
 `)
 
@@ -1385,7 +1409,7 @@ const (
 var files gentools.Files
 
 func main() {
-	gentools.RegisterFlags(nil)
+	genFlags := gentools.RegisterFlags(nil)
 
 	sl := flag.String("sl", SIMD+"slice_gen_amd64.go", "file name for slice operations")
 	cm := flag.String("cm", SIMD+"compare_gen_amd64.go", "file name for comparison operations")
@@ -1407,6 +1431,17 @@ func main() {
 	mmArm64 := flag.String("mmArm64", SIMD+"maskmerge_gen_arm64.go", "file name for ARM64 mask/merge operations")
 	rhArm64 := flag.String("rhArm64", TD+"reduce_helpers_arm64_test.go", "file name for ARM64 reduce test helpers")
 	flag.Parse()
+
+	specDir := specgen.MustFindSpecDir(genFlags.GOROOT)
+	specFuncs, err := specgen.Load(specDir, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "loading spec: %v\n", err)
+		os.Exit(1)
+	}
+	specIdx := specgen.NewIndex(specFuncs)
+	files.AddPostProcessor(specdoc.Filler(specIdx, specdoc.Options{
+		AllowDocRewrite: true,
+	}))
 
 	defer files.FlushOrExit()
 
@@ -1438,7 +1473,6 @@ func main() {
 			bitWiseUintTemplate,
 			stringTemplate,
 			maskToString,
-			shapeAndTemplate{amdIntShiftAllShapes, intRotateAllTemplate},
 			shapeAndTemplate{amdUintShiftAllShapes, uintRotateAllTemplate},
 		)
 	}
@@ -1490,10 +1524,11 @@ func main() {
 			stringTemplateArm64,
 			getHiTemplateArm64,
 			arm64MaskCvtTemplate,
-			shapeAndTemplate{neonIntShiftAllShapes, intRotateAllTemplate},
 			shapeAndTemplate{neonUintShiftAllShapes, uintRotateAllTemplate},
 			reduceSumTemplateArm64,
-			reduceMinMaxTemplateArm64)
+			reduceMinMaxTemplateArm64,
+			reduceSum64TemplateArm64,
+			reduceMinMax64TemplateArm64)
 	}
 	if *shArm64 != "" {
 		oneArch(*shArm64, "arm64", curryTestPrologue("shift simd methods"), filterAll,

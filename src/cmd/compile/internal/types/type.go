@@ -1693,6 +1693,11 @@ func (t *Type) SetUnderlying(underlying *Type) {
 	}
 	if underlying.flags&typeIsSIMD != 0 {
 		simdify(t, underlying.flags&typeIsSIMDTag != 0)
+		// simdify assigns the register counts of a vector; keep the
+		// underlying type's, which differ for an SVE predicate (passed in
+		// memory, see CalcStructSize).
+		t.intRegs = underlying.intRegs
+		t.floatRegs = underlying.floatRegs
 	}
 
 	// spec: "The declared type does not inherit any methods bound
@@ -1992,4 +1997,20 @@ var ShapePkg = NewPkg("go.shape", "go.shape")
 
 func (t *Type) IsSIMD() bool {
 	return t.flags&typeIsSIMD != 0
+}
+func (t *Type) ContainsSIMD() bool {
+	if t.IsSIMD() {
+		return true
+	}
+	switch t.Kind() {
+	case TARRAY:
+		return t.Elem().ContainsSIMD()
+	case TSTRUCT:
+		for _, f := range t.Fields() {
+			if f.Type.ContainsSIMD() {
+				return true
+			}
+		}
+	}
+	return false
 }

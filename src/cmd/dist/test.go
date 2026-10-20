@@ -46,6 +46,7 @@ func cmdtest() {
 	flag.BoolVar(&t.msan, "msan", false, "run in memory sanitizer builder mode")
 	flag.BoolVar(&t.asan, "asan", false, "run in address sanitizer builder mode")
 	flag.BoolVar(&t.json, "json", false, "report test results in JSON")
+	flag.StringVar(&t.artifactsDir, "artifacts-dir", "", "save test artifacts in the specified directory")
 
 	xflagparse(-1) // any number of args
 	if noRebuild {
@@ -57,24 +58,25 @@ func cmdtest() {
 
 // tester executes cmdtest.
 type tester struct {
-	race        bool
-	msan        bool
-	asan        bool
-	listMode    bool
-	rebuild     bool
-	failed      bool
-	keepGoing   bool
-	compileOnly bool // just try to compile all tests, but no need to run
-	short       bool
-	cgoEnabled  bool
-	asmflags    string
-	json        bool
-	runRxStr    string
-	runRx       *regexp.Regexp
-	runRxWant   bool     // want runRx to match (true) or not match (false)
-	runNames    []string // tests to run, exclusive with runRx; empty means all
-	banner      string   // prefix, or "" for none
-	lastHeading string   // last dir heading printed
+	race         bool
+	msan         bool
+	asan         bool
+	listMode     bool
+	rebuild      bool
+	failed       bool
+	keepGoing    bool
+	compileOnly  bool // just try to compile all tests, but no need to run
+	short        bool
+	cgoEnabled   bool
+	asmflags     string
+	json         bool
+	artifactsDir string
+	runRxStr     string
+	runRx        *regexp.Regexp
+	runRxWant    bool     // want runRx to match (true) or not match (false)
+	runNames     []string // tests to run, exclusive with runRx; empty means all
+	banner       string   // prefix, or "" for none
+	lastHeading  string   // last dir heading printed
 
 	tests        []distTest // use addTest to extend
 	testNames    map[string]bool
@@ -475,7 +477,10 @@ func (opts *goTest) buildArgs(t *tester) (build, run, pkgs, testFlags []string, 
 		run = append(run, "-skip="+opts.skip)
 	}
 	if t.json {
-		run = append(run, "-json")
+		build = append(build, "-json")
+	}
+	if t.artifactsDir != "" {
+		run = append(run, "-artifacts", "-outputdir="+t.artifactsDir)
 	}
 
 	if opts.gcflags != "" {
@@ -700,13 +705,15 @@ func (t *tester) registerTests() {
 			})
 	}
 
-	// Tests that the nethttpomithttp2 build tag doesn't rot too much,
-	// even if there's not a regular builder on it.
-	t.registerTest("net/http with tag nethttpomithttp2", &goTest{
-		variant: "nethttpomithttp2",
-		tags:    []string{"nethttpomithttp2"},
-		pkg:     "net/http",
-	})
+	// Tests that the nethttpomithttp2* build tags don't rot too much,
+	// even if there's not a regular builder on them.
+	for _, tag := range []string{"nethttpomithttp2", "nethttpomithttp2server", "nethttpomithttp2client"} {
+		t.registerTest("net/http with tag "+tag, &goTest{
+			variant: tag,
+			tags:    []string{tag},
+			pkg:     "net/http",
+		})
+	}
 
 	// Check that all crypto packages compile with the purego build tag.
 	t.registerTest("crypto with tag purego (build and vet only)", &goTest{
@@ -1802,7 +1809,7 @@ func buildModeSupported(compiler, buildmode, goos, goarch string) bool {
 			"darwin/amd64", "darwin/arm64",
 			"ios/amd64", "ios/arm64",
 			"aix/ppc64",
-			"openbsd/arm64",
+			"openbsd/amd64", "openbsd/arm64",
 			"windows/386", "windows/amd64", "windows/arm64":
 			return true
 		}

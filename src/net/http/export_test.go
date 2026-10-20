@@ -9,6 +9,7 @@ package http
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/url"
@@ -60,8 +61,8 @@ func init() {
 }
 
 func CondSkipHTTP2(t testing.TB) {
-	if omitBundledHTTP2 {
-		t.Skip("skipping HTTP/2 test when nethttpomithttp2 build tag in use")
+	if omitHTTP2Server || omitHTTP2Client {
+		t.Skip("skipping HTTP/2 test when HTTP/2 server or client is omitted by build tag")
 	}
 }
 
@@ -77,9 +78,10 @@ func SetReadLoopBeforeNextReadHook(f func()) {
 
 // SetPendingDialHooks sets the hooks that run before and after handling
 // pending dials.
-func SetPendingDialHooks(before, after func()) {
-	unnilTestHook(&before)
-	unnilTestHook(&after)
+func SetPendingDialHooks(t *testing.T, before, after func()) {
+	t.Cleanup(func() {
+		testHookPrePendingDial, testHookPostPendingDial = nil, nil
+	})
 	testHookPrePendingDial, testHookPostPendingDial = before, after
 }
 
@@ -160,66 +162,6 @@ func (t *Transport) IdleConnWaitMapSizeForTesting() int {
 	return len(t.idleConnWait)
 }
 
-func (t *Transport) IsIdleForTesting() bool {
-	t.idleMu.Lock()
-	defer t.idleMu.Unlock()
-	return t.closeIdle
-}
-
-func (t *Transport) QueueForIdleConnForTesting() {
-	t.queueForIdleConn(nil)
-}
-
-// PutIdleTestConn reports whether it was able to insert a fresh
-// persistConn for scheme, addr into the idle connection pool.
-func (t *Transport) PutIdleTestConn(scheme, addr string) bool {
-	c, _ := net.Pipe()
-	key := connectMethodKey{"", scheme, addr, false}
-
-	if t.MaxConnsPerHost > 0 {
-		// Transport is tracking conns-per-host.
-		// Increment connection count to account
-		// for new persistConn created below.
-		t.connsPerHostMu.Lock()
-		if t.connsPerHost == nil {
-			t.connsPerHost = make(map[connectMethodKey]int)
-		}
-		t.connsPerHost[key]++
-		t.connsPerHostMu.Unlock()
-	}
-
-	return t.tryPutIdleConn(&persistConn{
-		t:        t,
-		conn:     c,                   // dummy
-		closech:  make(chan struct{}), // so it can be closed
-		cacheKey: key,
-	}) == nil
-}
-
-// PutIdleTestConnH2 reports whether it was able to insert a fresh
-// HTTP/2 persistConn for scheme, addr into the idle connection pool.
-func (t *Transport) PutIdleTestConnH2(scheme, addr string, alt RoundTripper) bool {
-	key := connectMethodKey{"", scheme, addr, false}
-
-	if t.MaxConnsPerHost > 0 {
-		// Transport is tracking conns-per-host.
-		// Increment connection count to account
-		// for new persistConn created below.
-		t.connsPerHostMu.Lock()
-		if t.connsPerHost == nil {
-			t.connsPerHost = make(map[connectMethodKey]int)
-		}
-		t.connsPerHost[key]++
-		t.connsPerHostMu.Unlock()
-	}
-
-	return t.tryPutIdleConn(&persistConn{
-		t:        t,
-		alt:      alt,
-		cacheKey: key,
-	}) == nil
-}
-
 // All test hooks must be non-nil so they can be called directly,
 // but the tests use nil to mean hook disabled.
 func unnilTestHook(f *func()) {
@@ -290,9 +232,7 @@ func ResponseWriterConnForTesting(w ResponseWriter) (c net.Conn, ok bool) {
 
 func init() {
 	// Set the default rstAvoidanceDelay to the minimum possible value to shake
-	// out tests that unexpectedly depend on it. Such tests should use
-	// runTimeSensitiveTest and SetRSTAvoidanceDelay to explicitly raise the delay
-	// if needed.
+	// out tests that unexpectedly depend on it.
 	rstAvoidanceDelay = 1 * time.Nanosecond
 }
 
@@ -309,4 +249,22 @@ func SetRSTAvoidanceDelay(t *testing.T, d time.Duration) {
 // SetHTTP3 adds or removes HTTP/3 from p.
 func (p *Protocols) SetHTTP3(ok bool) {
 	p.setHTTP3(ok)
+}
+
+type remapHTTP3Dialer struct {
+	dialClientConner
+	closeIdleConnectionser
+	remap func(string) string
+}
+
+func (d remapHTTP3Dialer) DialClientConn(ctx context.Context, addr string, proxy *url.URL, tlsConfig *tls.Config, hook func()) (RoundTripper, error) {
+	return d.dialClientConner.DialClientConn(ctx, d.remap(addr), proxy, tlsConfig, hook)
+}
+
+func (t *Transport) SetHTTP3DialAddrForTesting(remap func(string) string) {
+	t.h3Transport = remapHTTP3Dialer{
+		dialClientConner:       t.h3Transport,
+		closeIdleConnectionser: t.h3Transport.(closeIdleConnectionser),
+		remap:                  remap,
+	}
 }

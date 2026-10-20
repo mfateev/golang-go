@@ -6,6 +6,7 @@ package main
 
 import (
 	"log"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -773,6 +774,65 @@ var genericOps = []opData{
 	{name: "F32AsI32", argLength: 1, typ: "Int32"},
 	{name: "I64AsF64", argLength: 1, typ: "Float64"},
 	{name: "F64AsI64", argLength: 1, typ: "Int64"},
+
+	// Broadcast duplicates a scalar to every element of a scalable vector.
+	// arg0 = the scalar.
+	{name: "BroadcastInt8s", argLength: 1},
+	{name: "BroadcastUint8s", argLength: 1},
+	{name: "BroadcastInt16s", argLength: 1},
+	{name: "BroadcastUint16s", argLength: 1},
+	{name: "BroadcastInt32s", argLength: 1},
+	{name: "BroadcastUint32s", argLength: 1},
+	{name: "BroadcastFloat32s", argLength: 1},
+	{name: "BroadcastInt64s", argLength: 1},
+	{name: "BroadcastUint64s", argLength: 1},
+	{name: "BroadcastFloat64s", argLength: 1},
+
+	// AllTrue constructs a scalable predicate with every lane true. Written by
+	// hand: there is no instruction operand to unify on, and the lowering is
+	// the same synthesized PWHILELT the implicitly predicated operations use.
+	{name: "Mask8sAllTrue", argLength: 0},
+	{name: "Mask16sAllTrue", argLength: 0},
+	{name: "Mask32sAllTrue", argLength: 0},
+	{name: "Mask64sAllTrue", argLength: 0},
+
+	// FromCount constructs a scalable predicate whose first arg0 lanes are
+	// true, with the same PWHILELT that AllTrue uses. arg0 = the count (int).
+	{name: "Mask8sFromCount", argLength: 1},
+	{name: "Mask16sFromCount", argLength: 1},
+	{name: "Mask32sFromCount", argLength: 1},
+	{name: "Mask64sFromCount", argLength: 1},
+
+	// First returns a mask with only the first active lane of arg0 active.
+	{name: "Mask8sFirst", argLength: 1},
+	{name: "Mask16sFirst", argLength: 1},
+	{name: "Mask32sFirst", argLength: 1},
+	{name: "Mask64sFirst", argLength: 1},
+
+	// Next returns a mask with only the lane after the last active lane of
+	// arg0 active; lane 0 if arg0 has none.
+	{name: "Mask8sNext", argLength: 1},
+	{name: "Mask16sNext", argLength: 1},
+	{name: "Mask32sNext", argLength: 1},
+	{name: "Mask64sNext", argLength: 1},
+
+	// All reports whether every lane of arg0 is active.
+	{name: "Mask8sAll", argLength: 1},
+	{name: "Mask16sAll", argLength: 1},
+	{name: "Mask32sAll", argLength: 1},
+	{name: "Mask64sAll", argLength: 1},
+
+	// None reports whether no lane of arg0 is active.
+	{name: "Mask8sNone", argLength: 1},
+	{name: "Mask16sNone", argLength: 1},
+	{name: "Mask32sNone", argLength: 1},
+	{name: "Mask64sNone", argLength: 1},
+
+	// Any reports whether some lane of arg0 is active.
+	{name: "Mask8sAny", argLength: 1},
+	{name: "Mask16sAny", argLength: 1},
+	{name: "Mask32sAny", argLength: 1},
+	{name: "Mask64sAny", argLength: 1},
 }
 
 //     kind          controls          successors   implicit exit
@@ -835,13 +895,8 @@ func merge(a, b []opData) []opData {
 }
 
 func moreGenericOps() []opData {
-	var keys []string
-	for k := range additionalGenericOps {
-		keys = append(keys, k)
-	}
-	g := simdGenericOps()
-	slices.SortFunc(g, compareOpData)
-	for _, k := range keys {
+	var g []opData
+	for _, k := range slices.Sorted(maps.Keys(additionalGenericOps)) {
 		s := additionalGenericOps[k]
 		slices.SortFunc(s, compareOpData)
 		g = merge(g, s)
@@ -851,10 +906,6 @@ func moreGenericOps() []opData {
 
 func genericInit() {
 	genericOps = append(genericOps, moreGenericOps()...)
-	// When adding SIMD for another architecture, it may be useful to temporarily
-	// maintain a separate list of generic operations till that work stabilizes.
-	// For example:
-	// genericOps = append(genericOps, simdGenericOpsWasm()...)
 	archs = append(archs, arch{
 		name:    "generic",
 		ops:     genericOps,

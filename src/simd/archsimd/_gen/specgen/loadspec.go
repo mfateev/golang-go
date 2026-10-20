@@ -39,7 +39,7 @@ type specFunc struct {
 	Name         string       // Source name
 	NameTmpl     specTemplate // API name template from `//specgen:name` directive, or same as Name.
 	Pos          token.Pos
-	Doc          specTemplate
+	Doc          specTemplate // Comment markers removed; \n-terminated unless ""
 	Category     string
 	Commutative  bool
 	Sig          *types.Signature
@@ -152,6 +152,10 @@ func loadSpecPackage(ctx context, dir string, opts *LoadOptions) *specPackage {
 		for _, decl := range file.Decls {
 			d, ok := decl.(*ast.FuncDecl)
 			if !ok || !d.Name.IsExported() {
+				continue
+			}
+			switch d.Name.Name {
+			case "ScalableWidth", "SetScalableWidth":
 				continue
 			}
 

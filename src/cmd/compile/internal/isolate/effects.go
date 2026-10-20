@@ -32,10 +32,7 @@ func ScopeEffectsInBody(fn, source *ir.Func) {
 		return
 	}
 	isolateEffectsScoped[fn] = true
-	previous := ir.CurFunc
-	defer func() { ir.CurFunc = previous }()
 	entries := strings.Split(base.Debug.IsolateEffectEntries, ":")
-	ir.CurFunc = fn
 	pkg, name := source.Sym().Pkg.Path, ir.FuncName(source)
 	full := pkg + "." + name
 	entry := false
@@ -109,7 +106,7 @@ func ScopeEffectsInBody(fn, source *ir.Func) {
 	})
 	if reason != "" {
 		fn.Pragma |= ir.Noinline | ir.IsolateEffectGuarded
-		guard := typecheck.Stmt(typecheck.Call(fn.Pos(), typecheck.LookupRuntime("isolateRejectEffect"), []ir.Node{ir.NewString(fn.Pos(), reason)}, false))
+		guard := typecheck.Stmt(fn, typecheck.Call(fn, fn.Pos(), typecheck.LookupRuntime("isolateRejectEffect"), []ir.Node{ir.NewString(fn.Pos(), reason)}, false))
 		fn.Body.Prepend(guard)
 	}
 }

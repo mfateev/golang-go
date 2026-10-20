@@ -648,7 +648,7 @@ func (s *regAllocState) init(f *ssa.Func) {
 	}
 
 	// Figure out which registers we're allowed to use.
-	s.allocatable = s.f.Config.GpRegMask.Union(s.f.Config.FpRegMask).Union(s.f.Config.SpecialRegMask).Union(s.f.Config.SimdRegMask)
+	s.allocatable = s.f.Config.GpRegMask.Union(s.f.Config.FpRegMask).Union(s.f.Config.SpecialRegMask).Union(s.f.Config.SimdRegMask).Union(s.f.Config.SimdMaskReg)
 	s.allocatable = s.allocatable.RemoveReg(s.SPReg)
 	s.allocatable = s.allocatable.RemoveReg(s.SBReg)
 	if s.f.Config.HasGReg {
@@ -863,6 +863,7 @@ func (s *regAllocState) setState(regs []endReg) {
 }
 
 // compatRegs returns the set of registers which can store a type t.
+// It must never return Config.SpecialRegMask; see its documentation.
 func (s *regAllocState) compatRegs(t *types.Type) ssaop.RegMask {
 	var m ssaop.RegMask
 	if t.IsTuple() || t.IsFlags() {
@@ -872,10 +873,10 @@ func (s *regAllocState) compatRegs(t *types.Type) ssaop.RegMask {
 		if t.Size() > 8 {
 			return s.f.Config.SimdRegMask.Intersect(s.allocatable)
 		} else {
-			if !s.f.Config.SpecialRegMask.Empty() {
+			if !s.f.Config.SimdMaskReg.Empty() {
 				// P predicates
 				// No instructions can move P <-> GP.
-				return s.f.Config.SpecialRegMask.Intersect(s.allocatable)
+				return s.f.Config.SimdMaskReg.Intersect(s.allocatable)
 			}
 			// K mask
 			// We can move GP <-> K.
@@ -3082,13 +3083,15 @@ func (e *edgeState) set(loc ssa.Location, vid ssa.ID, c *ssa.Value, final bool, 
 		if len(a) == 1 {
 			e.uniqueRegs = e.uniqueRegs.AddReg(ssaop.Register(r.Num))
 		}
-		if len(a) == 2 {
-			if t, ok := e.s.f.GetHome(a[0].ID).(*ssabase.Register); ok {
-				e.uniqueRegs = e.uniqueRegs.RemoveReg(ssaop.Register(t.Num))
-			}
-		}
 		if e.s.values[vid].Rematerializeable {
 			e.rematerializeableRegs = e.rematerializeableRegs.AddReg(ssaop.Register(r.Num))
+		}
+	}
+	if len(a) == 2 {
+		// The first copy is no longer the only one, wherever the
+		// second one landed (a spill to a stack slot included).
+		if t, ok := e.s.f.GetHome(a[0].ID).(*ssabase.Register); ok {
+			e.uniqueRegs = e.uniqueRegs.RemoveReg(ssaop.Register(t.Num))
 		}
 	}
 	if e.s.f.Pass.Debug > ssa.RegDebug {
@@ -3140,6 +3143,7 @@ func (e *edgeState) erase(loc ssa.Location) {
 		if cr.final {
 			e.finalRegs = e.finalRegs.RemoveReg(ssaop.Register(r.Num))
 		}
+		e.uniqueRegs = e.uniqueRegs.RemoveReg(ssaop.Register(r.Num)) // it holds nothing now
 		e.rematerializeableRegs = e.rematerializeableRegs.RemoveReg(ssaop.Register(r.Num))
 	}
 	if len(a) == 1 {

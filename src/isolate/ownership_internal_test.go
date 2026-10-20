@@ -361,27 +361,41 @@ func TestOwnershipFaultKillWaitsForMetadataCleanup(t *testing.T) {
 }
 
 func TestOwnershipFaultOrdinaryPanicStillRecoverable(t *testing.T) {
-	var recovered, deferred atomic.Bool
-	program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
-		NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
-		Main: func() {
-			defer deferred.Store(true)
-			defer func() { recovered.Store(recover() == "ordinary application panic") }()
-			panic("ordinary application panic")
-		},
-	}}
-	i, err := New(Config{Program: program, Deterministic: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := i.Start(); err != nil {
-		t.Fatal(err)
-	}
-	if err := i.Wait(); err != nil {
-		t.Fatal(err)
-	}
-	if !recovered.Load() || !deferred.Load() {
-		t.Fatal("ordinary panic lost Go recovery or defers")
+	for _, useRange := range []bool{false, true} {
+		t.Run(map[bool]string{false: "direct", true: "rangefunc"}[useRange], func(t *testing.T) {
+			var recovered, deferred atomic.Bool
+			program := Program{entry: isolatebridge.ProgramEntry{MetadataVersion: MetadataVersion,
+				NewState: func() (func(func()), error) { return func(fn func()) { fn() }, nil },
+				Main: func() {
+					defer deferred.Store(true)
+					defer func() {
+						if useRange {
+							// Upstream recovers through a token captured before the iterator.
+							for range func(yield func(int) bool) { yield(0) } {
+								recovered.Store(recover() == "ordinary application panic")
+							}
+						} else {
+							recovered.Store(recover() == "ordinary application panic")
+						}
+					}()
+					panic("ordinary application panic")
+				},
+			}}
+
+			i, err := New(Config{Program: program, Deterministic: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := i.Start(); err != nil {
+				t.Fatal(err)
+			}
+			if err := i.Wait(); err != nil {
+				t.Fatal(err)
+			}
+			if !recovered.Load() || !deferred.Load() {
+				t.Fatal("ordinary panic lost Go recovery or defers")
+			}
+		})
 	}
 }
 

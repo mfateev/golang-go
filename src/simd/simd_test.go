@@ -37,6 +37,9 @@ type number interface {
 func TestInt8s(t *testing.T) {
 	values := test_helpers.Int8s()
 	load := simd.LoadInt8s
+
+	test_helpers.TestV2Ve(t, values, load, simd.Int8s.OnesCount, test_helpers.OnesCount)
+
 	test_helpers.TestV2Ve(t, values, load, simd.Int8s.Neg, test_helpers.Neg)
 	test_helpers.TestV2Ve(t, values, load, simd.Int8s.Abs, test_helpers.Abs)
 	test_helpers.TestVV2Ve(t, values, load, simd.Int8s.Add, test_helpers.Add)
@@ -77,8 +80,6 @@ func TestInt16s(t *testing.T) {
 	test_helpers.TestVV2Ve(t, values, load, simd.Int16s.Min, test_helpers.Min)
 	test_helpers.TestVR2Ve(t, values, shifts, load, simd.Int16s.ShiftAllLeft, test_helpers.ShiftLeft)
 	test_helpers.TestVR2Ve(t, values, shifts, load, simd.Int16s.ShiftAllRight, test_helpers.ShiftRight)
-	test_helpers.TestVR2Ve(t, values, shifts, load, simd.Int16s.RotateAllLeft, test_helpers.RotateLeft)
-	test_helpers.TestVR2Ve(t, values, shifts, load, simd.Int16s.RotateAllRight, test_helpers.RotateRight)
 	test_helpers.TestVV2Me(t, values, load, simd.Int16s.Equal, test_helpers.Equal)
 	test_helpers.TestVV2Me(t, values, load, simd.Int16s.NotEqual, test_helpers.NotEqual)
 	test_helpers.TestVV2Me(t, values, load, simd.Int16s.Less, test_helpers.Less)
@@ -108,8 +109,6 @@ func TestInt32s(t *testing.T) {
 	test_helpers.TestVV2Ve(t, values, load, simd.Int32s.Min, test_helpers.Min)
 	test_helpers.TestVR2Ve(t, values, shifts, load, simd.Int32s.ShiftAllLeft, test_helpers.ShiftLeft)
 	test_helpers.TestVR2Ve(t, values, shifts, load, simd.Int32s.ShiftAllRight, test_helpers.ShiftRight)
-	test_helpers.TestVR2Ve(t, values, shifts, load, simd.Int32s.RotateAllLeft, test_helpers.RotateLeft)
-	test_helpers.TestVR2Ve(t, values, shifts, load, simd.Int32s.RotateAllRight, test_helpers.RotateRight)
 	test_helpers.TestVV2Me(t, values, load, simd.Int32s.Equal, test_helpers.Equal)
 	test_helpers.TestVV2Me(t, values, load, simd.Int32s.NotEqual, test_helpers.NotEqual)
 	test_helpers.TestVV2Me(t, values, load, simd.Int32s.Less, test_helpers.Less)
@@ -134,8 +133,6 @@ func TestInt64s(t *testing.T) {
 	test_helpers.TestVV2Ve(t, values, load, simd.Int64s.Xor, test_helpers.Xor)
 	test_helpers.TestVV2Ve(t, values, load, simd.Int64s.AndNot, test_helpers.AndNot)
 	test_helpers.TestVR2Ve(t, values, shifts, load, simd.Int64s.ShiftAllLeft, test_helpers.ShiftLeft)
-	test_helpers.TestVR2Ve(t, values, shifts, load, simd.Int64s.RotateAllLeft, test_helpers.RotateLeft)
-	test_helpers.TestVR2Ve(t, values, shifts, load, simd.Int64s.RotateAllRight, test_helpers.RotateRight)
 	test_helpers.TestVV2Me(t, values, load, simd.Int64s.Equal, test_helpers.Equal)
 	test_helpers.TestVV2Me(t, values, load, simd.Int64s.NotEqual, test_helpers.NotEqual)
 	test_helpers.TestVV2Me(t, values, load, simd.Int64s.Less, test_helpers.Less)
@@ -147,9 +144,52 @@ func TestInt64s(t *testing.T) {
 	// StorePart, String, ToBits, ToMask.
 }
 
+func TestMask8s(t *testing.T) {
+	load := simd.LoadInt8s
+	test_helpers.TestMM2Me(t, load, simd.Mask8s.And, test_helpers.And)
+	test_helpers.TestMM2Me(t, load, simd.Mask8s.Or, test_helpers.Or)
+	test_helpers.TestMM2Me(t, load, simd.Mask8s.Xor, test_helpers.Xor)
+	test_helpers.TestMM2Me(t, load, simd.Mask8s.AndNot, test_helpers.AndNot)
+	test_helpers.TestMM2Me(t, load, simd.Mask8s.Equal, test_helpers.Xnor)
+	test_helpers.TestM2Me(t, load, simd.Mask8s.Not, test_helpers.Not)
+}
+
+func TestMask16s(t *testing.T) {
+	load := simd.LoadInt16s
+	test_helpers.TestMM2Me(t, load, simd.Mask16s.And, test_helpers.And)
+	test_helpers.TestMM2Me(t, load, simd.Mask16s.Or, test_helpers.Or)
+	test_helpers.TestMM2Me(t, load, simd.Mask16s.Xor, test_helpers.Xor)
+	test_helpers.TestMM2Me(t, load, simd.Mask16s.AndNot, test_helpers.AndNot)
+	test_helpers.TestMM2Me(t, load, simd.Mask16s.Equal, test_helpers.Xnor)
+	test_helpers.TestM2Me(t, load, simd.Mask16s.Not, test_helpers.Not)
+}
+
+func TestMask32s(t *testing.T) {
+	load := simd.LoadInt32s
+	test_helpers.TestMM2Me(t, load, simd.Mask32s.And, test_helpers.And)
+	test_helpers.TestMM2Me(t, load, simd.Mask32s.Or, test_helpers.Or)
+	test_helpers.TestMM2Me(t, load, simd.Mask32s.Xor, test_helpers.Xor)
+	test_helpers.TestMM2Me(t, load, simd.Mask32s.AndNot, test_helpers.AndNot)
+	test_helpers.TestMM2Me(t, load, simd.Mask32s.Equal, test_helpers.Xnor)
+	test_helpers.TestM2Me(t, load, simd.Mask32s.Not, test_helpers.Not)
+}
+
+func TestMask64s(t *testing.T) {
+	load := simd.LoadInt64s
+	test_helpers.TestMM2Me(t, load, simd.Mask64s.And, test_helpers.And)
+	test_helpers.TestMM2Me(t, load, simd.Mask64s.Or, test_helpers.Or)
+	test_helpers.TestMM2Me(t, load, simd.Mask64s.Xor, test_helpers.Xor)
+	test_helpers.TestMM2Me(t, load, simd.Mask64s.AndNot, test_helpers.AndNot)
+	test_helpers.TestMM2Me(t, load, simd.Mask64s.Equal, test_helpers.Xnor)
+	test_helpers.TestM2Me(t, load, simd.Mask64s.Not, test_helpers.Not)
+}
+
 func TestUint8s(t *testing.T) {
 	values := test_helpers.Uint8s()
 	load := simd.LoadUint8s
+
+	test_helpers.TestV2Ve(t, values, load, simd.Uint8s.OnesCount, test_helpers.OnesCount)
+
 	test_helpers.TestVV2Ve(t, values, load, simd.Uint8s.Add, test_helpers.Add)
 	test_helpers.TestVV2Ve(t, values, load, simd.Uint8s.Sub, test_helpers.Sub)
 	test_helpers.TestVV2Ve(t, values, load, simd.Uint8s.Mul, test_helpers.Mul)
@@ -401,4 +441,66 @@ func TestReduceSum(t *testing.T) {
 	test_helpers.TestV2S(t, test_helpers.Uint16s(), simd.LoadUint16s, simd.Uint16s.ReduceSum, test_helpers.ReduceSum)
 	test_helpers.TestV2S(t, test_helpers.Int8s(), simd.LoadInt8s, simd.Int8s.ReduceSum, test_helpers.ReduceSum)
 	test_helpers.TestV2S(t, test_helpers.Uint8s(), simd.LoadUint8s, simd.Uint8s.ReduceSum, test_helpers.ReduceSum)
+}
+
+func TestMaskRange(t *testing.T) {
+	test_helpers.TestMaskAllAny(t, simd.LoadUint8s)
+}
+
+func TestMask16Range(t *testing.T) {
+	test_helpers.TestMaskAllAny(t, simd.LoadUint16s)
+}
+
+func TestMask32Range(t *testing.T) {
+	test_helpers.TestMaskAllAny(t, simd.LoadUint32s)
+}
+
+func TestMask64Range(t *testing.T) {
+	test_helpers.TestMaskAllAny(t, simd.LoadUint64s)
+}
+
+func testMaskTrailingZeros[E integer, V interface {
+	Len() int
+	Equal(V) M
+	NotEqual(V) M
+}, M interface {
+	TrailingZeros() int
+}](t *testing.T, load func([]E) V) {
+	t.Helper()
+	var zero V
+	lanes := zero.Len()
+	vz := load(make([]E, lanes))
+
+	if got := vz.NotEqual(vz).TrailingZeros(); got != lanes {
+		t.Errorf("all-zeros TrailingZeros(): want %d, got %d", lanes, got)
+	}
+	if got := vz.Equal(vz).TrailingZeros(); got != 0 {
+		t.Errorf("all-ones TrailingZeros(): want 0, got %d", got)
+	}
+
+	for i := range lanes {
+		// Single lane i set
+		s := make([]E, lanes)
+		s[i] = 1
+		m := load(s).NotEqual(vz)
+		if got := m.TrailingZeros(); got != i {
+			t.Errorf("single lane %d TrailingZeros(): want %d, got %d", i, i, got)
+		}
+
+		// All lanes >= i set
+		for j := i; j < lanes; j++ {
+			s[j] = 1
+		}
+		m = load(s).NotEqual(vz)
+		if got := m.TrailingZeros(); got != i {
+			t.Errorf("lanes >= %d TrailingZeros(): want %d, got %d", i, i, got)
+		}
+	}
+}
+
+func TestMaskTrailingZeros(t *testing.T) {
+	testMaskTrailingZeros(t, simd.LoadUint8s)
+	testMaskTrailingZeros(t, simd.LoadUint16s)
+	testMaskTrailingZeros(t, simd.LoadUint32s)
+	testMaskTrailingZeros(t, simd.LoadUint64s)
 }

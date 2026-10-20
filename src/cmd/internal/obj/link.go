@@ -41,6 +41,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"internal/abi"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -989,6 +990,10 @@ const (
 	// those out, so the other one has to win. See reflectdata.writeType.
 	AttrWeakDef
 
+	// Unnumbered indicates the symbol was not numbered when writing
+	// export data. It's used to check that it wouldn't be numbered later.
+	AttrUnnumbered
+
 	// attrABIBase is the value at which the ABI is encoded in
 	// Attribute. This must be last; all bits after this are
 	// assumed to be an ABI value.
@@ -1118,6 +1123,17 @@ func (s *LSym) String() string {
 	return s.Name
 }
 
+// IsGoType reports whether s is a Go type descriptor symbol, based on its name.
+//
+// Other kinds of symbol share the "type:" prefix, in particular the closures
+// for the generated equality and hash functions, type:.eqfunc.* and
+// type:.hashfunc.*. Those are not type descriptors; what tells them apart is
+// the "." that follows the prefix.
+func (s *LSym) IsGoType() bool {
+	const prefix = "type:"
+	return len(s.Name) > len(prefix) && strings.HasPrefix(s.Name, prefix) && s.Name[len(prefix)] != '.'
+}
+
 // The compiler needs *LSym to be assignable to cmd/compile/internal/ssa.Sym.
 func (*LSym) CanBeAnSSASym() {}
 func (*LSym) CanBeAnSSAAux() {}
@@ -1225,6 +1241,9 @@ type Link struct {
 	// symbol reference in the object file.
 	pkgIdx map[string]int32
 
+	// By the time we do symbol numbering we should have saved each symbol in either predefs or unnumbered.
+	predefs      []*LSym // list of symbols appearing in export data that we've preassigned indices for
+	unnumbered   []*LSym // list of symbols not numbered when writing export data; used to check they wouldn't be numbered later
 	defs         []*LSym // list of defined symbols in the current package
 	hashed64defs []*LSym // list of defined short (64-bit or less) hashed (content-addressable) symbols
 	hasheddefs   []*LSym // list of defined hashed (content-addressable) symbols

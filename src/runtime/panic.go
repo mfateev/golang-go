@@ -1019,8 +1019,10 @@ func (p *_panic) nextFrame() (ok bool) {
 	gp := getg()
 	systemstack(func() {
 		var limit uintptr
+		var limitFn funcInfo
 		if d := gp._defer; d != nil {
 			limit = d.sp
+			limitFn = findfunc(d.pc)
 		}
 
 		var u unwinder
@@ -1036,7 +1038,7 @@ func (p *_panic) nextFrame() (ok bool) {
 			// then we can simply loop until we find the next frame where
 			// it's non-zero.
 
-			if u.frame.sp == limit {
+			if u.frame.sp == limit && u.frame.fn == limitFn {
 				break // found a frame with linked defers
 			}
 
@@ -1099,6 +1101,124 @@ func (p *_panic) initOpenCodedDefers(fn funcInfo, varp unsafe.Pointer) bool {
 
 // The implementation of the predeclared function recover.
 func gorecover() any {
+	p := recoverablePanic(3) // skip systemstack_switch, recoverablePanic, gorecover
+	if p == nil {
+		return nil
+	}
+	p.recovered = true
+	return p.arg
+}
+
+// recoverrangefunc is called on entry to a range-over-func loop whose body
+// calls recover. The body runs in a frame of its own, called from the iterator,
+// so a recover there cannot tell that it is, in the source, a call made directly
+// in this function. This does the part of that decision that depends on the frame,
+// while the frame is the current one, and returns the panic the body may recover,
+// or nil if a recover in the body does not take effect.
+//
+// See also ../cmd/compile/internal/rangefunc/rewrite.go.
+func recoverrangefunc() any {
+	p := recoverablePanic(3) // skip systemstack_switch, recoverablePanic, recoverrangefunc
+	if p == nil {
+		// Either nothing is panicking, or this function is not the one the
+		// panic deferred, so nothing in it can recover.
+		return nil
+	}
+	return p
+}
+
+// gorecoverat is the implementation of the predeclared function recover
+// when it is called in the body of a range-over-func loop. frame is the
+// token recoverrangefunc returned for the function the loop is written in.
+func gorecoverat(frame any) any {
+	gp := getg()
+	// A token captured before an ownership fault cannot resume the instance.
+	if gp.isolateGroup != nil && gp.isolateGroup.ownershipFault.Load() != nil {
+		return nil
+	}
+	p, _ := frame.(*_panic)
+	if p == nil {
+		return nil
+	}
+	// The frame was the right one to recover in when the loop started. It
+	// still is, as it is still running the loop, but the panic it was going
+	// to recover must still be the one being processed: the body may have
+	// panicked and recovered in the meantime.
+	if gp._panic != p || p.goexit || p.recovered {
+		return nil
+	}
+	p.recovered = true
+	return p.arg
+}
+
+// recoverablePanic returns the panic that a call to recover in the caller
+// of the function that called recoverablePanic would recover, or nil if
+// such a call would not take effect. skip is the number of frames to step
+// over to reach that caller.
+//
+// A recover takes effect when the function it is called in is the one the
+// panicking function deferred.
+//
+// Check to see if the function that called recover() was
+// deferred directly from the panicking function.
+// For code like:
+//
+//	func foo() {
+//	    defer bar()
+//	    panic("panic")
+//	}
+//	func bar() {
+//	    recover()
+//	}
+//
+// Normally the stack would look like this:
+//
+//	foo
+//	runtime.gopanic
+//	bar
+//	runtime.gorecover
+//
+// However, if the function we deferred requires a wrapper
+// of some sort, we need to ignore the wrapper. In that case,
+// the stack looks like:
+//
+//	foo
+//	runtime.gopanic
+//	wrapper
+//	bar
+//	runtime.gorecover
+//
+// And we should also successfully recover.
+//
+// Finally, in the weird case "defer recover()", the stack looks like:
+//
+//	foo
+//	runtime.gopanic
+//	wrapper
+//	runtime.gorecover
+//
+// And we should not recover in that case.
+//
+// So our criteria is, there must be exactly one non-wrapper
+// frame between gopanic and gorecover.
+//
+// We don't recover this:
+//
+//	defer func() { func() { recover() }() }()
+//
+// because there are 2 non-wrapper frames.
+//
+// We don't recover this:
+//
+//	defer recover()
+//
+// because there are 0 non-wrapper frames.
+//
+// It must not be inlined into its callers: they count on its frame being
+// there to skip.
+//
+//go:noinline
+func recoverablePanic(skip int) *_panic {
 	gp := getg()
 	// An ownership fault is permanent; recovery cannot resume the instance.
 	if gp.isolateGroup != nil && gp.isolateGroup.ownershipFault.Load() != nil {
@@ -1109,55 +1229,13 @@ func gorecover() any {
 		return nil
 	}
 
-	// Check to see if the function that called recover() was
-	// deferred directly from the panicking function.
-	// For code like:
-	//     func foo() {
-	//         defer bar()
-	//         panic("panic")
-	//     }
-	//     func bar() {
-	//         recover()
-	//     }
-	// Normally the stack would look like this:
-	//     foo
-	//     runtime.gopanic
-	//     bar
-	//     runtime.gorecover
-	//
-	// However, if the function we deferred requires a wrapper
-	// of some sort, we need to ignore the wrapper. In that case,
-	// the stack looks like:
-	//     foo
-	//     runtime.gopanic
-	//     wrapper
-	//     bar
-	//     runtime.gorecover
-	// And we should also successfully recover.
-	//
-	// Finally, in the weird case "defer recover()", the stack looks like:
-	//     foo
-	//     runtime.gopanic
-	//     wrapper
-	//     runtime.gorecover
-	// And we should not recover in that case.
-	//
-	// So our criteria is, there must be exactly one non-wrapper
-	// frame between gopanic and gorecover.
-	//
-	// We don't recover this:
-	//     defer func() { func() { recover() }() }()
-	// because there are 2 non-wrapper frames.
-	//
-	// We don't recover this:
-	//     defer recover()
-	// because there are 0 non-wrapper frames.
 	canRecover := false
 	systemstack(func() {
 		var u unwinder
 		u.init(gp, 0)
-		u.next() // skip systemstack_switch
-		u.next() // skip gorecover
+		for i := 0; i < skip; i++ {
+			u.next()
+		}
 		nonWrapperFrames := 0
 	loop:
 		for ; u.valid(); u.next() {
@@ -1183,8 +1261,7 @@ func gorecover() any {
 	if !canRecover {
 		return nil
 	}
-	p.recovered = true
-	return p.arg
+	return p
 }
 
 //go:linkname sync_throw sync.throw

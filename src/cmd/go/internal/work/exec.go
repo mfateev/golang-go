@@ -1565,7 +1565,6 @@ type vetConfig struct {
 // exportConfig is the configuration passed to the export tool describing a single package.
 type exportConfig struct {
 	ImportPath  string            // package path
-	Compiler    string            // gc or gccgo, provided to makeTypesImporter
 	GoVersion   string            // minimum required Go version, such as "go1.21.0"
 	GoFiles     []string          // absolute paths to package source files
 	ImportMap   map[string]string // maps import path to package path
@@ -1713,6 +1712,7 @@ func (b *Builder) vet(ctx context.Context, a *Action) error {
 
 	h := cache.NewHash("vet " + a.Package.ImportPath)
 	fmt.Fprintf(h, "vet %q\n", b.toolID("vet"))
+	fmt.Fprintf(h, "vetxonly %v\n", vcfg.VetxOnly)
 
 	vetFlags := VetFlags
 
@@ -1748,6 +1748,12 @@ func (b *Builder) vet(ctx context.Context, a *Action) error {
 		// and should be updated if these flags are
 		// changed here.
 		vetFlags = []string{"-unsafeptr=false"}
+
+		// Unlike go test, go vet has no analyzer flags in VetFlags here,
+		// only its own flags for the tool, such as -json and -fix. Keep them.
+		if cfg.CmdName != "test" {
+			vetFlags = append(vetFlags, VetFlags...)
+		}
 
 		// Also turn off -unreachable checks during go test.
 		// During testing it is very common to make changes
@@ -1928,7 +1934,8 @@ func (b *Builder) export(ctx context.Context, a *Action) error {
 		return err
 	}
 	tool := base.Tool("export")
-	if err := sh.run(a.Package.Dir, a.Package.ImportPath, nil, cfg.BuildToolexec, tool, in); err != nil {
+	// Use b.WorkDir since a.Package.Dir might not exist on disk (e.g. for overlay packages).
+	if err := sh.run(b.WorkDir, a.Package.ImportPath, nil, cfg.BuildToolexec, tool, in); err != nil {
 		return err
 	}
 	// Update a.buildID and a.built.
@@ -1957,10 +1964,9 @@ func (b *Builder) buildExportConfig(a *Action) *exportConfig {
 		v = cmp.Or(a.Package.Module.GoVersion, gover.DefaultGoModVersion)
 	}
 
-	srcs := make([]string, len(a.Package.GoFiles))
-	for i := range srcs {
-		srcs[i] = filepath.Join(a.Package.Dir, a.Package.GoFiles[i])
-	}
+	// Careful, a.Package.GoFiles can be relative or absolute paths (see #82042).
+	// Also, the path may point to a virtual file system (e.g. for overlays).
+	srcs := actualFiles(mkAbsFiles(a.Package.Dir, a.Package.GoFiles))
 	// Collect output source files from any cgo dependencies.
 	if a.Package.UsesCgo() {
 		for _, dep := range a.Deps {
@@ -1972,7 +1978,6 @@ func (b *Builder) buildExportConfig(a *Action) *exportConfig {
 
 	ecfg := &exportConfig{
 		ImportPath:  a.Package.ImportPath,
-		Compiler:    cfg.BuildToolchainName,
 		GoVersion:   "go" + v,
 		GoFiles:     srcs,
 		ImportMap:   make(map[string]string),
@@ -2004,7 +2009,6 @@ func (b *Builder) exportActionID(a *Action, ecfg *exportConfig) cache.ActionID {
 	fmt.Fprintf(h, "export %s\n", b.toolID("export"))
 	// Flags.
 	fmt.Fprintf(h, "importPath %s\n", ecfg.ImportPath)
-	fmt.Fprintf(h, "compiler %s\n", ecfg.Compiler)
 	fmt.Fprintf(h, "goVersion %s\n", ecfg.GoVersion)
 	// Source file contents.
 	for _, file := range ecfg.GoFiles {
@@ -2532,7 +2536,31 @@ func BuildInstallFunc(b *Builder, ctx context.Context, a *Action) (err error) {
 		defer b.cleanup(a1)
 	}
 
-	return sh.moveOrCopyFile(a.Target, a1.built, perm, false)
+	if err := sh.moveOrCopyFile(a.Target, a1.built, perm, false); err != nil {
+		return err
+	}
+
+	// Move the split DWARF file to the output directory, except for "go install"
+	// (so we don't clutter the install directory).
+	if a1.Mode == "link" && cfg.CmdName != "install" && a.Target != os.DevNull {
+		dsym := filepath.Join(a1.built+".dSYM", "Contents", "Resources", "DWARF", filepath.Base(a1.built))
+		if _, err := os.Stat(dsym); err == nil {
+			hdr := filepath.Join(a.Target+".dSYM", "Contents", "Resources", "DWARF")
+			if err := sh.Mkdir(hdr); err != nil {
+				return err
+			}
+			if err := sh.moveOrCopyFile(filepath.Join(hdr, filepath.Base(a.Target)), dsym, 0666, false); err != nil {
+				return err
+			}
+		} else if !cfg.BuildN {
+			// If the build does not produce a dSYM directory, delete it.
+			if err := sh.RemoveAll(a.Target + ".dSYM"); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // AllowInstall returns a non-nil error if this invocation of the go command is
