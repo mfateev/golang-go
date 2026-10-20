@@ -23,9 +23,6 @@ import (
 // semaphore waits, and permanent parks; their runtime cleanup still runs on
 // the resumed goroutine.
 type isolateRevocationGroup struct {
-	hostWork              atomic.Int32 // Construction leases and asynchronous host borrows.
-	hostCalls             atomic.Int64
-	hostWaiters           *isolateHostWaiter  // Protected by parkLock.
 	readOnlyAlloc         *isolateAllocHandle // Scratch owner for queries and update validators.
 	dispatchInbound       bool                // Only inbound delivery services may dispatch; dispatchLock.
 	dispatchPriority      bool                // Only high-priority writable goroutines may dispatch; dispatchLock.
@@ -589,36 +586,34 @@ type g struct {
 	inMarkAssist bool
 	coroexit     bool // argument to coroswitch_m
 
-	raceignore                 int8  // ignore race detection events
-	nocgocallback              bool  // whether disable callback from C
-	tracking                   bool  // whether we're tracking this G for sched latency statistics
-	trackingSeq                uint8 // used to decide whether to track this G
-	trackingStamp              int64 // timestamp of when the G last started being tracked
-	runnableTime               int64 // the amount of time spent runnable, cleared when running, only used when tracking
-	lockedm                    muintptr
-	fipsIndicator              uint8
-	fipsOnlyBypass             bool
-	ditWanted                  bool // set if g wants to be executed with DIT enabled
-	syncSafePoint              bool // set if g is stopped at a synchronous safe point.
-	runningCleanups            atomic.Bool
-	isolatePrinting            bool // collecting one compiler-lowered print statement
-	sig                        uint32
-	secret                     int32 // current nesting of runtime/secret.Do calls.
-	writebuf                   []byte
-	sigcode0                   uintptr
-	sigcode1                   uintptr
-	sigpc                      uintptr
-	parentGoid                 uint64          // goid of goroutine that created this goroutine
-	gopc                       uintptr         // pc of go statement that created this goroutine
-	ancestors                  *[]ancestorInfo // ancestor information goroutine(s) that created this goroutine (only used if debug.tracebackancestors)
-	startpc                    uintptr         // pc of goroutine function
-	racectx                    uintptr
-	waiting                    *sudog         // sudog structures this g is waiting on (that have a valid elem ptr); in lock order
-	cgoCtxt                    []uintptr      // cgo traceback context
-	labels                     unsafe.Pointer // profiler labels
-	isolateHost                *isolateHostContext
-	isolateConstruction        *isolateConstruction
-	isolateScratchLifetime     *isolateScratchLifetime
+	raceignore      int8  // ignore race detection events
+	nocgocallback   bool  // whether disable callback from C
+	tracking        bool  // whether we're tracking this G for sched latency statistics
+	trackingSeq     uint8 // used to decide whether to track this G
+	trackingStamp   int64 // timestamp of when the G last started being tracked
+	runnableTime    int64 // the amount of time spent runnable, cleared when running, only used when tracking
+	lockedm         muintptr
+	fipsIndicator   uint8
+	fipsOnlyBypass  bool
+	ditWanted       bool // set if g wants to be executed with DIT enabled
+	syncSafePoint   bool // set if g is stopped at a synchronous safe point.
+	runningCleanups atomic.Bool
+	isolatePrinting bool // collecting one compiler-lowered print statement
+	sig             uint32
+	secret          int32 // current nesting of runtime/secret.Do calls.
+	writebuf        []byte
+	sigcode0        uintptr
+	sigcode1        uintptr
+	sigpc           uintptr
+	parentGoid      uint64          // goid of goroutine that created this goroutine
+	gopc            uintptr         // pc of go statement that created this goroutine
+	ancestors       *[]ancestorInfo // ancestor information goroutine(s) that created this goroutine (only used if debug.tracebackancestors)
+	startpc         uintptr         // pc of goroutine function
+	racectx         uintptr
+	waiting         *sudog         // sudog structures this g is waiting on (that have a valid elem ptr); in lock order
+	cgoCtxt         []uintptr      // cgo traceback context
+	labels          unsafe.Pointer // profiler labels
+
 	isolateState               *isolatePackageState // Current package layouts; inherited by children, reset on reuse.
 	isolateResourceRunStart    int64
 	isolateHeapReservation     uint64
@@ -1366,12 +1361,10 @@ const (
 	waitReasonSynctestSelect                          // "select (durable)"
 	waitReasonSynctestWaitGroupWait                   // "sync.WaitGroup.Wait (durable)"
 	waitReasonCleanupWait                             // "cleanup wait"
-	waitReasonIsolateHost                             // Explicit external host completion.
 )
 
 var waitReasonStrings = [...]string{
 	waitReasonZero:                  "",
-	waitReasonIsolateHost:           "isolate host completion",
 	waitReasonGCAssistMarking:       "GC assist marking",
 	waitReasonIOWait:                "IO wait",
 	waitReasonChanReceiveNilChan:    "chan receive (nil chan)",

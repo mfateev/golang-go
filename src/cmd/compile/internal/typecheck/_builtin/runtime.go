@@ -326,8 +326,7 @@ func isolateLeaveMetadata(uintptr)
 func isolateCheckMetadataCall(uintptr)
 func isolateCheckMetadataClosure(*byte)
 func isolateBindFunction(p unsafe.Pointer) unsafe.Pointer
-func isolateCheckHostFuncCell(p unsafe.Pointer)
-func isolateCheckHostClosure(fn unsafe.Pointer)
+func isolateCheckClosure(fn unsafe.Pointer)
 func isolateCheckHeapAccess(*byte, uintptr, bool)
 func isolateCheckHeapGlobalRead(*byte, uintptr, *byte, uintptr)
 func isolateCheckHeapAtomicCall(uintptr, *byte, *byte, *byte)
@@ -343,7 +342,5 @@ func isolateCheckHeapStackMove(*byte, *byte)
 func isolateCheckHeapCopy(*byte, int, *byte, int, uintptr)
 func isolateCheckHeapSliceCopy(*byte, *byte, int, *byte, int, bool)
 func isolateCheckHeapInterfaceEqual(*byte, *byte, *byte, bool)
-
-
 
 func isolateMetadataBorrowOwner() uintptr

@@ -61,7 +61,6 @@ func (group *isolateRevocationGroup) wakeRevoked() {
 	if !group.wakeStarted.CompareAndSwap(0, 1) {
 		return
 	}
-	isolateRevokeHostWaiters(group)
 	isolateRevokePollWaiters(group)
 	isolateRevokeParkWaiters(group)
 }
@@ -73,12 +72,6 @@ func (group *isolateRevocationGroup) wakeRevoked() {
 func isolateExitIfRevoked() {
 	group := getg().isolateGroup
 	if group != nil && getg().isolateMetadataDepth == 0 && group.admission.Load()&isolateRevokedBit != 0 {
-		if isolateHostExecution(getg()) || getg().isolateConstruction != nil {
-			return
-		}
-		if getg().isolateHost != nil {
-			panic(isolateConstructionRevoked{})
-		}
 		Goexit()
 	}
 }
@@ -95,15 +88,6 @@ func isolateDiscardIfRevoked() {
 		return
 	}
 	gp := getg()
-	if gp.isolateHost != nil {
-		if isolateHostExecution(gp) || gp.isolateHeapReservation != 0 {
-			return // Finish a pending allocation before unwinding host cleanup.
-		}
-		panic(isolateConstructionRevoked{}) // Unwind application reentry through host cleanup.
-	}
-	if gp.isolateConstruction != nil {
-		return
-	}
 	isolateNotifyResourceViolation(group)
 	isolatePrepareDiscard(gp)
 	mcall(isolateDiscard0)

@@ -100,7 +100,7 @@ func (b *Boundary) Suspend() error {
 // PendingCalls counts host calls that have not returned to instance code.
 // After suspension it distinguishes host-event waits from native deadlock.
 // Revocation may discard defers, so this count is not a teardown diagnostic.
-func (b *Boundary) PendingCalls() int64 { return b.pendingCalls.Load() + pendingHostCalls(b.group) }
+func (b *Boundary) PendingCalls() int64 { return b.pendingCalls.Load() }
 
 // Resume releases the suspension fence after host events have been delivered.
 func (b *Boundary) Resume() error {
@@ -684,18 +684,3 @@ func setSpawnPriority(uint8) uint8
 
 //go:linkname resumePriority runtime.isolateResumePriority
 func resumePriority(unsafe.Pointer)
-
-// AllocationDomain returns the runtime's opaque main-domain allocator.
-func (b *Boundary) AllocationDomain() unsafe.Pointer { return groupAllocator(b.group, b.owner) }
-
-// PendingHostWork counts construction leases and unreleased asynchronous borrows.
-func (b *Boundary) PendingHostWork() int32 { return pendingHostWork(b.group) }
-
-//go:linkname groupAllocator runtime.isolateGroupAllocator
-func groupAllocator(unsafe.Pointer, uintptr) unsafe.Pointer
-
-//go:linkname pendingHostWork runtime.isolatePendingHostWork
-func pendingHostWork(unsafe.Pointer) int32
-
-//go:linkname pendingHostCalls runtime.isolatePendingHostCalls
-func pendingHostCalls(unsafe.Pointer) int64

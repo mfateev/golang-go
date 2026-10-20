@@ -180,7 +180,7 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 	}
 	gp := getg()
 	var group *isolateRevocationGroup
-	if block && gp.isolateMetadataDepth == 0 && !isolateHostExecution(gp) {
+	if block && gp.isolateMetadataDepth == 0 {
 		group = gp.isolateGroup
 	}
 	if group != nil {
@@ -565,7 +565,7 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 	}
 	gp := getg()
 	var group *isolateRevocationGroup
-	if block && gp.isolateMetadataDepth == 0 && !isolateHostExecution(gp) {
+	if block && gp.isolateMetadataDepth == 0 {
 		group = gp.isolateGroup
 	}
 	if group != nil {

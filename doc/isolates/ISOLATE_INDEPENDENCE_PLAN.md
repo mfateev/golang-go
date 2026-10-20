@@ -1,8 +1,8 @@
 # Isolate independence: retire library mediation and typed transport
 
-Status: proposed. Nothing here is implemented. This plan removes three
-mediation layers that exist for reasons that no longer hold, and it has one
-measurement gate that can kill the first and largest change cheaply.
+Status: implemented on 2026-10-20 in the Go fork and `sdk-go-poc`.
+The design below records the pre-refactor rationale and sequence. The
+implementation and validation notes describe the resulting system.
 
 | Change | Removes |
 | --- | --- |
@@ -12,6 +12,89 @@ measurement gate that can kill the first and largest change cheaply.
 
 The three are related but separately revertible. Change 2 is partly independent
 and can land first; changes 1 and 3 are sequenced.
+
+## Implementation
+
+- Protobuf runtime packages and workflow-reachable generated packages now have
+  private package state. Host-only SDK service descriptors are excluded from
+  private startup. Registries, lazy descriptors and `MessageInfo` initialize
+  independently in the host, each workflow and each read-only scratch service.
+- Removed SDK `hostintegration`, registry-binding rewrites, generated message
+  body rewrites, descriptor-host operations and generated-message/resolver shape
+  restrictions. Dynamic messages and custom `ProtoReflect` implementations and
+  resolvers execute in the isolate. The default converter still excludes legacy
+  gogo messages; configurable serializers retain their own supported encodings.
+- Structured SDK envelopes use a shared generated protobuf schema at
+  `sdk-go-poc/internal/transportpb/transport.proto`. Payloads, headers and
+  failures are submessages, marshalled once. Both bridge directions use the
+  generated static converters. SDK host protocol 7 rejects older envelope formats
+  at startup. Identifier-only operations use fixed-width binary
+  integers or raw strings; observational writes use protobuf too. Runtime timer
+  nanoseconds and durable session recreation tokens keep their existing formats.
+- Deleted public typed host functions, allocators, construction/reentry scopes
+  and waiters, along with dedicated compiler/runtime paths, borrow bookkeeping
+  and trusted host reference sharing. `Call`, `ControlCall`, `ReadOnlyCall` and
+  `Write` remain copied-byte boundaries with publication checks always enabled.
+
+### Supporting changes and retained SDK policy
+
+The Go compiler accepts generic package/source-file audits for unsafe library
+implementations; it contains no protobuf package knowledge. Audits use physical
+source provenance, so a `//line` directive cannot grant permission. Audited code
+still has ownership instrumentation and forbidden-effect guards. Dependencies
+may contain unreachable process diagnostics; executing those paths privately
+still fails. Direct workflow entries retain static process-global diagnostics.
+
+Private initialization now reconstructs embedded strings and privately allocated
+embedded byte slices before source init. Scratch-owned `RWMutex` operations are
+permitted like scratch-owned `Mutex` operations; mutation of workflow-owned locks
+and actual blocking waits remain forbidden in read-only handlers.
+
+The SDK retains small pinned-library adaptations for deterministic protobuf
+ordering, default private environment configuration and OpenTelemetry zero-ID
+sentinels. It also snapshots captured message data before read-only `proto.Clone`
+to discard workflow-owned reflection caches and bind cloned messages to scratch
+metadata. This executes entirely inside the isolate and does not rewrite
+application/generated message bodies or registry references. `protobufcopy`
+copies unknown fields and extensions as well as ordinary message fields. The old
+manual Payloads and Failure schema codecs now use the ordinary private protobuf
+runtime too, preserving unknown fields.
+Temporary module/workspace mirrors preserve source files and module-cache data;
+nested builds rediscover the original workspace before applying their own policy.
+
+### Validation
+
+The compiled protobuf fixture checks independent host/workflow/scratch metadata,
+concurrent cold initialization, private registry registration, custom messages,
+dynamic messages, custom resolvers, cold captured cloning and rejection of
+workflow-cache mutation from read-only handlers. Existing saved histories replay
+at `GOMAXPROCS=1,2,8`.
+
+Two-revision validation used Go `594d4c2881` and SDK `ecce344772` as the exact
+pre-refactor sources against a temporary Temporal 1.32.0 server. The baseline
+recorded ten histories covering JSON and binary protobuf values, activity/child
+results, queries, updates, failures, continue-as-new, upstream payloads and random
+streams. The new worker replays those histories. The new worker recorded the
+same scenarios with sticky cache sizes 1000 and 0; the old worker replays both
+new corpora. The transport change does not change durable history encoding.
+
+The Go isolate compiler script suite passes, including private embedded storage,
+file/package audit provenance and the race build. The full SDK test/race suite,
+complete sample workspace suite and core native fixture at `GOMAXPROCS=1,2,8`
+pass. Transport regeneration produces identical schema, bindings and conversions.
+
+The broad Go runtime race run exposed an existing ARM64 TSAN heap-dump crash in
+`TestSchedPauseMetrics`: a dynamically constructed itab causes heap dumping to
+reach `reflectOffsLock` on g0 without a race context. A standalone `StructOf`
+embedded-method/`WriteHeapDump` reproducer crashes on both the baseline and the
+new runtime. Re-running the suite with that test skipped found only the expected
+`runtime.g` size change after removing three pointers. Its 32/64-bit size
+expectations were updated, and the focused race assertion passes. The remaining
+runtime tests and isolate/sync/reflect/runtime-debug race checks passed. The
+pre-existing heap-dump crash is outside this refactor and remains unresolved.
+
+Retained-state measurements and the startup/memory cost are recorded in
+[Memory density](MEMORY_DENSITY.md#per-isolate-protobuf-cost).
 
 ## Why each layer exists and why it no longer should
 

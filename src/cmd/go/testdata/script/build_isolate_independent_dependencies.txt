@@ -1,0 +1,78 @@
+[!isolates] skip
+[short] skip
+# Audited dependencies keep ownership checks; embedded data is private.
+go build -isolate-config=files.json -o files.exe ./host
+exec ./files.exe
+stdout 'independent embedded defaults'
+# A line directive cannot promote another source file to audited code.
+! exec ./files.exe spoof
+stderr 'forbidden operation unsafe operation'
+# An explicit package audit includes both files.
+go build -isolate-config=packages.json -o packages.exe ./host
+exec ./packages.exe spoof
+stdout 'independent embedded defaults'
+# Without an audit, the same unsafe library code remains fenced.
+go build -isolate-config=denied.json -o denied.exe ./host
+! exec ./denied.exe
+stderr 'forbidden operation unsafe operation'
+# Source provenance and private byte storage also survive race instrumentation.
+[cgo] [race] go build -race -isolate-config=files.json -o race.exe ./host
+[cgo] [race] exec ./race.exe
+[cgo] [race] stdout 'independent embedded defaults'
+
+-- go.mod --
+module example.org/independent
+go 1.26
+-- dep/defaults.go --
+package dep
+import(_ "embed";"fmt";"os";"unsafe")
+//go:embed defaults.txt
+var Data []byte
+//go:embed defaults.txt
+var Text string
+func Read(p *byte)byte{return *(*byte)(unsafe.Pointer(p))}
+// Dependencies may contain unreachable host diagnostics; their memory/effect
+// checks still reject private execution if these paths are actually reached.
+func Diagnostic(){fmt.Fprintln(os.Stderr,"diagnostic")}
+-- dep/spoof.go --
+package dep
+import "unsafe"
+//line defaults.go:1
+func Unapproved()byte{x:=byte(17);return *(*byte)(unsafe.Pointer(&x))}
+-- dep/defaults.txt --
+abc
+-- jobs/jobs.go --
+package jobs
+import "example.org/independent/dep"
+func Work(spoof bool)int{
+ if string(dep.Data)!="abc\n" || dep.Text!="abc\n"{panic("embedded defaults were shared or missing")}
+ dep.Data[0]='z'
+ if spoof{return int(dep.Unapproved())}
+ return int(dep.Read(&dep.Data[1]))
+}
+-- host/main.go --
+package main
+import("context";"fmt";"isolate";"os";"example.org/independent/jobs";"example.org/independent/dep")
+func check(err error){if err!=nil{panic(err)}}
+func main(){h,ok:=isolate.LookupFunction(jobs.Work);if !ok{panic("missing entry")};spoof:=len(os.Args)>1
+ for range 2{
+  i,err:=isolate.New(isolate.Config{Program:h.ProgramWithHandle(dispatch)});check(err);check(i.Start())
+  for{select{case c:=<-i.Commands():
+   if c.Op==1{input:=byte(0);if spoof{input=1};c.Reply([]byte{input},nil)}else{
+    want:=byte('b');if spoof{want=17};if len(c.Payload)!=1||c.Payload[0]!=want{panic("wrong result")};c.Reply(nil,nil)
+   }
+   case <-i.Done():check(i.Wait());check(i.Kill(context.Background()));goto finished}}
+  finished:
+ }
+ if string(dep.Data)!="abc\n" || dep.Text!="abc\n"{panic("host embedded data changed")};fmt.Println("independent embedded defaults")
+}
+func dispatch(h isolate.Handle){raw,err:=isolate.Call(1,nil);check(err);check(h.Invoke(func(args ...isolate.Value)error{*args[0].Pointer.(*bool)=raw[0]!=0;return nil},func(values ...isolate.Value)error{_,err:=isolate.Call(2,[]byte{byte(values[0].Value.(int))});return err}))}
+
+-- files.json --
+{"format_version": 1, "entries": [{"package": "example.org/independent/jobs", "function": "Work", "value": "entryValue", "invoke": "entryInvoke"}], "sources": {"example.org/independent/jobs": "package jobs\nimport(\"isolate\";_ \"unsafe\")\n//go:linkname entryValue\nfunc entryValue() any {return Work}\n//go:linkname entryInvoke\nfunc entryInvoke(decode,encode func(...isolate.Value)error)error{var input bool;if err:=decode(isolate.Value{Pointer:&input,Value:input});err!=nil{return err};out:=Work(input);return encode(isolate.Value{Value:out,Pointer:&out})}\n"}, "state_packages": ["example.org/independent/jobs", "example.org/independent/dep"], "audited_files": ["example.org/independent/dep/defaults.go"]}
+
+-- denied.json --
+{"format_version": 1, "entries": [{"package": "example.org/independent/jobs", "function": "Work", "value": "entryValue", "invoke": "entryInvoke"}], "sources": {"example.org/independent/jobs": "package jobs\nimport(\"isolate\";_ \"unsafe\")\n//go:linkname entryValue\nfunc entryValue() any {return Work}\n//go:linkname entryInvoke\nfunc entryInvoke(decode,encode func(...isolate.Value)error)error{var input bool;if err:=decode(isolate.Value{Pointer:&input,Value:input});err!=nil{return err};out:=Work(input);return encode(isolate.Value{Value:out,Pointer:&out})}\n"}, "state_packages": ["example.org/independent/jobs", "example.org/independent/dep"]}
+
+-- packages.json --
+{"format_version": 1, "entries": [{"package": "example.org/independent/jobs", "function": "Work", "value": "entryValue", "invoke": "entryInvoke"}], "sources": {"example.org/independent/jobs": "package jobs\nimport(\"isolate\";_ \"unsafe\")\n//go:linkname entryValue\nfunc entryValue() any {return Work}\n//go:linkname entryInvoke\nfunc entryInvoke(decode,encode func(...isolate.Value)error)error{var input bool;if err:=decode(isolate.Value{Pointer:&input,Value:input});err!=nil{return err};out:=Work(input);return encode(isolate.Value{Value:out,Pointer:&out})}\n"}, "state_packages": ["example.org/independent/jobs", "example.org/independent/dep"], "audited_packages": ["example.org/independent/dep"]}

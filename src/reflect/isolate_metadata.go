@@ -46,12 +46,12 @@ func isolateCheckHeapAtomicCall(uintptr, unsafe.Pointer, unsafe.Pointer, unsafe.
 //go:noescape
 func isolateCheckHeapAccess(unsafe.Pointer, uintptr, bool)
 
-//go:linkname isolateCheckHostClosure runtime.isolateCheckHostClosure
+//go:linkname isolateCheckClosure runtime.isolateCheckClosure
 //go:noescape
-func isolateCheckHostClosure(unsafe.Pointer)
+func isolateCheckClosure(unsafe.Pointer)
 
 func isolateCheckReflectCall(fn unsafe.Pointer, in []Value) {
-	isolateCheckHostClosure(fn)
+	isolateCheckClosure(fn)
 	pc := *(*uintptr)(fn)
 	isolateCheckMetadataCall(pc)
 	isolateCheckReflectEffectCall(pc)

@@ -5,6 +5,8 @@
 package isolate
 
 import (
+	"strings"
+
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/typecheck"
@@ -28,7 +30,7 @@ func Validate() {
 func checkGlobalWrites(fn *ir.Func) {
 	// Guarded helpers remain ordinary host functions. Their body cannot run
 	// privately, including instantiated standard-library generic helpers.
-	if fn.Pragma&ir.IsolateEffectGuarded != 0 || ir.IsolateEscapeHelper(fn) || ir.IsolateHostBoundaryHelper(fn) {
+	if fn.Pragma&ir.IsolateEffectGuarded != 0 || ir.IsolateEscapeHelper(fn) {
 		return
 	}
 	check := func(lhs, stmt ir.Node) {
@@ -47,9 +49,10 @@ func checkGlobalWrites(fn *ir.Func) {
 	}
 	// Every closure has its own entry in Target.Funcs.
 	ir.VisitList(fn.Body, func(n ir.Node) {
-		// Standard libraries also serve the host. Compulsory runtime checks
-		// fence their process I/O globals only when executed privately.
-		if name, ok := n.(*ir.Name); ok && processGlobal(name) && !(base.Flag.Std && base.Debug.IsolateHeap != 0) {
+		// Instrumented packages also serve the host. Runtime ownership checks
+		// fence process I/O globals only when the reference is executed privately.
+		// This permits unreachable diagnostic paths in ordinary dependencies.
+		if name, ok := n.(*ir.Name); ok && processGlobal(name) && (base.Debug.IsolateHeap == 0 || !base.Flag.Std && isolateDeclaredEntry(fn)) {
 			base.ErrorfAt(fn.Pos(), 0, "isolate: code references process-owned global %s.%s", name.Sym().Pkg.Path, name.Sym().Name)
 		}
 		switch n := n.(type) {
@@ -117,4 +120,14 @@ func globalRoot(n ir.Node) *ir.Name {
 		return globalRoot(n.X)
 	}
 	return nil
+}
+
+func isolateDeclaredEntry(fn *ir.Func) bool {
+	name := fn.Sym().Pkg.Path + "." + ir.FuncName(fn)
+	for _, entry := range strings.Split(base.Debug.IsolateEffectEntries, ":") {
+		if entry == name {
+			return true
+		}
+	}
+	return false
 }

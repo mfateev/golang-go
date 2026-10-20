@@ -49,7 +49,6 @@ func isolateBeginReadOnly() {
 	if gp.isolateReadOnlyOwner != 0 {
 		return
 	}
-	gp.isolateScratchLifetime = newIsolateScratchLifetime()
 	gp.isolateReadOnlyOwner = gp.isolateOwner
 	gp.isolateOwner = gp.isolateGroup.readOnlyAlloc.cache.isolateOwner
 	isolateReadOnlyLibraries()
@@ -57,7 +56,7 @@ func isolateBeginReadOnly() {
 
 func isolateCheckReadOnlyBlock() {
 	gp := getg()
-	if gp.isolateReadOnlyOwner != 0 && gp.isolateCallSelectNext == 0 && gp.isolateMetadataDepth == 0 && !isolateHostExecution(gp) && !gp.isolateRuntimeWait {
+	if gp.isolateReadOnlyOwner != 0 && gp.isolateCallSelectNext == 0 && gp.isolateMetadataDepth == 0 && !gp.isolateRuntimeWait {
 		panic("isolate: read-only handlers cannot use blocking channels or select")
 	}
 }
@@ -175,7 +174,7 @@ func isolateInReadOnly() bool { return getg().isolateReadOnlyOwner != 0 }
 //go:linkname isolateReadOnlyWrite
 func isolateReadOnlyWrite(p unsafe.Pointer, size uintptr) {
 	gp := getg()
-	if gp.isolateReadOnlyOwner != 0 && gp.isolateMetadataDepth == 0 && !isolateHostExecution(gp) {
+	if gp.isolateReadOnlyOwner != 0 && gp.isolateMetadataDepth == 0 {
 		isolateCheckHeapAccess(p, size, true)
 	}
 }
@@ -183,7 +182,7 @@ func isolateReadOnlyWrite(p unsafe.Pointer, size uintptr) {
 //go:linkname isolateReadOnlySyncWait
 func isolateReadOnlySyncWait() {
 	gp := getg()
-	if gp.isolateReadOnlyOwner != 0 && gp.isolateMetadataDepth == 0 && !isolateHostExecution(gp) {
+	if gp.isolateReadOnlyOwner != 0 && gp.isolateMetadataDepth == 0 {
 		panic("isolate: read-only handlers cannot use blocking synchronization")
 	}
 }

@@ -33,6 +33,8 @@ type isolateConfig struct {
 	FormatVersion    int                  `json:"format_version"`
 	Entries          []isolateConfigEntry `json:"entries"`
 	Sources          map[string]string    `json:"sources"`
+	AuditedFiles     []string             `json:"audited_files,omitempty"`
+	AuditedPackages  []string             `json:"audited_packages,omitempty"`
 	StatePackages    []string             `json:"state_packages"`
 	ReadOnlyPackages []string             `json:"readonly_packages"`
 	SupportPackages  []string             `json:"support_packages"`

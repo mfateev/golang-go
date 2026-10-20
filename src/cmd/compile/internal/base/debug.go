@@ -58,6 +58,10 @@ type DebugFlags struct {
 	IsolateHeap           int    `help:"diagnose isolate heap/collection access (1) and typed reference stores/moves (2); incomplete"`
 	IsolateGlobals        int    `help:"redirect this package's globals through a generated isolate layout"`
 	IsolateInit           int    `help:"keep package initialization assignments executable for isolate replay"`
+
+	IsolateAuditedFiles    string `help:"colon-separated package/file names audited for unsafe generated code; ownership checks remain enabled"`
+	IsolateAuditedPackages string `help:"colon-separated dependency packages audited for unsafe implementation code; ownership checks remain enabled"`
+
 	IsolatePackages       string `help:"colon-separated package paths selected for isolate layouts and initialization"`
 	Libfuzzer             int    `help:"enable coverage instrumentation for libfuzzer"`
 	LiteralAllocHash      string `help:"hash value for use in debugging literal allocation optimizations" concurrent:"ok"`

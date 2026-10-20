@@ -1222,7 +1222,6 @@ func mallocgcCommon(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 	}
 	isolateCheckAllocationResources()
 	isolateRecordInitializationAllocation(x, size-asanRZ, typ)
-	isolateRecordConstructionAllocation(x, size-asanRZ)
 	return x
 }
 

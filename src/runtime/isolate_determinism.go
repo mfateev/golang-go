@@ -10,7 +10,7 @@ import "unsafe"
 // isolate, the shared replay-seeded generator supplies the shuffle draws.
 func isolateSelectRandn(gp *g, n uint32) uint32 {
 	group := gp.isolateGroup
-	if group == nil || !group.deterministic || isolateHostExecution(getg()) || getg().isolateConstruction != nil {
+	if group == nil || !group.deterministic {
 		return cheaprandn(n)
 	}
 	value := uint64(0)
@@ -34,7 +34,7 @@ func isolateSelectRandn(gp *g, n uint32) uint32 {
 func isolateRand() uint64 {
 	gp := getg()
 	group := gp.isolateGroup
-	if group == nil || !group.deterministic || isolateHostExecution(getg()) || getg().isolateConstruction != nil {
+	if group == nil || !group.deterministic {
 		return rand()
 	}
 	return isolateRandomUint64(gp)
@@ -48,7 +48,7 @@ func isolateRand() uint64 {
 //go:linkname isolateRandLegacy
 func isolateRandLegacy() (unsafe.Pointer, bool) {
 	group := getg().isolateGroup
-	if group == nil || !group.deterministic || isolateHostExecution(getg()) || getg().isolateConstruction != nil {
+	if group == nil || !group.deterministic {
 		return nil, false
 	}
 	if gp := getg(); gp.isolateReadOnlyOwner != 0 {

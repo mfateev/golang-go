@@ -44,7 +44,7 @@ func ScopeEffectsInBody(fn, source *ir.Func) {
 			entry = true
 		}
 	}
-	audited := source.Pragma&(ir.IsolateEffectAudited|ir.IsolateMetadataTrusted) != 0 || base.Flag.Std && source.Sym().Pkg.Path == base.Ctxt.Pkgpath
+	audited := base.IsolatePackageAudited(source.Sym().Pkg.Path) || source.Pragma&(ir.IsolateEffectAudited|ir.IsolateMetadataTrusted) != 0 || base.Flag.Std && source.Sym().Pkg.Path == base.Ctxt.Pkgpath
 	reason := ""
 	if isolatepolicy.Forbidden(pkg, name) {
 		reason = full

@@ -6,6 +6,7 @@ package base
 
 import (
 	"internal/buildcfg"
+	"path/filepath"
 	"strings"
 )
 
@@ -87,6 +88,28 @@ func isolateRuntimeImplementation(path string) bool {
 		"internal/race", "internal/asan", "internal/msan", "internal/coverage/rtcov",
 		"internal/isolatebridge", "internal/isolatestate", "isolate":
 		return true
+	}
+	return false
+}
+
+// IsolatePackageAudited reports SDK-selected implementation trust for unsafe
+// library code. It does not disable ownership or forbidden-effect checks.
+func IsolatePackageAudited(path string) bool {
+	for _, p := range strings.Split(Debug.IsolateAuditedPackages, ":") {
+		if p != "" && p == path {
+			return true
+		}
+	}
+	return false
+}
+
+// IsolateFileAudited scopes unsafe implementation trust to generated source,
+// without granting it to application functions in the same package.
+func IsolateFileAudited(pkg, filename string) bool {
+	for _, f := range strings.Split(Debug.IsolateAuditedFiles, ":") {
+		if f != "" && f == pkg+"/"+filepath.Base(filename) {
+			return true
+		}
 	}
 	return false
 }

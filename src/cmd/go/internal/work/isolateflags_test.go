@@ -48,6 +48,13 @@ func TestIsolateCompilerFlags(t *testing.T) {
 		t.Fatal("different reachable ownership layouts have the same flags")
 	}
 
+	forcedGcflags = []string{"-d=isolateauditedpackages=example.com/shared:example.com/unrelated", "-d=isolateauditedfiles=example.com/leaf/model.pb.go:example.com/unrelated/model.pb.go"}
+	got := compilerForcedFlags(shared)
+	want := []string{"-d=isolateauditedpackages=example.com/shared", "-d=isolateauditedfiles=example.com/leaf/model.pb.go"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("audit flags not scoped/canonical: %q", got)
+	}
+
 	forcedGcflags = []string{"-race", "-d=checkptr=1"}
 	if got := compilerForcedFlags(root); !slices.Equal(got, forcedGcflags) {
 		t.Fatalf("ordinary build flags changed: %q", got)

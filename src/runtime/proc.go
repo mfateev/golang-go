@@ -400,7 +400,7 @@ func forcegchelper() {
 //go:nosplit
 func Gosched() {
 	isolateDiscardIfRevoked()
-	getg().isolateExplicitYield = getg().isolateMetadataDepth == 0 && !isolateHostExecution(getg())
+	getg().isolateExplicitYield = getg().isolateMetadataDepth == 0
 	checkTimeouts()
 	mcall(gosched_m)
 	isolateDiscardIfRevoked()
@@ -4646,12 +4646,6 @@ func gdestroy(gp *g) {
 	// The pooled G must not keep that private environment alive.
 	gp.sched.ctxt = nil
 	gp.labels = nil
-	if gp.isolateScratchLifetime != nil {
-		gp.isolateScratchLifetime.closed.Store(true)
-	}
-	gp.isolateScratchLifetime = nil
-	gp.isolateHost = nil
-	gp.isolateConstruction = nil
 	gp.isolateState = nil
 	gp.isolateReadOnlyRandLegacy = nil
 	gp.isolateReadOnlyRandom = nil
@@ -5478,7 +5472,7 @@ func malg(stacksize int32) *g {
 // The compiler turns a go statement into a call to this.
 func newproc(fn *funcval) {
 	gp := getg()
-	if gp.isolateReadOnlyOwner != 0 && !isolateHostExecution(gp) && gp.isolateConstruction == nil && (fn == nil || !isSystemGoroutinePC(fn.fn, nil, false)) {
+	if gp.isolateReadOnlyOwner != 0 && (fn == nil || !isSystemGoroutinePC(fn.fn, nil, false)) {
 		panic("isolate: read-only handlers cannot start goroutines")
 	}
 	if fn != nil && !isSystemGoroutinePC(fn.fn, nil, false) {
@@ -5495,7 +5489,7 @@ func newproc(fn *funcval) {
 		panic("isolate: metadata services cannot start goroutines")
 	}
 	pc := sys.GetCallerPC()
-	if gp.isolateGroup != nil && !isolateHostExecution(gp) && gp.isolateConstruction == nil && fn != nil && !isSystemGoroutinePC(fn.fn, nil, false) {
+	if gp.isolateGroup != nil && fn != nil && !isSystemGoroutinePC(fn.fn, nil, false) {
 		isolateAdmitResourceChild(gp.isolateGroup)
 	}
 	systemstack(func() {
@@ -5508,7 +5502,7 @@ func newproc(fn *funcval) {
 			wakep()
 		}
 	})
-	if gp.isolateGroup != nil && !isolateHostExecution(gp) && gp.isolateConstruction == nil && fn != nil && !isSystemGoroutinePC(fn.fn, nil, false) {
+	if gp.isolateGroup != nil && fn != nil && !isSystemGoroutinePC(fn.fn, nil, false) {
 		isolateNotifyResourceViolation(gp.isolateGroup)
 		isolateDiscardIfRevoked()
 	}
@@ -5562,9 +5556,6 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	newg.ancestors = saveAncestors(callergp)
 	newg.startpc = fn.fn
 	newg.runningCleanups.Store(false)
-	newg.isolateScratchLifetime = nil
-	newg.isolateHost = nil
-	newg.isolateConstruction = nil
 	newg.isolateState = nil
 	newg.isolateReadOnlyRandLegacy = nil
 	newg.isolateReadOnlyRandom = nil
@@ -5593,17 +5584,15 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	} else {
 		// Only user goroutines inherit synctest groups and pprof labels.
 		newg.bubble = callergp.bubble
-		if !isolateHostExecution(callergp) && callergp.isolateConstruction == nil {
-			newg.isolateState = callergp.isolateState
-			newg.isolateOwner = callergp.isolateOwner
-			newg.isolateBoundary = callergp.isolateBoundary
-			newg.isolateGroup = callergp.isolateGroup
-			newg.isolateInboundService = callergp.isolateInboundService
-			newg.isolatePriority = callergp.isolateSpawnPriority
-			if newg.isolateGroup != nil {
-				newg.isolateGroup.live.Add(1)
-				isolateAttachChildResourceStack(newg)
-			}
+		newg.isolateState = callergp.isolateState
+		newg.isolateOwner = callergp.isolateOwner
+		newg.isolateBoundary = callergp.isolateBoundary
+		newg.isolateGroup = callergp.isolateGroup
+		newg.isolateInboundService = callergp.isolateInboundService
+		newg.isolatePriority = callergp.isolateSpawnPriority
+		if newg.isolateGroup != nil {
+			newg.isolateGroup.live.Add(1)
+			isolateAttachChildResourceStack(newg)
 		}
 		if mp.curg != nil {
 			newg.labels = mp.curg.labels

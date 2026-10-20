@@ -23,7 +23,7 @@ func compilerForcedFlags(p *load.Package) []string {
 		name, value, ok := strings.Cut(strings.TrimPrefix(flag, prefix), "=")
 		if strings.HasPrefix(flag, prefix) && ok {
 			switch name {
-			case "packages", "effectentries", "effects", "metadata", "build":
+			case "packages", "auditedpackages", "auditedfiles", "effectentries", "effects", "metadata", "build":
 				options[name] = value
 				continue
 			}
@@ -41,7 +41,7 @@ func compilerForcedFlags(p *load.Package) []string {
 	for _, dep := range load.PackageList([]*load.Package{p}) {
 		dependencies[dep.ImportPath] = true
 	}
-	for _, name := range []string{"packages", "effectentries"} {
+	for _, name := range []string{"packages", "auditedpackages", "auditedfiles", "effectentries"} {
 		value, ok := options[name]
 		if !ok {
 			continue
@@ -54,6 +54,11 @@ func compilerForcedFlags(p *load.Package) []string {
 					path = item[:dot]
 				}
 			}
+			if name == "auditedfiles" {
+				if slash := strings.LastIndexByte(path, '/'); slash >= 0 {
+					path = path[:slash]
+				}
+			}
 			if dependencies[path] {
 				relevant = append(relevant, item)
 			}
@@ -63,7 +68,7 @@ func compilerForcedFlags(p *load.Package) []string {
 	}
 	// Fold repeated manifests from multi-package test planning into their final
 	// values. The same effective configuration then has one stable cache key.
-	for _, name := range []string{"build", "effects", "metadata", "packages", "effectentries"} {
+	for _, name := range []string{"build", "effects", "metadata", "packages", "auditedpackages", "auditedfiles", "effectentries"} {
 		if value, ok := options[name]; ok && value != "" {
 			flags = append(flags, prefix+name+"="+value)
 		}

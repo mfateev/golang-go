@@ -24,7 +24,7 @@ func (group *isolateRevocationGroup) releaseLive() {
 }
 
 func (group *isolateRevocationGroup) notifyDrained() {
-	if group.live.Load() != 0 || group.hostWork.Load() != 0 || group.admission.Load()&isolateRevokedBit == 0 {
+	if group.live.Load() != 0 || group.admission.Load()&isolateRevokedBit == 0 {
 		return
 	}
 	systemstack(func() {
@@ -53,7 +53,7 @@ func isolateWaitGroupDrained(p unsafe.Pointer) {
 func isolateDrainCommit(gp *g, p unsafe.Pointer) bool {
 	group := (*isolateRevocationGroup)(p)
 	lock(&group.dispatchLock)
-	if group.live.Load() == 0 && group.hostWork.Load() == 0 {
+	if group.live.Load() == 0 {
 		unlock(&group.dispatchLock)
 		return false
 	}
@@ -79,7 +79,7 @@ func isolateCleanupWorker(fn func()) { fn() }
 //go:linkname isolateReleaseGroupAlloc
 func isolateReleaseGroupAlloc(p unsafe.Pointer) {
 	group := (*isolateRevocationGroup)(p)
-	if getg().isolateGroup != nil || group.live.Load() != 0 || group.hostWork.Load() != 0 || group.admission.Load()&isolateRevokedBit == 0 {
+	if getg().isolateGroup != nil || group.live.Load() != 0 || group.admission.Load()&isolateRevokedBit == 0 {
 		throw("isolate: releasing allocator before group cleanup")
 	}
 	// Private objects remain under ordinary GC. Detaching the acyclic lifetime

@@ -819,7 +819,7 @@ func (m *Map) clearSmall(typ *abi.MapType) {
 func (m *Map) Clone(typ *abi.MapType) *Map {
 	// Note: this should never be called with a nil map.
 	owner := isolateMapOwner()
-	if !isolateCheckMapHostAccess(unsafe.Pointer(m), m.owner, false) && m.owner != owner && (isolateReadOnlyOwner() == 0 || m.owner != isolateReadOnlyOwner()) {
+	if m.owner != owner && (isolateReadOnlyOwner() == 0 || m.owner != isolateReadOnlyOwner()) {
 		isolateOwnershipViolation("isolate: map clone crosses owner boundary")
 	}
 	if m.writing != 0 {

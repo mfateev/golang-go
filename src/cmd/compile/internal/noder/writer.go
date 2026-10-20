@@ -1153,7 +1153,7 @@ func (w *writer) funcExt(obj *types2.Func) {
 	// least.
 
 	pragma := asPragmaFlag(decl.Pragma)
-	if base.Flag.Std {
+	if base.Flag.Std || base.IsolatePackageAudited(obj.Pkg().Path()) || base.IsolateFileAudited(obj.Pkg().Path(), decl.Pos().FileBase().Filename()) {
 		pragma |= ir.IsolateEffectAudited
 	}
 	if base.Debug.IsolateEffects != 0 && isolatepolicy.Forbidden(obj.Pkg().Path(), obj.Name()) {

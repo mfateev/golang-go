@@ -94,6 +94,8 @@ func prepareStaticIsolates(ctx context.Context, ld *modload.Loader, b *Builder, 
 	if err != nil {
 		base.Fatal(err)
 	}
+	forcedGcflags = append(forcedGcflags, "-d=isolateauditedpackages="+strings.Join(manifest.AuditedPackages, ":"))
+	forcedGcflags = append(forcedGcflags, "-d=isolateauditedfiles="+strings.Join(manifest.AuditedFiles, ":"))
 	var support []*load.Package
 	for _, p := range load.PackageList([]*load.Package{host}) {
 		if slices.Contains(manifest.SupportPackages, p.ImportPath) {

@@ -22,7 +22,7 @@ preserve findings and rejected approaches; their retired commands are historical
 - [Static programs](./STATIC_PROGRAMS.md) — generic entries and one-binary linking
 - [Dynamic loading](./DYNAMIC_LOADING.md) — deferred plugin-based enhancement
 - [Isolate API](./ISOLATE_API.md) — proposed host and isolate surfaces
-- [Host integration](./HOST_INTEGRATION.md) — typed Go host functions, isolate-owned construction, callback reentry, and explicit parking; existing Call remains unchanged
+- [Host integration](./HOST_INTEGRATION.md) — copied-byte communication after removal of typed host functions and their supporting machinery
 - [Language and library subset](./ISOLATE_SUBSET.md) — proposed restrictions
 - [Determinism](./DETERMINISM.md) — time, maps, scheduling, and replay
 - [Alternatives](./ALTERNATIVES.md) — fork and external instrumentation analysis

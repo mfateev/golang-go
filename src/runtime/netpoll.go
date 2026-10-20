@@ -641,7 +641,7 @@ func netpollblock(pd *pollDesc, mode int32, waitio bool) bool {
 		group := gp.isolateGroup
 		registered := false
 		mayPark := true
-		if group != nil && !waitio && !isolateHostExecution(gp) {
+		if group != nil && !waitio {
 			registered = group.registerPollWait(gp, pd, mode)
 			mayPark = registered
 		}

@@ -102,6 +102,67 @@ count returned to one, and subsequent collections reduced live heap to about
 pages for reuse; process exit released them. This measures retained isolate
 state and the POC dispatcher, not complete worker-cache history overhead.
 
+## Per-isolate protobuf cost
+
+The independence refactor was measured on 2026-10-20 on Linux ARM64 at
+`GOMAXPROCS=8`. Each cell below is the median of three sequential processes,
+with 1,000 retained instances per process, five constructor warmups and a forced
+GC before each retained-memory sample. Compilation, tests and the temporary
+Temporal server were stopped during measurement. The paired baseline used Go
+`594d4c2881` and SDK `ecce344772`; it was rebuilt from those exact sources.
+These paired measurements supersede earlier numbers for evaluating this refactor;
+the older tables above describe their own historical source/fixture combinations.
+
+The fixture is `sdk-go-poc/internal/cmd/isolatebench`. Both revisions use the
+production workflow dispatcher, the same generated `Record{Sequence: 42}` input
+and a blocking copied-byte call. The old fixture uses the old JSON transport
+body; the new one uses the generated binary envelope. Started measurements
+retain the cancellation watcher as well as the workflow goroutine. Each process
+resumed 100 sampled workflows after GC, checked their returned protobuf values
+and killed all instances. Initialized-only measurements do not start the entry.
+
+| State | Revision | RSS / instance | Live heap / instance | Mean NewContext | p50 | p95 | p99 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Initialized | Before | 321.6 KiB | 51.3 KiB | 0.414 ms | 0.331 ms | 0.759 ms | 2.409 ms |
+| Initialized | After | 808.5 KiB | 349.9 KiB | 1.535 ms | 1.459 ms | 1.992 ms | 3.079 ms |
+| Started and suspended | Before | 393.3 KiB | 66.8 KiB | 0.408 ms | 0.367 ms | 0.651 ms | 1.706 ms |
+| Started and suspended | After | 1152.0 KiB | 590.4 KiB | 1.650 ms | 1.584 ms | 1.921 ms | 2.757 ms |
+
+[Raw samples and baseline revisions](measurements/independence-2026-10-20.json)
+retain each run's results. Constructor percentiles measure `NewContext` only;
+they exclude starting the workflow and transporting/decoding its input. The
+started population nevertheless puts more live state and GC pressure around
+subsequent constructor samples.
+
+Private protobuf has a material fixed cost: approximately 299 KiB more live
+heap and 487 KiB more RSS for each initialized instance, rising to 524 KiB and
+759 KiB more for each started instance in this fixture. Mean initialization is
+about 1.1–1.2 ms slower. The p50 shifts along with the mean, so this is ordinary
+initialization work rather than merely a tail outlier. Startup CPU itself was
+not profiled in this run.
+
+The final graph excludes generated descriptors used solely by the host SDK,
+including host-only protobuf-module generated packages. An early unpruned
+prototype retained about 1.18 MiB live per initialized instance. The final
+measurement includes the shared transport schema's 46 message definitions and
+the workflow's own selected descriptors/coder state. Descriptors remain lazy;
+no forced walk of unused field/accessor caches was added.
+
+This implementation retains the measured cost in exchange for independent
+protobuf execution and removal of typed host sharing. Sticky-cache sizing must
+account for that cost. These numbers describe isolate/dispatcher state; they do
+not include complete retained Temporal histories or establish a higher-density
+worker capacity. Further allocation/descriptor work can use this fixture as its
+baseline.
+
+Reproduce the current side from the SDK checkout with a matching built toolchain:
+
+```sh
+../golang-go/bin/tgo build -o /tmp/isolatebench ./internal/cmd/isolatebench
+/tmp/isolatebench -instances=1000
+/tmp/isolatebench -instances=1000 -started
+```
+
 ## Future work: denser allocation
 
 Go spans have different sizes, each a multiple of the 8 KiB Go heap page. Small

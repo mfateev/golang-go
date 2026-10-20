@@ -67,7 +67,7 @@ const rwmutexMaxReaders = 1 << 30
 // documentation on the [RWMutex] type.
 func (rw *RWMutex) RLock() {
 	if goexperiment.Isolates {
-		runtime_isolateReadOnlySyncWait()
+		runtime_isolateReadOnlyWrite(unsafe.Pointer(rw), unsafe.Sizeof(*rw))
 	}
 	if race.Enabled {
 		race.Read(unsafe.Pointer(&rw.w))
@@ -90,7 +90,7 @@ func (rw *RWMutex) RLock() {
 // in a particular use of mutexes.
 func (rw *RWMutex) TryRLock() bool {
 	if goexperiment.Isolates {
-		runtime_isolateReadOnlySyncWait()
+		runtime_isolateReadOnlyWrite(unsafe.Pointer(rw), unsafe.Sizeof(*rw))
 	}
 	if race.Enabled {
 		race.Read(unsafe.Pointer(&rw.w))
@@ -120,7 +120,7 @@ func (rw *RWMutex) TryRLock() bool {
 // on entry to RUnlock.
 func (rw *RWMutex) RUnlock() {
 	if goexperiment.Isolates {
-		runtime_isolateReadOnlySyncWait()
+		runtime_isolateReadOnlyWrite(unsafe.Pointer(rw), unsafe.Sizeof(*rw))
 	}
 	if race.Enabled {
 		race.Read(unsafe.Pointer(&rw.w))
@@ -153,7 +153,7 @@ func (rw *RWMutex) rUnlockSlow(r int32) {
 // Lock blocks until the lock is available.
 func (rw *RWMutex) Lock() {
 	if goexperiment.Isolates {
-		runtime_isolateReadOnlySyncWait()
+		runtime_isolateReadOnlyWrite(unsafe.Pointer(rw), unsafe.Sizeof(*rw))
 	}
 	if race.Enabled {
 		race.Read(unsafe.Pointer(&rw.w))
@@ -181,7 +181,7 @@ func (rw *RWMutex) Lock() {
 // in a particular use of mutexes.
 func (rw *RWMutex) TryLock() bool {
 	if goexperiment.Isolates {
-		runtime_isolateReadOnlySyncWait()
+		runtime_isolateReadOnlyWrite(unsafe.Pointer(rw), unsafe.Sizeof(*rw))
 	}
 	if race.Enabled {
 		race.Read(unsafe.Pointer(&rw.w))
@@ -216,7 +216,7 @@ func (rw *RWMutex) TryLock() bool {
 // arrange for another goroutine to [RWMutex.RUnlock] ([RWMutex.Unlock]) it.
 func (rw *RWMutex) Unlock() {
 	if goexperiment.Isolates {
-		runtime_isolateReadOnlySyncWait()
+		runtime_isolateReadOnlyWrite(unsafe.Pointer(rw), unsafe.Sizeof(*rw))
 	}
 	if race.Enabled {
 		race.Read(unsafe.Pointer(&rw.w))

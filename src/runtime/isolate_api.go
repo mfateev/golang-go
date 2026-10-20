@@ -14,9 +14,6 @@ import (
 
 //go:linkname isolateGetBoundary
 func isolateGetBoundary() unsafe.Pointer {
-	if isolateHostExecution(getg()) || getg().isolateConstruction != nil {
-		panic("isolate: host code requires Waiter or HostContext.Reenter for isolate transport")
-	}
 	if getg().isolateMetadataDepth != 0 {
 		isolateRejectEffect("host call from a metadata service")
 	}
@@ -35,16 +32,16 @@ func isolateSetBoundary(p unsafe.Pointer) unsafe.Pointer {
 //go:nosplit
 func isolateActive() bool {
 	gp := getg()
-	return !isolateHostExecution(gp) && gp.isolateConstruction == nil && (gp.isolateOwner != 0 || gp.isolateGroup != nil || gp.isolateBoundary != nil || gp.isolateState != nil)
+	return (gp.isolateOwner != 0 || gp.isolateGroup != nil || gp.isolateBoundary != nil || gp.isolateState != nil)
 }
 
-// Private constructors execute host code but must not borrow or populate the
-// process-wide sync.Pool caches with instance-owned allocations.
+// Private execution must not borrow or populate process-wide sync.Pool caches
+// with instance-owned allocations.
 //
 //go:linkname isolatePrivateAllocation
 //go:nosplit
 func isolatePrivateAllocation() bool {
-	return getg().isolateOwner != 0 || isolateActive()
+	return isolateActive()
 }
 
 func isolateRejectProcessAPI(name string) {
@@ -111,7 +108,7 @@ func isolateEnableDeterminism(p unsafe.Pointer) bool {
 //go:linkname isolateDeterministic
 func isolateDeterministic() bool {
 	group := getg().isolateGroup
-	return group != nil && group.deterministic && getg().isolateMetadataDepth == 0 && !isolateHostExecution(getg()) && getg().isolateConstruction == nil
+	return group != nil && group.deterministic && getg().isolateMetadataDepth == 0
 }
 
 //go:linkname isolateSetClock
@@ -132,7 +129,7 @@ func isolateSetClock(p unsafe.Pointer, unixNano int64) bool {
 //go:linkname isolateClockEnabled
 func isolateClockEnabled() bool {
 	group := getg().isolateGroup
-	return group != nil && group.clockSet.Load() && !isolateHostExecution(getg()) && getg().isolateConstruction == nil
+	return group != nil && group.clockSet.Load()
 }
 
 //go:linkname isolateSetTimerSleep

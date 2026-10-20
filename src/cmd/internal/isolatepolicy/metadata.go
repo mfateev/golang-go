@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package isolatepolicy defines standard-library metadata boundaries.
-// Third-party libraries use explicit host integration APIs.
+// Third-party libraries use ordinary private state and copied-byte transport.
 package isolatepolicy
 
 import (
@@ -33,13 +33,6 @@ func MetadataGlobal(symbol string) bool {
 // allocate, grow a stack, or consult application ownership while retiring the
 // process pool lists. Private Put/Get never join those lists.
 func RuntimeHook(pkg, function string) bool {
-	if pkg == "isolate" {
-		switch function {
-		case "HostContext.Allocator", "HostContext.Reenter", "HostAllocator", "(*Isolate).Allocator", "NewWaiter", "(*Waiter).Park", "(*Waiter).Wake":
-			return true
-		}
-	}
-
 	// The post-fork child cannot grow its stack, allocate, or acquire locks.
 	// Instrumenting its local pointer stores violates that runtime contract.
 	// Public process/syscall entry points reject isolate execution before this

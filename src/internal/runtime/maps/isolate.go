@@ -27,9 +27,6 @@ func isolateDeterministic() bool
 func (m *Map) IsolateOwner() uintptr { return m.owner }
 
 func (m *Map) checkIsolateWrite() {
-	if isolateCheckMapHostAccess(unsafe.Pointer(m), m.owner, true) {
-		return
-	}
 	if m.owner != isolateMapOwner() {
 		if borrowed := isolateReadOnlyOwner(); borrowed != 0 && m.owner == borrowed {
 			panic("isolate: read-only handler cannot mutate workflow map")
@@ -39,9 +36,6 @@ func (m *Map) checkIsolateWrite() {
 }
 
 func (m *Map) checkIsolateRead() {
-	if isolateCheckMapHostAccess(unsafe.Pointer(m), m.owner, false) {
-		return
-	}
 	if m.owner != 0 && m.owner != isolateMapOwner() {
 		if m.owner == isolateMetadataBorrowOwner() || m.owner == isolateReadOnlyOwner() {
 			return
@@ -55,6 +49,3 @@ func isolateCheckCloneGroup(*abi.MapType, unsafe.Pointer, unsafe.Pointer)
 
 //go:linkname isolateReadOnlyOwner runtime.isolateReadOnlyOwner
 func isolateReadOnlyOwner() uintptr
-
-//go:linkname isolateCheckMapHostAccess runtime.isolateCheckMapHostAccess
-func isolateCheckMapHostAccess(unsafe.Pointer, uintptr, bool) bool

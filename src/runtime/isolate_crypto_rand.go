@@ -36,7 +36,7 @@ func isolateConfigureRandom(p unsafe.Pointer, seed [32]byte) bool {
 func isolateCryptoRandRead(b []byte) bool {
 	gp := getg()
 	group := gp.isolateGroup
-	if group == nil || !group.deterministic || gp.isolateMetadataDepth != 0 || isolateHostExecution(gp) || gp.isolateConstruction != nil {
+	if group == nil || !group.deterministic || gp.isolateMetadataDepth != 0 {
 		return false
 	}
 	if len(b) == 0 {

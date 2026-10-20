@@ -20,16 +20,9 @@ not a process security sandbox.
 | Host | Process state | Host owner | Host access |
 | Application | Selected private package state | Instance owner | Ownership checks |
 | Read-only handler | Workflow state and selected scratch state | Scratch owner | Workflow reads; no workflow writes |
-| Registered host function | Process state | Host owner | Explicit synchronous borrowing of caller arguments |
-| `Allocate(a, build)` | Process state | Allocator `a` | No new authority to access preexisting private values |
-| `HostContext.Reenter` | Original caller's state | Original caller's owner | Original ownership, effects and read-only restrictions |
 
-An allocator selects ownership of new allocations even though physical memory
-comes from the shared heap. It does not move an existing graph, copy a value,
-switch application globals, or grant execution authority. A host-owned handle
-can cross the typed boundary without allowing application code to read its
-fields. SDK adapters must construct private results or explicitly mediate access
-to shared host objects. Host caches must never retain borrowed private objects.
+Host communication copies request and response bytes. Application objects remain
+inside their execution domain; ownership and publication checks stay enabled.
 
 ## Entry discovery and typed invocation
 
@@ -252,98 +245,6 @@ Source: [isolate.go](../../src/isolate/isolate.go),
 [bridge.go](../../src/internal/isolatebridge/bridge.go),
 [write.go](../../src/internal/isolatebridge/write.go).
 
-## Typed host operations and scoped allocation
-
-```go
-type HostContext struct { /* opaque */ }
-type Allocator struct { /* opaque */ }
-
-func NewHostFunc[In, Out any](fn func(HostContext, In) (Out, error)) func(In) (Out, error)
-func (c HostContext) Allocator() Allocator
-func (i *Isolate) Allocator() Allocator
-func HostAllocator() Allocator
-func Allocate[T any](a Allocator, build func() T) (result T, err error)
-func (c HostContext) Reenter(fn func())
-```
-
-Register `NewHostFunc` during host setup. Its returned typed function requires
-an isolate caller. The host operation executes synchronously on that caller's
-goroutine using host globals and host allocation; it may borrow caller arguments
-until it returns. Arbitrary ordinary host functions do not gain this permission.
-Input, output and error values are ordinary typed Go values: this boundary does
-not automatically serialize or deep-copy them.
-
-`HostContext` is valid only on that goroutine until the operation returns. Its
-zero value is invalid. Use `c.Allocator()` to construct results owned by the
-original caller, including a read-only caller's scratch domain. The independent
-`i.Allocator()` is a host operation selecting the initialized instance's main
-domain, usable before `Start` and while execution is fenced. `HostAllocator()`
-selects host ownership for shared lazy initialization inside a private constructor.
-
-`Allocate` applies the selected owner to `build` and synchronous helpers. Scopes
-nest and restore on return or panic. Existing objects retain ownership; goroutines
-started by the constructor inherit neither its scope nor borrowed access.
-Construction consumes the target's resource budget and holds a lifetime lease.
-A retained allocator keeps ownership metadata alive without reviving the instance.
-Its zero value is invalid. Closing/revoking its domain prevents new construction
-and suppresses delivery of an in-progress result with `ErrRevoked`.
-
-`Reenter` invokes application callbacks synchronously with the original caller's
-private globals, allocation owner, effect checks and read-only role. It does not
-inherit an enclosing constructor's allocation override. Host state is restored
-on panic. Calling arbitrary application callbacks directly while in a host
-operation does not provide this context switch.
-
-A panic escaping a registered operation runs host cleanup, produces copied
-`PanicError` diagnostics, and revokes the instance. It never transfers an
-arbitrary panic object. SDK adapters may handle their own expected errors inside
-the host operation before returning an appropriately owned result/error.
-
-Example host registration and private result construction:
-
-```go
-type Request struct { Text string }
-type Result struct { Bytes []byte }
-
-var convert = isolate.NewHostFunc(func(c isolate.HostContext, in Request) (*Result, error) {
-    return isolate.Allocate(c.Allocator(), func() *Result {
-        return &Result{Bytes: []byte(in.Text)}
-    })
-})
-```
-
-This pattern lets an SDK keep its converter, descriptor cache or other service
-host-owned while allocating the returned object graph for the caller. All
-returned private data must be created or copied in that allocation scope; merely
-returning an existing host slice does not change its owner. Shared initialization
-inside the constructor needs a nested host allocation scope.
-
-Source: [host_integration.go](../../src/isolate/host_integration.go).
-See [Host integration](HOST_INTEGRATION.md) for the design and constraints.
-
-## External completion and parking
-
-```go
-type Waiter struct { /* opaque */ }
-func NewWaiter() *Waiter
-func (w *Waiter) Park()
-func (w *Waiter) Wake()
-```
-
-`NewWaiter` associates one completion with the current isolate goroutine or the
-original caller of a host operation. Its zero value is invalid; do not copy it
-after first use. Only that goroutine may `Park`, once. Parking releases
-deterministic dispatch so an SDK can wait for external host work without holding
-the execution token.
-
-`Wake` may run from any host goroutine, is idempotent, and may precede `Park`.
-Writes before `Wake` happen before `Park` returns. Wakeup respects suspension and
-role admission and cannot revive a revoked instance. A host worker must release
-every borrow before waking, even after revocation; pending borrowing remains part
-of the cleanup fence and can appear in `KillPendingError.PendingHostWork`.
-
-Source: [host_integration.go](../../src/isolate/host_integration.go).
-
 ## Completion, revocation and diagnostics
 
 ```go
@@ -366,7 +267,6 @@ type KillPendingError struct {
     Stack             string
     LiveGoroutines    int32
     RunningGoroutines int32
-    PendingHostWork   int32
 }
 type InitializationError struct {
     Cause   error
@@ -410,8 +310,8 @@ resume a permanently faulted instance; host cleanup still runs through the
 runtime fence. A recoverable SDK validation/query error is a separate adapter
 policy, not permission to recover from permanent runtime faults.
 
-`KillPendingError` reports remaining attached work. Running counts include
-syscalls; pending host work includes construction leases and asynchronous borrows.
+`KillPendingError` reports remaining attached goroutines. Running counts include
+syscalls.
 Samples are best effort; a busy stack is not suspended solely for diagnostics.
 Retaining a completed handle or initialization notification preserves diagnostics,
 not the completed private heap.
@@ -517,12 +417,18 @@ select external libraries on its own. The JSON format is version 1:
 | `state_packages` | Import paths requiring private package layouts. |
 | `readonly_packages` | Subset of state packages recreated under read-only scratch ownership. |
 | `support_packages` | Additional host-reachable roots included in entry state graphs. |
+| `audited_packages` | Dependency import paths whose unsafe implementation has been audited by the host SDK. |
+| `audited_files` | `package/path/source.go` entries granting the same implementation audit to physical source files, independently of line directives. |
 
 The generated accessor has signature `func() any` and returns the original entry.
 The invoker has signature `func(decode, encode func(...isolate.Value) error) error`.
 Both compile in the entry package with ordinary application instrumentation.
 The compiler validates their signatures and constrained linkname declarations.
-The manifest grants no metadata, allocation or callback privilege.
+The manifest grants no metadata, allocation or callback privilege. The optional
+implementation audits permit unsafe library internals and unsafe reflection;
+ownership checks and forbidden-effect checks remain compulsory. Audit provenance
+is exported with declarations, including imported generic bodies. Application
+files sharing a package with audited generated code acquire no file audit.
 
 `-isolate-report` writes JSON with `format_version`, `metadata_version`,
 `api_version`, `determinism_version`, `programs` and `packages`. Each program has
@@ -547,7 +453,7 @@ The supported entry points are the public package and build contracts above.
 | `internal/isolateabi` | Numeric metadata/API/determinism markers shared with build tools. |
 | `internal/isolatestate` | Compiler-produced package layouts, initialization and private-state factories. |
 | `internal/isolatebridge` | Entry registration, copied transport, runtime attachment and host control; selected data types are exposed through `isolate` aliases. |
-| `runtime.isolate*` hooks | Ownership/allocation, dispatch/admission, host scopes, callbacks, parking, termination, resource accounting, clock/random and diagnostics. |
+| `runtime.isolate*` hooks | Ownership/allocation, dispatch/admission, parking, termination, resource accounting, clock/random and diagnostics. |
 | Compiler instrumentation and metadata | Global relocation, memory publication/access checks, effect provenance and generated entry descriptors. |
 | Standard-library metadata/frozen-library scopes | Audited sharing and canonical reflection caches within GOROOT. |
 
@@ -558,10 +464,11 @@ There is no public raw-owner setter, descriptor registration API, allocation
 retagging operation or independent heap-release API. Lifetime is controlled by
 instance cleanup and GC.
 
-Temporal, protobuf and OpenTelemetry integration belongs to SDK source adapters
-using `NewHostFunc`, `Allocate` and `Reenter`. The Go core has no generated-protobuf
-classifier or module-specific allocation/metadata API. In particular,
-`isolate.IsGeneratedProtobuf` was removed; it is not part of this reference.
+Temporal transport and dependency selection belong to the SDK. Protobuf runtime,
+descriptors, registries and coder caches use ordinary instance state. The SDK
+supplies deterministic defaults and a read-only message snapshot hook through
+local source overlays; neither uses a host-function boundary. The Go core has no
+protobuf classifier or module-specific allocation/metadata API.
 
 To inspect the live public declarations after changes, run:
 

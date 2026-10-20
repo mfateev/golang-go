@@ -18,13 +18,9 @@ func isolateSetInboundService(enabled bool) bool {
 }
 
 func isolateDispatchEligible(group *isolateRevocationGroup, gp *g) bool {
-	role := isolateGetExecutionRole(gp)
-	if isolateHostExecution(gp) {
-		role = gp.isolateHost.role
-	}
-	return (!group.dispatchReadOnly || role.readOnlyService) &&
-		(!group.dispatchInbound || role.inboundService) &&
-		(!group.dispatchPriority || role.priority != 0 && !role.readOnlyService)
+	return (!group.dispatchReadOnly || gp.isolateReadOnlyService) &&
+		(!group.dispatchInbound || gp.isolateInboundService) &&
+		(!group.dispatchPriority || gp.isolatePriority != 0 && !gp.isolateReadOnlyService)
 }
 
 // Inbound services share the writable workflow owner. Sending into workflow

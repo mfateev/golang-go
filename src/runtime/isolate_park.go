@@ -12,7 +12,7 @@ import "unsafe"
 func isolateParkForever(reason waitReason, traceReason traceBlockReason, traceskip int) {
 	gp := getg()
 	group := gp.isolateGroup
-	if group == nil || isolateHostExecution(gp) {
+	if group == nil {
 		gopark(nil, nil, reason, traceReason, traceskip+1)
 		throw("isolate: permanent park returned without a group")
 	}

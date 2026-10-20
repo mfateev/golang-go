@@ -169,14 +169,14 @@ func isolateDispatchRelease(gp *g, requeue bool) {
 
 func isolateDispatchParkBegin(gp *g) bool {
 	group := gp.isolateGroup
-	if group == nil || !group.deterministic || gp.isolateRuntimeWait || gp.isolateMetadataDepth != 0 || isolateHostExecution(gp) && gp.waitreason != waitReasonIsolateHost {
+	if group == nil || !group.deterministic || gp.isolateRuntimeWait || gp.isolateMetadataDepth != 0 {
 		return false
 	}
 	// Runtime-internal GC, stack, trace, and semaphore waits retain the token.
 	// Wall-time-dependent housekeeping must not select a different user G.
 	w := gp.waitreason
 	if !(w.isChanWait() || w.isSyncWait() || w == waitReasonChanReceiveNilChan ||
-		w == waitReasonChanSendNilChan || w == waitReasonSelectNoCases || w == waitReasonSleep || w == waitReasonIsolateHost) {
+		w == waitReasonChanSendNilChan || w == waitReasonSelectNoCases || w == waitReasonSleep) {
 		return false
 	}
 	lock(&group.dispatchLock)

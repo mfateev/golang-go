@@ -1546,12 +1546,8 @@ func (s *state) instrument2(t *types.Type, addr, addr2 *ssa.Value, kind instrume
 			// between them. Diagnostic calls must not replace that call's
 			// identity while those ORESULT expressions are being lowered.
 			previous := s.prevCall
-			if !write && t.Kind() == types.TFUNC {
-				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHostFuncCell"), true, nil, p)
-			} else {
-				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapAccess"), true, nil,
-					p, s.constInt(types.Types[types.TUINTPTR], t.Size()), s.constBool(write))
-			}
+			s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHeapAccess"), true, nil,
+				p, s.constInt(types.Types[types.TUINTPTR], t.Size()), s.constBool(write))
 			s.prevCall = previous
 		}
 		if kind == instrumentMove {
@@ -4970,7 +4966,7 @@ func (s *state) openDeferRecord(n *ir.CallExpr) {
 	// Validate before recording the callback for the runtime panic path, which
 	// invokes saved defers without executing the compiler's normal exit code.
 	if s.isolateHeapEnabled() {
-		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHostClosure"), true, nil, closureVal)
+		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckClosure"), true, nil, closureVal)
 	}
 	if base.Debug.IsolateEffects != 0 && !base.Flag.CompilingRuntime {
 		s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckMetadataClosure"), true, nil, closureVal)
@@ -5097,7 +5093,7 @@ func (s *state) openDeferExit() {
 			v := s.load(r.closure.Type.Elem(), r.closure)
 			s.maybeNilCheckClosure(v, callDefer)
 			if s.isolateHeapEnabled() {
-				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHostClosure"), true, nil, v)
+				s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckClosure"), true, nil, v)
 			}
 			codeptr := s.rawLoad(types.Types[types.TUINTPTR], v)
 			if base.Debug.IsolateEffects != 0 && !base.Flag.CompilingRuntime {
@@ -5393,7 +5389,7 @@ func (s *state) call(n *ir.CallExpr, k callKind, returnResultAddr bool, deferExt
 		// A closure's code pointer is a memory read too. Validate its object
 		// before normal calls and before handing it to newproc/deferproc.
 		if s.isolateHeapEnabled() && closure != nil {
-			s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckHostClosure"), true, nil, closure)
+			s.rtcall(typecheck.LookupRuntimeFunc("isolateCheckClosure"), true, nil, closure)
 		}
 
 		// An audited operation may invoke an interface method or closure from a
@@ -8619,7 +8615,7 @@ func isStructNotSIMD(t *types.Type) bool {
 var BoundsCheckFunc [ssa.BoundsKindCount]*obj.LSym
 
 func (s *state) isolateHeapEnabled() bool {
-	return base.Debug.IsolateHeap != 0 && !base.Flag.CompilingRuntime && !ir.IsolateEscapeHelper(s.curfn) && !ir.IsolateHostBoundaryHelper(s.curfn) &&
+	return base.Debug.IsolateHeap != 0 && !base.Flag.CompilingRuntime && !ir.IsolateEscapeHelper(s.curfn) &&
 		!(base.Flag.Std && isolatepolicy.RuntimeHook(base.Ctxt.Pkgpath, ir.FuncName(s.curfn)))
 }
 

@@ -47,6 +47,19 @@ expose neither raw descriptors nor a registration callback.
 source imports. `support_packages` adds host-reachable support roots to each
 entry's state graph. `readonly_packages` selects layouts to recreate under a
 read-only service's scratch owner. It must be a subset of `state_packages`.
+
+`audited_packages` and `audited_files` are optional implementation audit inputs.
+The SDK may authorize unsafe implementation code in dependency packages, or in
+physical source files identified as `package/path/file.go`. File audits use
+physical provenance rather than `//line` names. The audit follows exported and
+generic declarations; it does not disable memory ownership, publication or
+forbidden-effect checks. Build action hashes include only audits reachable from
+the package being compiled, in sorted, deduplicated form.
+
+Selected `go:embed` strings and byte slices replay their bindings during instance
+initialization. Literal bytes stay in read-only binary storage; byte slices get
+private mutable backing arrays before package initializers run.
+
 These selections control ownership and initialization, not privileged trust.
 Standard frozen-library sharing retains its independently audited core policy.
 External library source checks and adapters belong to the SDK. The Go core
