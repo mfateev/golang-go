@@ -37,7 +37,18 @@ func runtime_debug_WriteHeapDump(fd uintptr) {
 		// writeheapdump_m because we might blow the system stack
 		// otherwise.
 		readmemstats_m(&m)
+		if raceenabled {
+			// Resolving reflected type names uses lock annotations and map
+			// reads. g0 has no race context, so borrow the calling G's.
+			if getg().racectx != 0 {
+				throw("expected racectx == 0")
+			}
+			getg().racectx = getg().m.curg.racectx
+		}
 		writeheapdump_m(fd, &m)
+		if raceenabled {
+			getg().racectx = 0
+		}
 	})
 
 	startTheWorld(stw)

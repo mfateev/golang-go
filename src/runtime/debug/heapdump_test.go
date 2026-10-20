@@ -5,7 +5,9 @@
 package debug_test
 
 import (
+	"bytes"
 	"os"
+	"reflect"
 	"runtime"
 	. "runtime/debug"
 	"testing"
@@ -92,4 +94,34 @@ func TestWriteHeapDumpTypeName(t *testing.T) {
 	WriteHeapDump(f.Fd())
 	dummy.M()
 	dummy2.M()
+}
+
+func TestWriteHeapDumpReflectType(t *testing.T) {
+	if runtime.GOOS == "js" {
+		t.Skipf("WriteHeapDump is not available on %s.", runtime.GOOS)
+	}
+	// Converting a reflected type with an embedded method to I creates a runtime
+	// itab. Dumping it resolves a heap-allocated type name through reflectOffs,
+	// including lock annotations and map reads in race builds, on the system stack.
+	typ := reflect.StructOf([]reflect.StructField{
+		{Name: "G", Type: reflect.TypeFor[G[int]](), Anonymous: true},
+		{Name: "Value", Type: reflect.TypeFor[string](), Tag: `json:"heapdump-reflect-type"`},
+	})
+	value := reflect.New(typ).Elem().Interface().(I)
+	name := typ.String()
+	f, err := os.CreateTemp(t.TempDir(), "heapdump")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	WriteHeapDump(f.Fd())
+	value.M()
+	runtime.KeepAlive(value)
+	data, err := os.ReadFile(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte(name)) {
+		t.Fatalf("heap dump is missing reflected type %q", name)
+	}
 }

@@ -83,15 +83,21 @@ file/package audit provenance and the race build. The full SDK test/race suite,
 complete sample workspace suite and core native fixture at `GOMAXPROCS=1,2,8`
 pass. Transport regeneration produces identical schema, bindings and conversions.
 
-The broad Go runtime race run exposed an existing ARM64 TSAN heap-dump crash in
-`TestSchedPauseMetrics`: a dynamically constructed itab causes heap dumping to
-reach `reflectOffsLock` on g0 without a race context. A standalone `StructOf`
-embedded-method/`WriteHeapDump` reproducer crashes on both the baseline and the
-new runtime. Re-running the suite with that test skipped found only the expected
-`runtime.g` size change after removing three pointers. Its 32/64-bit size
-expectations were updated, and the focused race assertion passes. The remaining
-runtime tests and isolate/sync/reflect/runtime-debug race checks passed. The
-pre-existing heap-dump crash is outside this refactor and remains unresolved.
+The broad Go runtime race run exposed a pre-existing TSAN heap-dump crash, first
+observed on ARM64 in `TestSchedPauseMetrics`. Dumping a reflected itab resolves
+its heap-allocated name through `reflectOffs`, whose lock annotations and map
+reads require a race context. The dump runs on g0, which normally has none. A
+standalone `StructOf` embedded-method/`WriteHeapDump` reproducer crashed on both
+the baseline and the refactored runtime.
+
+The follow-up fix temporarily lends the calling goroutine's race context to g0
+while dumping, restoring g0's zero context before returning. The new
+`runtime/debug.TestWriteHeapDumpReflectType` regression fails without the fix and
+passes with it, checking that the reflected type name appears in the dump.
+All heap-dump tests pass for ten repetitions in race and non-race builds, and
+in race builds with the isolate experiment disabled. The full unfiltered race
+suite for `runtime`, `isolate`, `sync`, `reflect` and `runtime/debug` now passes
+with `GOEXPERIMENT=isolates`, `GOMAXPROCS=8` and no skipped heap-dump test.
 
 Retained-state measurements and the startup/memory cost are recorded in
 [Memory density](MEMORY_DENSITY.md#per-isolate-protobuf-cost).
